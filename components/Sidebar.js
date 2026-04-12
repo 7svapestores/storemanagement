@@ -24,6 +24,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/expenses', icon: '📋', label: 'Expenses' },
     { path: '/vendors', icon: '🤝', label: 'Vendors' },
     { path: '/reports', icon: '📑', label: 'P&L Report' },
+    { path: '/compare', icon: '📊', label: 'Compare Stores' },
     { path: '/activity', icon: '🕐', label: 'Activity Log' },
     { path: '/exports', icon: '📥', label: 'Export Data' },
     { path: '/email', icon: '📧', label: 'Email Reports' },

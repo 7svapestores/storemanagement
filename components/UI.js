@@ -17,27 +17,65 @@ export function StatCard({ label, value, sub, color, icon }) {
 }
 
 // ── Date Preset Buttons ─────────────────────────────────────
+const PRIMARY_PRESETS = [
+  { id: 'today',     l: 'Today' },
+  { id: 'thisweek',  l: 'This Week' },
+  { id: 'thismonth', l: 'This Month' },
+  { id: 'lastmonth', l: 'Last Month' },
+];
+
+const OVERFLOW_PRESETS = [
+  { id: 'yesterday',   l: 'Yesterday' },
+  { id: 'lastweek',    l: 'Last Week' },
+  { id: 'last2weeks',  l: 'Last 2 Weeks' },
+  { id: 'last2months', l: 'Last 2 Months' },
+  { id: 'last3months', l: 'Last 3 Months' },
+  { id: 'last6months', l: 'Last 6 Months' },
+  { id: 'thisyear',    l: 'This Year' },
+  { id: 'lastyear',    l: 'Last Year' },
+  { id: 'all',         l: 'All Time' },
+];
+
+const ALL_PRESETS = [...PRIMARY_PRESETS, ...OVERFLOW_PRESETS];
+
 export function DatePresets({ active, onChange }) {
-  const presets = [
-    { id: 'today',     l: 'Today' },
-    { id: 'yesterday', l: 'Yesterday' },
-    { id: 'thisweek',  l: 'This Week' },
-    { id: 'lastweek',  l: 'Last Week' },
-    { id: 'thismonth', l: 'This Month' },
-    { id: 'lastmonth', l: 'Last Month' },
-    { id: 'last90',    l: '90 Days' },
-    { id: 'thisyear',  l: 'This Year' },
-    { id: 'all',       l: 'All' },
-  ];
+  const [open, setOpen] = useState(false);
+  const activeLabel = ALL_PRESETS.find(p => p.id === active)?.l;
+  const activeInOverflow = OVERFLOW_PRESETS.some(p => p.id === active);
+
   return (
-    <div className="flex gap-1 flex-wrap">
-      {presets.map(p => (
+    <div className="flex gap-1 flex-wrap items-center relative">
+      {PRIMARY_PRESETS.map(p => (
         <button key={p.id} onClick={() => onChange(p.id)}
           className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors
             ${active === p.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}>
           {p.l}
         </button>
       ))}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors
+          ${activeInOverflow ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}
+      >
+        {activeInOverflow ? activeLabel : 'More'} ▾
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 z-40 bg-sw-card border border-sw-border rounded-lg shadow-lg py-1 min-w-[160px]">
+            {OVERFLOW_PRESETS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onChange(p.id); setOpen(false); }}
+                className={`block w-full text-left px-3 py-1.5 text-[11px] font-semibold transition-colors
+                  ${active === p.id ? 'bg-sw-blueD text-sw-blue' : 'text-sw-sub hover:bg-sw-card2 hover:text-sw-text'}`}
+              >
+                {p.l}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -170,40 +208,65 @@ export function Button({ children, variant = 'primary', className = '', ...props
   );
 }
 
-// ── Data Table ──────────────────────────────────────────────
-export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true }) {
+// ── Empty State ─────────────────────────────────────────────
+export function EmptyState({ icon = '📭', title = 'Nothing here yet', message, action }) {
   return (
-    <div className="overflow-x-auto">
-      <table>
-        <thead>
-          <tr>
-            {columns.map(c => (
-              <th key={c.key} style={{ textAlign: c.align || 'left' }}>{c.label}</th>
-            ))}
-            {(onEdit || onDelete) && isOwner && <th style={{ width: 60 }} />}
-          </tr>
-        </thead>
-        <tbody>
-          {!rows?.length && (
-            <tr><td colSpan={columns.length + ((onEdit || onDelete) && isOwner ? 1 : 0)} className="!text-center !py-8 !text-sw-dim">No data</td></tr>
-          )}
-          {rows?.slice(0, 100).map((row, i) => (
-            <tr key={row.id || i}>
+    <div className="py-10 px-4 text-center">
+      <div className="text-4xl mb-2">{icon}</div>
+      <div className="text-sw-text text-sm font-bold mb-1">{title}</div>
+      {message && <p className="text-sw-sub text-xs mb-3 max-w-sm mx-auto">{message}</p>}
+      {action}
+    </div>
+  );
+}
+
+// ── Data Table ──────────────────────────────────────────────
+export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data' }) {
+  const visible = rows?.slice(0, 100) || [];
+  const total = rows?.length || 0;
+  return (
+    <div>
+      <div className="overflow-x-auto relative">
+        <table>
+          <thead>
+            <tr>
               {columns.map(c => (
-                <td key={c.key} style={{ textAlign: c.align || 'left', fontFamily: c.mono ? "'IBM Plex Mono', monospace" : 'inherit' }}>
-                  {c.render ? c.render(row[c.key], row) : row[c.key]}
-                </td>
+                <th key={c.key} style={{ textAlign: c.align || 'left' }}>{c.label}</th>
               ))}
-              {(onEdit || onDelete) && isOwner && (
-                <td className="!whitespace-nowrap">
-                  {onEdit && <button onClick={() => onEdit(row)} className="text-sw-blue text-[11px] mr-1.5 hover:underline">✎</button>}
-                  {onDelete && <button onClick={() => onDelete(row.id)} className="text-sw-dim text-[11px] hover:text-sw-red">✕</button>}
-                </td>
-              )}
+              {(onEdit || onDelete) && isOwner && <th style={{ width: 60 }} />}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {!visible.length && (
+              <tr>
+                <td colSpan={columns.length + ((onEdit || onDelete) && isOwner ? 1 : 0)} className="!text-center !py-8 !text-sw-dim">
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+            {visible.map((row, i) => (
+              <tr key={row.id || i}>
+                {columns.map(c => (
+                  <td key={c.key} style={{ textAlign: c.align || 'left', fontFamily: c.mono ? "'IBM Plex Mono', monospace" : 'inherit' }}>
+                    {c.render ? c.render(row[c.key], row) : row[c.key]}
+                  </td>
+                ))}
+                {(onEdit || onDelete) && isOwner && (
+                  <td className="!whitespace-nowrap">
+                    {onEdit && <button onClick={() => onEdit(row)} className="text-sw-blue text-[11px] mr-1.5 hover:underline">✎</button>}
+                    {onDelete && <button onClick={() => onDelete(row.id)} className="text-sw-dim text-[11px] hover:text-sw-red">✕</button>}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {total > 0 && (
+        <div className="px-3 py-1.5 text-sw-dim text-[10px] border-t border-sw-border">
+          Showing {Math.min(visible.length, 100)} of {total} entries
+        </div>
+      )}
     </div>
   );
 }
