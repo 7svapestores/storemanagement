@@ -4,137 +4,107 @@ import { createClient } from '@/lib/supabase-browser';
 
 const AuthContext = createContext(null);
 
-const AUTH_TIMEOUT_MS = 5000;
-
-// Fallback profile used when the profiles RLS/row is unavailable. Keeps the
-// app usable (as owner) rather than stuck on a loading screen. Server-side
-// RLS still enforces actual access; this is just so the UI renders.
-function fallbackProfile(user) {
-  if (!user) return null;
-  return {
-    id: user.id,
-    username: user.email,
-    name: user.email || 'User',
-    email: user.email,
-    role: 'owner',
-    store_id: null,
-    is_active: true,
-    __fallback: true,
-  };
-}
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
-  ]);
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const supabase = createClient();
 
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
 
-    const loadProfile = async (currentUser) => {
-      const userId = currentUser?.id;
-      if (!userId) {
-        if (!cancelled) setProfile(null);
-        return;
+    // Force stop loading after 4 seconds no matter what
+    const timeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('Auth timeout - forcing load complete');
+        setLoading(false);
       }
+    }, 4000);
+
+    const init = async () => {
       try {
-        const { data, error } = await withTimeout(
-          supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-          AUTH_TIMEOUT_MS,
-          'profile fetch'
-        );
-        if (cancelled) return;
-        if (error) {
-          // Known issue: profiles RLS policy calls is_owner() which itself
-          // queries profiles, creating a recursive check that Postgres refuses.
-          // Fall back to a synthetic owner profile so the UI stays usable.
-          console.error('[auth] profile fetch error — using fallback profile:', error);
-          setProfile(fallbackProfile(currentUser));
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          if (mounted) { setUser(null); setProfile(null); setLoading(false); }
           return;
         }
-        if (!data) {
-          console.error('[auth] no profile row for user — using fallback profile');
-          setProfile(fallbackProfile(currentUser));
-          return;
-        }
-        setProfile(data);
-      } catch (e) {
-        console.error('[auth] profile fetch threw — using fallback profile:', e);
-        if (!cancelled) setProfile(fallbackProfile(currentUser));
-      }
-    };
+        if (mounted) setUser(user);
 
-    const getSession = async () => {
-      try {
-        const { data, error } = await withTimeout(
-          supabase.auth.getUser(),
-          AUTH_TIMEOUT_MS,
-          'auth.getUser'
-        );
-        if (cancelled) return;
-        if (error) throw error;
-        const u = data?.user ?? null;
-        setUser(u);
-        if (u) await loadProfile(u);
-      } catch (e) {
-        console.warn('[auth] getSession failed:', e.message);
-        if (!cancelled) {
-          setUser(null);
-          setProfile(null);
-          setError(e.message);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+        // Fetch profile
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
 
-    getSession();
+        if (profileError) console.error('Profile fetch error:', profileError);
 
-    let subscription;
-    try {
-      const res = supabase.auth.onAuthStateChange(async (event, session) => {
-        try {
-          const u = session?.user ?? null;
-          setUser(u);
-          if (u) {
-            await loadProfile(u);
+        if (mounted) {
+          if (profileData) {
+            setProfile(profileData);
           } else {
-            setProfile(null);
+            console.warn('Profile not found for user, using fallback');
+            setProfile({
+              id: user.id,
+              name: user.email,
+              role: 'owner',
+              store_id: null,
+              username: user.email ? user.email.split('@')[0] : 'user',
+            });
           }
-        } catch (e) {
-          console.warn('[auth] onAuthStateChange handler failed:', e.message);
-        } finally {
           setLoading(false);
         }
-      });
-      subscription = res?.data?.subscription;
-    } catch (e) {
-      console.warn('[auth] onAuthStateChange setup failed:', e.message);
-    }
-
-    // Hard ceiling: never let loading stay true forever, even if both calls hang silently.
-    const ceiling = setTimeout(() => {
-      if (!cancelled) {
-        setLoading((prev) => {
-          if (prev) console.warn('[auth] hard timeout — forcing loading=false');
-          return false;
-        });
+      } catch (err) {
+        console.error('Auth init error:', err);
+        if (mounted) setLoading(false);
       }
-    }, AUTH_TIMEOUT_MS + 500);
+    };
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      if (session?.user) {
+        setUser(session.user);
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+          if (!mounted) return;
+          setProfile(data || {
+            id: session.user.id,
+            name: session.user.email,
+            role: 'owner',
+            store_id: null,
+            username: session.user.email ? session.user.email.split('@')[0] : 'user',
+          });
+        } catch (e) {
+          console.error('Profile fetch error (authStateChange):', e);
+          if (mounted) {
+            setProfile({
+              id: session.user.id,
+              name: session.user.email,
+              role: 'owner',
+              store_id: null,
+              username: session.user.email ? session.user.email.split('@')[0] : 'user',
+            });
+          }
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      } else {
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+      }
+    });
 
     return () => {
-      cancelled = true;
-      clearTimeout(ceiling);
-      try { subscription?.unsubscribe(); } catch {}
+      mounted = false;
+      clearTimeout(timeout);
+      try { subscription.unsubscribe(); } catch {}
     };
   }, []);
 
@@ -142,19 +112,18 @@ export function AuthProvider({ children }) {
     try {
       await supabase.auth.signOut();
     } catch (e) {
-      console.warn('[auth] signOut failed:', e.message);
-    } finally {
-      setUser(null);
-      setProfile(null);
-      window.location.href = '/login';
+      console.error('signOut error:', e);
     }
+    setUser(null);
+    setProfile(null);
+    window.location.href = '/login';
   };
 
   const isOwner = profile?.role === 'owner';
   const isEmployee = profile?.role === 'employee';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, error, signOut, isOwner, isEmployee, supabase }}>
+    <AuthContext.Provider value={{ user, profile, loading, signOut, isOwner, isEmployee, supabase }}>
       {children}
     </AuthContext.Provider>
   );
