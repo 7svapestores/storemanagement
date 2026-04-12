@@ -40,8 +40,6 @@ export default function LoginPage() {
     }
   };
 
-  const quickLogin = (em, pw) => { setEmail(em); setPassword(pw); };
-
   return (
     <div className="min-h-screen flex items-center justify-center p-5" style={{ background: 'radial-gradient(ellipse at 20% 30%, #0D1B2A, #060A10 65%)' }}>
       <div className="w-full max-w-sm">
@@ -69,18 +67,6 @@ export default function LoginPage() {
             style={{ background: 'linear-gradient(135deg, #60A5FA, #93C5FD)' }}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-
-          <div className="mt-4 p-3 bg-sw-card2 rounded-lg border border-sw-border">
-            <p className="text-sw-dim text-[10px] font-bold uppercase mb-2">Quick Login</p>
-            <button type="button" onClick={() => quickLogin('admin@7sstores.com', 'admin123')}
-              className="w-full text-left py-1.5 px-2 rounded text-xs text-sw-sub hover:bg-sw-border/30 font-mono">
-              Owner: admin@7sstores.com
-            </button>
-            <button type="button" onClick={() => quickLogin('bells@7sstores.com', 'emp123')}
-              className="w-full text-left py-1.5 px-2 rounded text-xs text-sw-sub hover:bg-sw-border/30 font-mono">
-              Employee: bells@7sstores.com
-            </button>
-          </div>
         </form>
       </div>
     </div>
