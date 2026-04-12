@@ -128,7 +128,7 @@ export function Modal({ title, onClose, children, wide }) {
 export function ConfirmModal({ title = 'Are you sure?', message, onCancel, onConfirm, confirmLabel = 'Delete', confirmVariant = 'danger' }) {
   return (
     <Modal title={title} onClose={onCancel}>
-      <p className="text-sw-sub text-[13px] mb-4">{message}</p>
+      <div className="text-sw-sub text-[13px] mb-4">{message}</div>
       <div className="flex gap-2 justify-end">
         <Button variant="secondary" onClick={onCancel}>Cancel</Button>
         <Button variant={confirmVariant} onClick={onConfirm}>{confirmLabel}</Button>

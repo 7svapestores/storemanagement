@@ -51,7 +51,8 @@ export default function SalesPage() {
     const cd = parseFloat(form.card_sales) || 0;
     const data = {
       store_id: isEmployee ? profile.store_id : form.store_id,
-      date: form.date,
+      // Employees can only enter for today, regardless of what's in the form.
+      date: isEmployee ? today() : form.date,
       cash_sales: cs,
       card_sales: cd,
       credits: parseFloat(form.credits) || 0,
@@ -193,7 +194,7 @@ export default function SalesPage() {
           </div>
         ) : (
           <div className="bg-sw-card rounded-xl p-5 border border-sw-border mb-4">
-            <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             <div className="grid grid-cols-2 gap-2.5">
               <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
               <Field label="Card Sales"><input type="number" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value })} /></Field>
@@ -280,8 +281,16 @@ export default function SalesPage() {
 
       {confirmDelete && (
         <ConfirmModal
-          title="Delete this sale?"
-          message={`Are you sure? This will be logged in the activity trail. Deleting daily sale for ${confirmDelete.stores?.name || 'store'} on ${shortDate(confirmDelete.date)}.`}
+          title="Are you sure you want to delete this sale?"
+          message={
+            <>
+              <div className="mb-1"><span className="text-sw-sub">Store: </span><span className="text-sw-text font-semibold">{confirmDelete.stores?.name || stores.find(s => s.id === confirmDelete.store_id)?.name || '—'}</span></div>
+              <div className="mb-1"><span className="text-sw-sub">Date: </span><span className="text-sw-text font-semibold">{shortDate(confirmDelete.date)}</span></div>
+              <div className="mb-3"><span className="text-sw-sub">Total: </span><span className="text-sw-green font-extrabold font-mono">{fmtMoney(confirmDelete.total_sales)}</span></div>
+              <div className="text-sw-sub text-[12px]">This action will be logged in the Activity Log and cannot be undone.</div>
+            </>
+          }
+          confirmLabel="Yes, Delete"
           onCancel={() => setConfirmDelete(null)}
           onConfirm={confirmDeleteSale}
         />
