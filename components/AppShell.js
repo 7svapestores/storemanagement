@@ -16,6 +16,15 @@ export default function AppShell({ children }) {
     }
   }, [loading, user]);
 
+  // Employees only have one page (/sales). If they land anywhere else, route them there.
+  useEffect(() => {
+    if (!loading && profile && profile.role === 'employee') {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/sales') {
+        router.replace('/sales');
+      }
+    }
+  }, [loading, profile, router]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-sw-bg p-6">

@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
+import { fetchProfile, clearProfileCache } from '@/lib/auth-check';
 
 const AuthContext = createContext(null);
 
@@ -30,30 +31,23 @@ export function AuthProvider({ children }) {
         }
         if (mounted) setUser(user);
 
-        // Fetch profile
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (profileError) console.error('Profile fetch error:', profileError);
-
-        if (mounted) {
-          if (profileData) {
-            setProfile(profileData);
-          } else {
-            console.warn('Profile not found for user, using fallback');
-            setProfile({
-              id: user.id,
-              name: user.email,
-              role: 'owner',
-              store_id: null,
-              username: user.email ? user.email.split('@')[0] : 'user',
-            });
-          }
-          setLoading(false);
+        // Fetch profile via the /api/profile route (uses service role key,
+        // bypasses RLS entirely — can't stall on a bad policy).
+        const p = await fetchProfile({ force: true });
+        if (!mounted) return;
+        if (p) {
+          setProfile(p);
+        } else {
+          console.warn('Profile API returned null — using fallback');
+          setProfile({
+            id: user.id,
+            name: user.email,
+            role: 'owner',
+            store_id: null,
+            username: user.email ? user.email.split('@')[0] : 'user',
+          });
         }
+        setLoading(false);
       } catch (err) {
         console.error('Auth init error:', err);
         if (mounted) setLoading(false);
@@ -67,13 +61,9 @@ export function AuthProvider({ children }) {
       if (session?.user) {
         setUser(session.user);
         try {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+          const p = await fetchProfile({ force: true });
           if (!mounted) return;
-          setProfile(data || {
+          setProfile(p || {
             id: session.user.id,
             name: session.user.email,
             role: 'owner',
@@ -95,6 +85,7 @@ export function AuthProvider({ children }) {
           if (mounted) setLoading(false);
         }
       } else {
+        clearProfileCache();
         setUser(null);
         setProfile(null);
         setLoading(false);
@@ -114,6 +105,7 @@ export function AuthProvider({ children }) {
     } catch (e) {
       console.error('signOut error:', e);
     }
+    clearProfileCache();
     setUser(null);
     setProfile(null);
     window.location.href = '/login';
