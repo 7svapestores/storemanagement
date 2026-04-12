@@ -74,8 +74,31 @@ export default function SalesPage() {
         metadata: { before: editItem, after: data },
       });
     } else {
+      // Duplicate guard: employees cannot submit twice for the same store/date.
+      // Owners are allowed to bypass (e.g. correcting missed entries).
+      if (!isOwner) {
+        const { data: existing } = await supabase
+          .from('daily_sales')
+          .select('id')
+          .eq('store_id', data.store_id)
+          .eq('date', data.date)
+          .maybeSingle();
+        if (existing) {
+          setMsg(`Sales already entered for this store on ${shortDate(data.date)}. Contact the owner if you need to make changes.`);
+          return;
+        }
+      }
+
       const { data: inserted, error } = await supabase.from('daily_sales').insert(data).select().single();
-      if (error) { setMsg(error.message); return; }
+      if (error) {
+        // Postgres unique_violation. Translate the raw error into a clear message.
+        if (error.code === '23505' || /duplicate key|unique/i.test(error.message)) {
+          setMsg(`Sales already entered for this store on ${shortDate(data.date)}. Contact the owner if you need to make changes.`);
+        } else {
+          setMsg(error.message);
+        }
+        return;
+      }
       await logActivity(supabase, profile, {
         action: 'create',
         entityType: 'daily_sales',
@@ -127,30 +150,67 @@ export default function SalesPage() {
 
   // ── Employee simplified view ────────────────────────────
   if (isEmployee) {
+    const todayStr = today();
+    const todayEntry = sales.find(s => s.date === todayStr && s.store_id === profile?.store_id);
+    const storeName = stores.find(s => s.id === profile?.store_id)?.name;
+
     return (
       <div className="max-w-xl mx-auto">
-        <PageHeader title="Enter Daily Sales" subtitle={stores.find(s => s.id === profile?.store_id)?.name} />
+        <PageHeader title="Enter Daily Sales" subtitle={storeName} />
         {msg === 'success' && <Alert type="success">Sales recorded!</Alert>}
         {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
 
-        <div className="bg-sw-card rounded-xl p-5 border border-sw-border mb-4">
-          <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-2.5">
-            <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
-            <Field label="Card Sales"><input type="number" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value })} /></Field>
-          </div>
-          <Field label="Credits"><input type="number" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value })} /></Field>
-          <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
-
-          {total > 0 && (
-            <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border flex justify-between">
-              <span className="text-sw-text text-[13px] font-bold">Total</span>
-              <span className="text-sw-green text-base font-extrabold font-mono">{fmt(total)}</span>
+        {todayEntry ? (
+          <div className="bg-sw-greenD rounded-xl p-5 border border-sw-green/30 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">✅</span>
+              <div>
+                <div className="text-sw-green text-base font-extrabold">Today's sales have been submitted</div>
+                <div className="text-sw-sub text-[11px]">{dayLabel(todayEntry.date)} · {storeName}</div>
+              </div>
             </div>
-          )}
+            <div className="grid grid-cols-2 gap-2 bg-sw-card2 rounded-lg p-3 border border-sw-border">
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase">Cash</div>
+                <div className="text-sw-text font-mono font-bold">{fmt(todayEntry.cash_sales)}</div>
+              </div>
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase">Card</div>
+                <div className="text-sw-text font-mono font-bold">{fmt(todayEntry.card_sales)}</div>
+              </div>
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase">Credits</div>
+                <div className="text-sw-text font-mono">{fmt(todayEntry.credits || 0)}</div>
+              </div>
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase">Total</div>
+                <div className="text-sw-green font-mono font-extrabold">{fmt(todayEntry.total_sales)}</div>
+              </div>
+            </div>
+            <p className="text-sw-sub text-[11px] mt-3">
+              🔒 Only the owner can edit today's entry. Contact the owner if you need to make a correction.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-sw-card rounded-xl p-5 border border-sw-border mb-4">
+            <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
+              <Field label="Card Sales"><input type="number" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value })} /></Field>
+            </div>
+            <Field label="Credits"><input type="number" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value })} /></Field>
+            <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
 
-          <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl">Submit Sales</Button>
-        </div>
+            {total > 0 && (
+              <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border flex justify-between">
+                <span className="text-sw-text text-[13px] font-bold">Total</span>
+                <span className="text-sw-green text-base font-extrabold font-mono">{fmt(total)}</span>
+              </div>
+            )}
+
+            <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl">Submit Sales</Button>
+          </div>
+        )}
 
         <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
           <div className="px-3 py-2 border-b border-sw-border"><h3 className="text-sw-text text-xs font-bold">Recent Entries (read-only)</h3></div>
