@@ -10,6 +10,7 @@ export default function SalesPage() {
   const [sales, setSales] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [msg, setMsg] = useState('');
@@ -19,19 +20,26 @@ export default function SalesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
-    setStores(storeData || []);
+    setLoadError('');
+    try {
+      const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
+      setStores(storeData || []);
 
-    let q = supabase.from('daily_sales').select('*, stores(name, color), profiles!daily_sales_entered_by_fkey(name)')
-      .gte('date', range.start).lte('date', range.end).order('date', { ascending: false });
-    if (storeId) q = q.eq('store_id', storeId);
-    const { data } = await q;
-    setSales(data || []);
+      let q = supabase.from('daily_sales').select('*, stores(name, color), profiles!daily_sales_entered_by_fkey(name)')
+        .gte('date', range.start).lte('date', range.end).order('date', { ascending: false });
+      if (storeId) q = q.eq('store_id', storeId);
+      const { data } = await q;
+      setSales(data || []);
 
-    if (!form.store_id && storeData?.length) {
-      setForm(f => ({ ...f, store_id: storeId || storeData[0].id }));
+      if (!form.store_id && storeData?.length) {
+        setForm(f => ({ ...f, store_id: storeId || storeData[0].id }));
+      }
+    } catch (e) {
+      console.error('[sales] load failed:', e);
+      setLoadError(e?.message || 'Failed to load sales data');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [range.start, range.end, storeId]);
 
   useEffect(() => { load(); }, [load]);
@@ -132,6 +140,7 @@ export default function SalesPage() {
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
+      {loadError && <Alert type="error">{loadError}</Alert>}
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert } from '@/components/UI';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 
 export default function CashPage() {
@@ -10,27 +10,35 @@ export default function CashPage() {
   const [recon, setRecon] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ store_id: '', date: today(), cash_collected: '', note: '' });
   const [expected, setExpected] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: st } = await supabase.from('stores').select('*').order('created_at');
-    setStores(st || []);
-    const { data: sales } = await supabase.from('daily_sales').select('store_id, date, cash_sales').gte('date', range.start).lte('date', range.end);
-    const { data: cash } = await supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end);
-    const map = {};
-    sales?.forEach(s => { const k = `${s.store_id}_${s.date}`; map[k] = { ...(map[k]||{}), store_id: s.store_id, date: s.date, cash_sales: (map[k]?.cash_sales||0) + s.cash_sales }; });
-    cash?.forEach(c => { const k = `${c.store_id}_${c.date}`; map[k] = { ...(map[k]||{}), store_id: c.store_id, date: c.date, cash_collected: (map[k]?.cash_collected||0) + c.cash_collected }; });
-    const rows = Object.values(map).map(r => {
-      const cs = r.cash_sales||0, cc = r.cash_collected||0, so = +(cc-cs).toFixed(2);
-      const store = st?.find(s => s.id === r.store_id);
-      return { ...r, id: `${r.store_id}_${r.date}`, cash_sales: cs, cash_collected: cc, short_over: so, status: !cc ? 'pending' : Math.abs(so) < 0.01 ? 'matched' : so > 0 ? 'over' : 'short', store_name: store?.name, store_color: store?.color };
-    }).sort((a,b) => b.date.localeCompare(a.date));
-    setRecon(rows);
-    if (!form.store_id && st?.length) setForm(f => ({...f, store_id: st[0].id}));
-    setLoading(false);
+    setLoadError('');
+    try {
+      const { data: st } = await supabase.from('stores').select('*').order('created_at');
+      setStores(st || []);
+      const { data: sales } = await supabase.from('daily_sales').select('store_id, date, cash_sales').gte('date', range.start).lte('date', range.end);
+      const { data: cash } = await supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end);
+      const map = {};
+      sales?.forEach(s => { const k = `${s.store_id}_${s.date}`; map[k] = { ...(map[k]||{}), store_id: s.store_id, date: s.date, cash_sales: (map[k]?.cash_sales||0) + s.cash_sales }; });
+      cash?.forEach(c => { const k = `${c.store_id}_${c.date}`; map[k] = { ...(map[k]||{}), store_id: c.store_id, date: c.date, cash_collected: (map[k]?.cash_collected||0) + c.cash_collected }; });
+      const rows = Object.values(map).map(r => {
+        const cs = r.cash_sales||0, cc = r.cash_collected||0, so = +(cc-cs).toFixed(2);
+        const store = st?.find(s => s.id === r.store_id);
+        return { ...r, id: `${r.store_id}_${r.date}`, cash_sales: cs, cash_collected: cc, short_over: so, status: !cc ? 'pending' : Math.abs(so) < 0.01 ? 'matched' : so > 0 ? 'over' : 'short', store_name: store?.name, store_color: store?.color };
+      }).sort((a,b) => b.date.localeCompare(a.date));
+      setRecon(rows);
+      if (!form.store_id && st?.length) setForm(f => ({...f, store_id: st[0].id}));
+    } catch (e) {
+      console.error('[cash] load failed:', e);
+      setLoadError(e?.message || 'Failed to load cash data');
+    } finally {
+      setLoading(false);
+    }
   }, [range.start, range.end]);
 
   useEffect(() => { load(); }, [load]);
@@ -52,6 +60,7 @@ export default function CashPage() {
 
   return (<div>
     <PageHeader title="🏦 Cash Collection" subtitle="Auto short/over vs sales"><Button onClick={() => { setForm({ store_id: stores[0]?.id||'', date: today(), cash_collected: '', note: '' }); setModal('add'); }}>+ Collect</Button></PageHeader>
+    {loadError && <Alert type="error">{loadError}</Alert>}
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="flex gap-2.5 flex-wrap mb-3.5">
       <StatCard label="Total Short" value={fmt(totalShort)} icon="🔴" color="#F87171" />

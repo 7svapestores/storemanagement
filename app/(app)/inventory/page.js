@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert } from '@/components/UI';
 import { fmt, fK, downloadCSV, PRODUCT_CATEGORIES } from '@/lib/utils';
 
 export default function InventoryPage() {
@@ -10,6 +10,7 @@ export default function InventoryPage() {
   const [stores, setStores] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [modal, setModal] = useState(null);
@@ -18,19 +19,26 @@ export default function InventoryPage() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: st }, { data: v }] = await Promise.all([
-      supabase.from('stores').select('*').order('created_at'),
-      supabase.from('vendors').select('*').order('name'),
-    ]);
-    setStores(st||[]); setVendors(v||[]);
+    setLoadError('');
+    try {
+      const [{ data: st }, { data: v }] = await Promise.all([
+        supabase.from('stores').select('*').order('created_at'),
+        supabase.from('vendors').select('*').order('name'),
+      ]);
+      setStores(st||[]); setVendors(v||[]);
 
-    let q = supabase.from('inventory').select('*, stores(name, color), vendors(name)').eq('is_active', true).order('stock', { ascending: true });
-    if (catFilter) q = q.eq('category', catFilter);
-    if (search) q = q.ilike('name', `%${search}%`);
-    const { data } = await q;
-    setItems(data||[]);
-    if (!form.store_id && st?.length) setForm(f => ({...f, store_id: st[0].id, vendor_id: v?.[0]?.id||''}));
-    setLoading(false);
+      let q = supabase.from('inventory').select('*, stores(name, color), vendors(name)').eq('is_active', true).order('stock', { ascending: true });
+      if (catFilter) q = q.eq('category', catFilter);
+      if (search) q = q.ilike('name', `%${search}%`);
+      const { data } = await q;
+      setItems(data||[]);
+      if (!form.store_id && st?.length) setForm(f => ({...f, store_id: st[0].id, vendor_id: v?.[0]?.id||''}));
+    } catch (e) {
+      console.error('[inventory] load failed:', e);
+      setLoadError(e?.message || 'Failed to load inventory');
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, [catFilter, search]);
 
@@ -47,6 +55,7 @@ export default function InventoryPage() {
       <Button variant="secondary" onClick={() => downloadCSV('inventory.csv', ['Store','Product','Category','Cost','Sell','Margin%','Stock','Reorder','Status'], items.map(i => [i.stores?.name, i.name, i.category, i.cost_price, i.sell_price, ((i.sell_price-i.cost_price)/i.sell_price*100).toFixed(1), i.stock, i.reorder_level, i.stock <= i.reorder_level ? 'LOW' : 'OK']))} className="!text-[11px]">📥 CSV</Button>
       <Button onClick={() => { setForm({ store_id: stores[0]?.id||'', name:'', category:PRODUCT_CATEGORIES[0], cost_price:'', sell_price:'', stock:'', reorder_level:'10', vendor_id: vendors[0]?.id||'' }); setModal('add'); }}>+ Add</Button>
     </PageHeader>
+    {loadError && <Alert type="error">{loadError}</Alert>}
     <div className="flex gap-2.5 flex-wrap mb-3.5">
       <StatCard label="Cost Value" value={fK(totalValue)} icon="💵" color="#FBBF24" />
       <StatCard label="Retail Value" value={fK(totalRetail)} icon="🏷️" color="#34D399" />

@@ -12,12 +12,15 @@ export default function DashboardPage() {
   const [stores, setStores] = useState([]);
   const [lowStock, setLowStock] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const storeId = isOwner ? null : profile?.store_id;
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      setLoadError('');
+      try {
 
       // Get stores
       const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
@@ -72,8 +75,12 @@ export default function DashboardPage() {
         .map(([week, d]) => ({ week, ...d, diff: d.sales - d.purchases, label: weekLabel(week) }))
         .sort((a, b) => a.week.localeCompare(b.week));
       setTrends(trendData);
-
-      setLoading(false);
+      } catch (e) {
+        console.error('[dashboard] load failed:', e);
+        setLoadError(e?.message || 'Failed to load dashboard data');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [range.start, range.end, storeId]);
@@ -85,6 +92,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" subtitle={storeId ? stores.find(s => s.id === storeId)?.name : 'All Stores'} />
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
+      {loadError && <Alert type="error">{loadError}</Alert>}
       {lowStock > 0 && <Alert type="warning"><b>{lowStock}</b> items below reorder level</Alert>}
 
       {stats && (

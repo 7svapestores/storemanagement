@@ -16,13 +16,27 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+      // Try client router first, then fall back to a hard navigation so we
+      // never get stuck on the login form after a successful sign-in.
+      try {
+        router.push('/dashboard');
+        router.refresh();
+      } catch {}
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/login')) {
+          window.location.href = '/dashboard';
+        }
+      }, 600);
+    } catch (err) {
+      setError(err?.message || 'Login failed');
       setLoading(false);
-    } else {
-      router.push('/dashboard');
-      router.refresh();
     }
   };
 
