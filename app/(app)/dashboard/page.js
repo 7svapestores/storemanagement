@@ -161,7 +161,7 @@ export default function DashboardPage() {
       )}
 
       {stats && (
-        <div className="flex gap-2.5 flex-wrap mb-3.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
           <StatCard label="Total Sales" value={fK(stats.totalSales)} icon="💰" color="#34D399" sub={`Cash ${fK(stats.totalCash)} · Card ${fK(stats.totalCard)}`} />
           <StatCard label="Purchases" value={fK(stats.totalPurch)} icon="🛒" color={stats.totalPurch > stats.totalSales ? '#F87171' : '#FBBF24'} />
           <StatCard label="Net Profit" value={fK(stats.net)} icon={stats.net >= 0 ? '✅' : '⚠️'} color={stats.net >= 0 ? '#34D399' : '#F87171'} />
@@ -169,9 +169,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="bg-sw-card rounded-xl p-4 border border-sw-border mb-3.5">
+      <div className="bg-sw-card rounded-xl p-4 border border-sw-border mb-3.5 max-w-full overflow-hidden">
         <h3 className="text-sw-text text-[13px] font-bold mb-3">Purchases vs Sales — Weekly</h3>
-        <TrendChart data={trends} />
+        <div className="max-w-full overflow-x-auto">
+          <TrendChart data={trends} />
+        </div>
       </div>
 
       {/* Recent activity feed (owner only) */}

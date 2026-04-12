@@ -46,7 +46,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────── */}
-      <div className="hidden md:flex w-[210px] min-h-screen bg-sw-card border-r border-sw-border flex-col flex-shrink-0 overflow-y-auto">
+      <div className="hidden md:flex w-[210px] flex-shrink-0 sticky top-0 h-screen self-start bg-sw-card border-r border-sw-border flex-col overflow-y-auto">
         {/* Logo */}
         <div className="p-3.5 border-b border-sw-border flex items-center gap-2">
           <span className="text-lg">🏪</span>
