@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Outfit', system-ui, sans-serif; background: #060A10; color: #E2E8F0; -webkit-font-smoothing: antialiased; }
+input, select, button, textarea { font-family: inherit; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1A2536; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #263A54; }
+
+/* Input styles */
+input[type="text"], input[type="number"], input[type="date"], input[type="month"],
+input[type="email"], input[type="password"], input[type="search"], select, textarea {
+  width: 100%;
+  padding: 9px 12px;
+  background: #131C28;
+  border: 1px solid #1A2536;
+  border-radius: 8px;
+  color: #E2E8F0;
+  font-size: 13px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: #60A5FA; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 10px 12px; color: #475569; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #1A2536; white-space: nowrap; }
+td { padding: 8px 12px; color: #E2E8F0; font-size: 13px; white-space: nowrap; }
+tr:hover td { background: #131C28; }
