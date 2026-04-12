@@ -24,14 +24,50 @@ export default function SalesPage() {
     setLoading(true);
     setLoadError('');
     try {
-      const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
+      const { data: storeData, error: storeErr } = await supabase
+        .from('stores').select('*').order('created_at');
+      if (storeErr) console.error('[sales] stores query error:', storeErr);
       setStores(storeData || []);
 
-      let q = supabase.from('daily_sales').select('*, stores(name, color), profiles!daily_sales_entered_by_fkey(name)')
-        .gte('date', range.start).lte('date', range.end).order('date', { ascending: false });
+      // Drop the profiles!fkey embed — that join was failing silently when
+      // the FK constraint name didn't match. Fetch profiles separately and
+      // merge in JS so we still show "entered by".
+      let q = supabase
+        .from('daily_sales')
+        .select('*, stores(name, color)')
+        .gte('date', range.start)
+        .lte('date', range.end)
+        .order('date', { ascending: false });
       if (storeId) q = q.eq('store_id', storeId);
-      const { data } = await q;
-      setSales(data || []);
+
+      const { data: salesData, error: salesErr } = await q;
+      if (salesErr) {
+        console.error('[sales] daily_sales query error:', salesErr);
+        throw salesErr;
+      }
+      console.log('[sales] loaded', salesData?.length, 'rows', { range, storeId });
+
+      // Lookup entered_by names in a single follow-up query.
+      const enteredByIds = [...new Set((salesData || []).map(r => r.entered_by).filter(Boolean))];
+      let nameById = {};
+      if (enteredByIds.length) {
+        const { data: profs, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, name, role')
+          .in('id', enteredByIds);
+        if (profErr) {
+          console.warn('[sales] profile lookup failed (non-fatal):', profErr);
+        } else {
+          nameById = Object.fromEntries((profs || []).map(p => [p.id, p]));
+        }
+      }
+
+      const merged = (salesData || []).map(r => ({
+        ...r,
+        profiles: nameById[r.entered_by] || null,
+      }));
+
+      setSales(merged);
 
       if (!form.store_id && storeData?.length) {
         setForm(f => ({ ...f, store_id: storeId || storeData[0].id }));
