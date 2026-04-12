@@ -5,7 +5,7 @@ import { StatCard, DateBar, useDateRange, TrendChart, PageHeader, Alert, Loading
 import { fK, fmt, weekLabel, today } from '@/lib/utils';
 
 export default function DashboardPage() {
-  const { supabase, isOwner, profile } = useAuth();
+  const { supabase, isOwner, profile, effectiveStoreId } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
   const [stats, setStats] = useState(null);
   const [trends, setTrends] = useState([]);
@@ -16,7 +16,9 @@ export default function DashboardPage() {
   const [todaySales, setTodaySales] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
 
-  const storeId = isOwner ? null : profile?.store_id;
+  // Dashboard honors the sidebar store selector. Employees are always scoped
+  // to their own store via effectiveStoreId in AuthProvider.
+  const storeId = effectiveStoreId;
 
   useEffect(() => {
     const load = async () => {
@@ -106,7 +108,9 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle={storeId ? stores.find(s => s.id === storeId)?.name : 'All Stores'} />
+      <PageHeader
+        title={storeId ? `Dashboard — ${stores.find(s => s.id === storeId)?.name || 'Store'}` : 'Dashboard — All Stores'}
+      />
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {loadError && <Alert type="error">{loadError}</Alert>}

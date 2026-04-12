@@ -5,21 +5,24 @@ import { DataTable, DateBar, useDateRange, TrendChart, PageHeader, StatCard, Loa
 import { fmt, fK, weekLabel } from '@/lib/utils';
 
 export default function TrendsPage() {
-  const { supabase, isOwner } = useAuth();
+  const { supabase, isOwner, effectiveStoreId } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last90');
   const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { (async () => {
     setLoading(true);
-    const { data: sales } = await supabase.from('daily_sales').select('date, total_sales').gte('date', range.start).lte('date', range.end);
-    const { data: purch } = await supabase.from('purchases').select('week_of, total_cost').gte('week_of', range.start).lte('week_of', range.end);
+    let salesQ = supabase.from('daily_sales').select('date, total_sales, store_id').gte('date', range.start).lte('date', range.end);
+    let purchQ = supabase.from('purchases').select('week_of, total_cost, store_id').gte('week_of', range.start).lte('week_of', range.end);
+    if (effectiveStoreId) { salesQ = salesQ.eq('store_id', effectiveStoreId); purchQ = purchQ.eq('store_id', effectiveStoreId); }
+    const { data: sales } = await salesQ;
+    const { data: purch } = await purchQ;
     const map = {};
     sales?.forEach(s => { const d = new Date(s.date); const dy = d.getDay(); d.setDate(d.getDate()-dy+(dy===0?-6:1)); const w = d.toISOString().split('T')[0]; map[w] = {...(map[w]||{sales:0,purchases:0}), sales: (map[w]?.sales||0)+(s.total_sales||0)}; });
     purch?.forEach(p => { const w = (typeof p.week_of === 'string' ? p.week_of : new Date(p.week_of).toISOString()).split('T')[0]; map[w] = {...(map[w]||{sales:0,purchases:0}), purchases: (map[w]?.purchases||0)+(p.total_cost||0)}; });
     setTrends(Object.entries(map).map(([w,d]) => ({week:w,...d,diff:d.sales-d.purchases,label:weekLabel(w)})).sort((a,b) => a.week.localeCompare(b.week)));
     setLoading(false);
-  })(); }, [range.start, range.end]);
+  })(); }, [range.start, range.end, effectiveStoreId]);
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
