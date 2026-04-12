@@ -87,7 +87,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
 
         {/* User */}
         <div className="p-2 border-t border-sw-border">
-          <div className="flex items-center gap-1.5 p-1.5">
+          <div className="flex items-center gap-1.5 p-1.5 mb-1.5">
             <div className={`w-[26px] h-[26px] rounded-md flex items-center justify-center text-[11px] font-bold
               ${isOwner ? 'bg-sw-blue text-black' : 'bg-sw-blueD text-sw-blue'}`}>
               {profile?.name?.[0]}
@@ -96,8 +96,14 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
               <div className="text-sw-text text-[11px] font-semibold truncate">{profile?.name}</div>
               <div className="text-sw-dim text-[9px] capitalize">{profile?.role}</div>
             </div>
-            <button onClick={signOut} className="text-sw-dim hover:text-sw-text text-xs" title="Logout">⏻</button>
           </div>
+          <button
+            onClick={signOut}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-md text-[12px] font-bold bg-sw-redD text-sw-red border border-sw-red/30 hover:bg-sw-red/20 transition-colors"
+          >
+            <span className="text-[13px]">⏻</span>
+            Sign Out
+          </button>
         </div>
       </div>
 
