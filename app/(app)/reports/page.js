@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, StatCard, Loading, StoreBadge, Alert, Button } from '@/components/UI';
-import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, previousRange } from '@/lib/utils';
+import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
 
 export default function ReportsPage() {
-  const { supabase, isOwner } = useAuth();
+  const { supabase, isOwner, effectiveStoreId } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('thismonth');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -19,6 +20,11 @@ export default function ReportsPage() {
   const [dailyTrend, setDailyTrend] = useState([]);
   const [trendStats, setTrendStats] = useState(null);
   const [cashRecon, setCashRecon] = useState(null);
+  // Raw rows captured in state so the Excel/CSV export can emit detail sheets.
+  const [rawSales, setRawSales] = useState([]);
+  const [rawPurch, setRawPurch] = useState([]);
+  const [rawExp, setRawExp] = useState([]);
+  const [rawCash, setRawCash] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -31,6 +37,7 @@ export default function ReportsPage() {
         const prev = previousRange(range);
 
         // Pull everything in parallel for current and previous periods.
+        const scope = (q) => effectiveStoreId ? q.eq('store_id', effectiveStoreId) : q;
         const [
           { data: salesCur },
           { data: salesPrev },
@@ -40,14 +47,19 @@ export default function ReportsPage() {
           { data: expPrev },
           { data: cashCur },
         ] = await Promise.all([
-          supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end),
-          supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end),
-          supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end),
-          supabase.from('purchases').select('total_cost').gte('week_of', prev.start).lte('week_of', prev.end),
-          supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7)),
-          supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7)),
-          supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end),
+          scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
+          scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
+          scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
+          scope(supabase.from('purchases').select('total_cost').gte('week_of', prev.start).lte('week_of', prev.end)),
+          scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
+          scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
+          scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
         ]);
+
+        setRawSales(salesCur || []);
+        setRawPurch(purchCur || []);
+        setRawExp(expCur || []);
+        setRawCash(cashCur || []);
 
         // ── Section 1 — Summary ─────────────────────────
         const totalRevenue = (salesCur || []).reduce((s, r) => s + (r.total_sales || 0), 0);
@@ -163,33 +175,285 @@ export default function ReportsPage() {
       }
     };
     load();
-  }, [range.start, range.end]);
+  }, [range.start, range.end, effectiveStoreId]);
+
+  // Build a single "Full Report" sheet — same shape for both Excel sheet 1 and CSV.
+  const buildFullReportRows = () => {
+    if (!summary) return [];
+    const selectedName = effectiveStoreId
+      ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
+      : 'All Stores';
+    const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = (n) => `${Number(n || 0).toFixed(2)}%`;
+
+    const rows = [];
+    rows.push(['7S STORES - PROFIT & LOSS REPORT']);
+    rows.push([`Period: ${range.start} to ${range.end}`]);
+    rows.push([`Generated: ${new Date().toISOString().split('T')[0]}`]);
+    rows.push([`Store: ${selectedName}`]);
+    rows.push([]);
+
+    // ── Revenue Summary
+    rows.push(['=== REVENUE SUMMARY ===']);
+    rows.push(['Metric', 'Amount']);
+    rows.push(['Total Revenue', money(summary.totalRevenue)]);
+    rows.push(['Total Cash Sales', money(summary.totalCash)]);
+    rows.push(['Total Card Sales', money(summary.totalCard)]);
+    rows.push(['Cash %', pct(summary.cashPct)]);
+    rows.push(['Card %', pct(summary.cardPct)]);
+    rows.push(['Tax Collected', money(summary.totalTax)]);
+    rows.push([]);
+
+    // ── Cost Summary
+    rows.push(['=== COST SUMMARY ===']);
+    rows.push(['Total Purchases (Product Buying)', money(summary.totalPurchases)]);
+    rows.push(['Total Expenses (Operating)', money(summary.totalExpenses)]);
+    rows.push(['Total Costs', money(summary.totalPurchases + summary.totalExpenses)]);
+    rows.push([]);
+
+    // ── Profit Calculation
+    rows.push(['=== PROFIT CALCULATION ===']);
+    rows.push(['Gross Profit (Revenue - Purchases)', money(summary.grossProfit)]);
+    rows.push(['Net Profit (Revenue - Purchases - Expenses)', money(summary.netProfit)]);
+    const grossMargin = summary.totalRevenue > 0 ? (summary.grossProfit / summary.totalRevenue) * 100 : 0;
+    rows.push(['Gross Margin %', pct(grossMargin)]);
+    rows.push(['Net Margin %', pct(summary.margin)]);
+    rows.push([]);
+
+    // ── Store-by-store
+    rows.push(['=== STORE-BY-STORE PERFORMANCE ===']);
+    rows.push(['Store', 'Revenue', 'Cash', 'Card', 'Purchases', 'Expenses', 'Gross Profit', 'Net Profit', 'Net Margin %', 'Tax']);
+    const storeTotals = { revenue: 0, cash: 0, card: 0, purchases: 0, expenses: 0, gross: 0, net: 0, tax: 0 };
+    const salesByStore = {};
+    rawSales.forEach(s => {
+      if (!salesByStore[s.store_id]) salesByStore[s.store_id] = { cash: 0, card: 0 };
+      salesByStore[s.store_id].cash += (s.cash_sales || 0);
+      salesByStore[s.store_id].card += (s.card_sales || 0);
+    });
+    storeRows.forEach(s => {
+      const sbs = salesByStore[s.id] || { cash: 0, card: 0 };
+      rows.push([
+        s.name,
+        money(s.revenue),
+        money(sbs.cash),
+        money(sbs.card),
+        money(s.purchases),
+        money(s.expenses),
+        money(s.gross),
+        money(s.net),
+        pct(s.margin),
+        money(s.tax),
+      ]);
+      storeTotals.revenue += s.revenue;
+      storeTotals.cash += sbs.cash;
+      storeTotals.card += sbs.card;
+      storeTotals.purchases += s.purchases;
+      storeTotals.expenses += s.expenses;
+      storeTotals.gross += s.gross;
+      storeTotals.net += s.net;
+      storeTotals.tax += s.tax;
+    });
+    const totalMargin = storeTotals.revenue > 0 ? (storeTotals.net / storeTotals.revenue) * 100 : 0;
+    rows.push([
+      'TOTAL',
+      money(storeTotals.revenue),
+      money(storeTotals.cash),
+      money(storeTotals.card),
+      money(storeTotals.purchases),
+      money(storeTotals.expenses),
+      money(storeTotals.gross),
+      money(storeTotals.net),
+      pct(totalMargin),
+      money(storeTotals.tax),
+    ]);
+    rows.push([]);
+
+    // ── Expenses by category × store matrix
+    rows.push(['=== EXPENSES BY CATEGORY ===']);
+    const storeHeader = ['Category', ...storeRows.map(s => s.name), 'TOTAL'];
+    rows.push(storeHeader);
+    // Collect all category keys — fixed ones in order, then any custom ones present.
+    const seenCustom = new Set();
+    rawExp.forEach(r => { if (!FIXED_EXPENSE_IDS.has(r.category)) seenCustom.add(r.category); });
+    const allCategories = [
+      ...EXPENSE_CATEGORIES.map(c => ({ id: c.id, label: `${c.icon} ${c.label}` })),
+      ...[...seenCustom].sort().map(id => ({ id, label: `✨ ${id}` })),
+    ];
+    const colTotals = new Array(storeRows.length).fill(0);
+    let grandExpTotal = 0;
+    allCategories.forEach(cat => {
+      const row = [cat.label];
+      let rowTotal = 0;
+      storeRows.forEach((s, i) => {
+        const amt = rawExp
+          .filter(r => r.store_id === s.id && r.category === cat.id)
+          .reduce((sum, r) => sum + (r.amount || 0), 0);
+        row.push(money(amt));
+        colTotals[i] += amt;
+        rowTotal += amt;
+      });
+      row.push(money(rowTotal));
+      grandExpTotal += rowTotal;
+      rows.push(row);
+    });
+    rows.push(['TOTAL', ...colTotals.map(money), money(grandExpTotal)]);
+    rows.push([]);
+
+    // ── Product buying by vendor
+    rows.push(['=== PRODUCT BUYING BY VENDOR ===']);
+    rows.push(['Vendor', 'Total Amount', '% of Total']);
+    const byVendMap = {};
+    rawPurch.forEach(p => {
+      const key = p.supplier || 'Unknown';
+      byVendMap[key] = (byVendMap[key] || 0) + (p.total_cost || 0);
+    });
+    const purchTotal = summary.totalPurchases;
+    const vendorEntries = Object.entries(byVendMap).sort((a, b) => b[1] - a[1]);
+    vendorEntries.forEach(([name, total]) => {
+      const share = purchTotal > 0 ? (total / purchTotal) * 100 : 0;
+      rows.push([name, money(total), pct(share)]);
+    });
+    rows.push(['TOTAL', money(purchTotal), pct(100)]);
+    rows.push([]);
+
+    // ── Cash reconciliation
+    rows.push(['=== CASH RECONCILIATION ===']);
+    rows.push(['Store', 'Cash Sales (Expected)', 'Cash Collected', 'Short/Over', 'Status']);
+    let reconExp = 0, reconCol = 0;
+    storeRows.forEach(s => {
+      const expected = rawSales.filter(r => r.store_id === s.id).reduce((sum, r) => sum + (r.cash_sales || 0), 0);
+      const collected = rawCash.filter(r => r.store_id === s.id).reduce((sum, r) => sum + (r.cash_collected || 0), 0);
+      const diff = collected - expected;
+      let status = 'pending';
+      if (collected > 0) {
+        if (Math.abs(diff) < 0.01) status = 'matched';
+        else if (diff > 0) status = 'over';
+        else status = 'short';
+      }
+      rows.push([s.name, money(expected), money(collected), money(diff), status]);
+      reconExp += expected;
+      reconCol += collected;
+    });
+    rows.push(['TOTAL', money(reconExp), money(reconCol), money(reconCol - reconExp), '']);
+    rows.push([]);
+
+    // ── Top purchased items
+    rows.push(['=== TOP PURCHASED ITEMS ===']);
+    rows.push(['Item Name', 'Vendor', 'Quantity', 'Unit Cost', 'Total Cost', 'Store']);
+    const sortedItems = [...rawPurch].sort((a, b) => (b.total_cost || 0) - (a.total_cost || 0)).slice(0, 20);
+    sortedItems.forEach(p => {
+      const storeName = stores.find(s => s.id === p.store_id)?.name || '';
+      rows.push([
+        p.item,
+        p.supplier || '',
+        p.quantity || 0,
+        money(p.unit_cost || 0),
+        money(p.total_cost || 0),
+        storeName,
+      ]);
+    });
+
+    return rows;
+  };
+
+  const monthYearTag = () => {
+    const d = new Date();
+    return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }).replace(' ', '');
+  };
+
+  const fileTag = () => {
+    const storeName = effectiveStoreId
+      ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
+      : 'AllStores';
+    const safe = storeName.replace(/[^a-z0-9]+/gi, '').slice(0, 20) || 'Store';
+    return `7S-${safe}-Report-${monthYearTag()}`;
+  };
 
   const handleExportCSV = () => {
-    if (!summary) return;
-    const rows = [
-      ['P&L Report', `${range.start} to ${range.end}`],
-      [],
-      ['SUMMARY'],
-      ['Total Revenue', summary.totalRevenue.toFixed(2)],
-      ['Total Purchases', summary.totalPurchases.toFixed(2)],
-      ['Total Expenses', summary.totalExpenses.toFixed(2)],
-      ['Gross Profit', summary.grossProfit.toFixed(2)],
-      ['Net Profit', summary.netProfit.toFixed(2)],
-      ['Profit Margin %', summary.margin.toFixed(2)],
-      ['Tax Collected', summary.totalTax.toFixed(2)],
-      ['Cash %', summary.cashPct.toFixed(2)],
-      ['Card %', summary.cardPct.toFixed(2)],
-      [],
-      ['STORE BREAKDOWN'],
-      ['Store', 'Revenue', 'Purchases', 'Expenses', 'Gross', 'Net', 'Margin%', 'Tax'],
-      ...storeRows.map(s => [s.name, s.revenue, s.purchases, s.expenses, s.gross, s.net, s.margin.toFixed(2), s.tax]),
-      [],
-      ['EXPENSE BY CATEGORY'],
-      ['Category', 'Current', 'Previous', 'Change %'],
-      ...expenseRows.map(r => [r.label, r.current, r.previous, r.change.toFixed(2)]),
+    const rows = buildFullReportRows();
+    if (!rows.length) return;
+    downloadCSV(`${fileTag()}.csv`, rows[0], rows.slice(1));
+  };
+
+  const handleExportExcel = () => {
+    const fullRows = buildFullReportRows();
+    if (!fullRows.length) return;
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1 — Full Report
+    const ws1 = XLSX.utils.aoa_to_sheet(fullRows);
+    // Widen columns so the first sheet is readable.
+    ws1['!cols'] = [
+      { wch: 36 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
+      { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 },
     ];
-    downloadCSV(`pnl_${range.start}_${range.end}.csv`, rows[0], rows.slice(1));
+    XLSX.utils.book_append_sheet(wb, ws1, 'Full Report');
+
+    // Sheet 2 — Daily Sales (raw)
+    const dailySalesRows = [
+      ['Date', 'Store', 'Cash Sales', 'Card Sales', 'Total Sales', 'Credits', 'Tax', 'Entered By'],
+      ...[...rawSales]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(s => [
+          s.date,
+          stores.find(st => st.id === s.store_id)?.name || '',
+          Number(s.cash_sales || 0),
+          Number(s.card_sales || 0),
+          Number(s.total_sales || 0),
+          Number(s.credits || 0),
+          Number(s.tax_collected || 0),
+          s.entered_by || '',
+        ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailySalesRows), 'Daily Sales');
+
+    // Sheet 3 — Purchase Details
+    const purchRows = [
+      ['Week', 'Store', 'Item', 'Vendor', 'Quantity', 'Unit Cost', 'Total Cost'],
+      ...[...rawPurch]
+        .sort((a, b) => (b.week_of || '').localeCompare(a.week_of || ''))
+        .map(p => [
+          p.week_of,
+          stores.find(st => st.id === p.store_id)?.name || '',
+          p.item,
+          p.supplier || '',
+          Number(p.quantity || 0),
+          Number(p.unit_cost || 0),
+          Number(p.total_cost || 0),
+        ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(purchRows), 'Purchase Details');
+
+    // Sheet 4 — Expense Details
+    const expRows = [
+      ['Month', 'Store', 'Category', 'Amount', 'Note'],
+      ...[...rawExp]
+        .sort((a, b) => (b.month || '').localeCompare(a.month || ''))
+        .map(e => [
+          e.month,
+          stores.find(st => st.id === e.store_id)?.name || '',
+          EXPENSE_CATEGORIES.find(c => c.id === e.category)?.label || e.category,
+          Number(e.amount || 0),
+          e.note || '',
+        ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expRows), 'Expense Details');
+
+    // Sheet 5 — Cash Collections
+    const cashRows = [
+      ['Date', 'Store', 'Cash Collected', 'Note'],
+      ...[...rawCash]
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .map(c => [
+          c.date,
+          stores.find(st => st.id === c.store_id)?.name || '',
+          Number(c.cash_collected || 0),
+          c.note || '',
+        ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cashRows), 'Cash Collections');
+
+    XLSX.writeFile(wb, `${fileTag()}.xlsx`);
   };
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
@@ -210,6 +474,7 @@ export default function ReportsPage() {
   return (
     <div className="print:bg-white print:text-black">
       <PageHeader title="📑 P&L Report" subtitle={`${range.start} to ${range.end}`}>
+        <Button variant="secondary" onClick={handleExportExcel} className="!text-[11px]">📊 Excel</Button>
         <Button variant="secondary" onClick={handleExportCSV} className="!text-[11px]">📥 CSV</Button>
         <Button variant="secondary" onClick={() => typeof window !== 'undefined' && window.print()} className="!text-[11px]">🖨️ Print</Button>
       </PageHeader>
