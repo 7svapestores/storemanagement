@@ -5,12 +5,12 @@ import { fmt, fK, weekLabel, getDateRange } from '@/lib/utils';
 // ── Stat Card ───────────────────────────────────────────────
 export function StatCard({ label, value, sub, color, icon }) {
   return (
-    <div className="bg-sw-card rounded-xl p-4 border border-sw-border flex-1 min-w-[150px]">
+    <div className="bg-sw-card rounded-xl p-3.5 sm:p-4 border border-sw-border flex-1 basis-full sm:basis-auto min-w-0 sm:min-w-[150px]">
       <div className="flex justify-between mb-2">
         <span className="text-sw-sub text-[10px] font-bold uppercase tracking-wide">{label}</span>
         <span className="text-[15px]">{icon}</span>
       </div>
-      <div className="text-[22px] font-extrabold font-mono" style={{ color: color || '#E2E8F0' }}>{value}</div>
+      <div className="text-[20px] sm:text-[22px] font-extrabold font-mono" style={{ color: color || '#E2E8F0' }}>{value}</div>
       {sub && <div className="text-sw-sub text-[11px] mt-1">{sub}</div>}
     </div>
   );
@@ -40,12 +40,12 @@ export function DatePresets({ active, onChange }) {
 export function DateBar({ preset, onPreset, startDate, endDate, onStartChange, onEndChange }) {
   return (
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3">
-      <div className="flex justify-between items-center flex-wrap gap-2">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
         <DatePresets active={preset} onChange={onPreset} />
-        <div className="flex gap-1.5 items-center">
-          <input type="date" value={startDate} onChange={e => onStartChange(e.target.value)} className="!w-[130px] !py-1 !px-2 !text-[11px]" />
+        <div className="flex gap-1.5 items-center w-full md:w-auto">
+          <input type="date" value={startDate} onChange={e => onStartChange(e.target.value)} className="!flex-1 md:!w-[130px] md:!flex-none" />
           <span className="text-sw-dim text-xs">→</span>
-          <input type="date" value={endDate} onChange={e => onEndChange(e.target.value)} className="!w-[130px] !py-1 !px-2 !text-[11px]" />
+          <input type="date" value={endDate} onChange={e => onEndChange(e.target.value)} className="!flex-1 md:!w-[130px] md:!flex-none" />
         </div>
       </div>
     </div>
@@ -107,14 +107,16 @@ export function TrendChart({ data, height = 170 }) {
 // ── Modal ───────────────────────────────────────────────────
 export function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex md:items-center md:justify-center md:p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
       <div onClick={e => e.stopPropagation()}
-        className={`relative bg-sw-card rounded-2xl p-6 border border-sw-border max-h-[88vh] overflow-auto
-          ${wide ? 'max-w-[700px]' : 'max-w-[480px]'} w-full`}>
-        <div className="flex justify-between items-center mb-4">
+        className={`relative bg-sw-card border border-sw-border overflow-auto
+          w-full h-full md:h-auto md:max-h-[88vh] md:rounded-2xl rounded-none
+          p-5 md:p-6
+          ${wide ? 'md:max-w-[700px]' : 'md:max-w-[480px]'}`}>
+        <div className="flex justify-between items-center mb-4 sticky top-0 bg-sw-card pt-1 -mt-1 pb-2 -mx-1 px-1">
           <h3 className="text-sw-text text-base font-bold">{title}</h3>
-          <button onClick={onClose} className="text-sw-dim hover:text-sw-text text-lg">✕</button>
+          <button onClick={onClose} className="text-sw-dim hover:text-sw-text text-xl w-10 h-10 flex items-center justify-center -mr-2">✕</button>
         </div>
         {children}
       </div>
@@ -142,7 +144,7 @@ export function Button({ children, variant = 'primary', className = '', ...props
   };
   return (
     <button {...props}
-      className={`px-4 py-2 rounded-lg text-[13px] cursor-pointer transition-colors ${styles[variant]} ${className}`}
+      className={`px-4 py-2.5 md:py-2 rounded-lg text-[13px] cursor-pointer transition-colors min-h-[44px] md:min-h-0 ${styles[variant]} ${className}`}
       style={variant === 'primary' ? { background: 'linear-gradient(135deg, #60A5FA, #93C5FD)' } : {}}>
       {children}
     </button>
@@ -212,12 +214,12 @@ export function Loading({ text = 'Loading...' }) {
 // ── Page Header ─────────────────────────────────────────────
 export function PageHeader({ title, subtitle, children }) {
   return (
-    <div className="flex justify-between items-center mb-3.5">
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3.5">
       <div>
-        <h1 className="text-sw-text text-[22px] font-extrabold leading-tight">{title}</h1>
+        <h1 className="text-sw-text text-[20px] sm:text-[22px] font-extrabold leading-tight">{title}</h1>
         {subtitle && <p className="text-sw-sub text-xs mt-0.5">{subtitle}</p>}
       </div>
-      {children && <div className="flex gap-1.5">{children}</div>}
+      {children && <div className="flex gap-1.5 flex-wrap">{children}</div>}
     </div>
   );
 }

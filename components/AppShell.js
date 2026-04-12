@@ -11,8 +11,8 @@ export default function AppShell({ children }) {
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-sw-bg">
       <div className="text-center">
-        <div className="text-5xl mb-4">📊</div>
-        <div className="text-sw-blue text-lg font-bold">Loading StoreWise...</div>
+        <div className="text-5xl mb-4">🏪</div>
+        <div className="text-sw-blue text-lg font-bold">Loading 7S Stores...</div>
       </div>
     </div>
   );
@@ -23,9 +23,9 @@ export default function AppShell({ children }) {
   const effectiveStore = isEmployee ? profile.store_id : selectedStore;
 
   return (
-    <div className="flex min-h-screen bg-sw-bg">
+    <div className="md:flex min-h-screen bg-sw-bg">
       <Sidebar selectedStore={effectiveStore} onStoreChange={setSelectedStore} />
-      <main className="flex-1 p-5 overflow-y-auto min-h-screen">
+      <main className="flex-1 p-3 md:p-5 pt-[60px] md:pt-5 pb-[80px] md:pb-5 overflow-y-auto min-h-screen">
         {typeof children === 'function' ? children({ selectedStore: effectiveStore, setSelectedStore }) : children}
       </main>
     </div>
