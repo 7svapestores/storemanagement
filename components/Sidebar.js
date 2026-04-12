@@ -144,6 +144,14 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
             <span className="text-[9px] font-semibold uppercase tracking-wide">More</span>
           </button>
         )}
+        {/* Employees have no overflow menu — give them a direct Sign Out tab. */}
+        {!isOwner && (
+          <button onClick={signOut}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-sw-red">
+            <span className="text-[18px] leading-none">⏻</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wide">Sign Out</span>
+          </button>
+        )}
       </nav>
 
       {/* ── Mobile "more" sheet ─────────────────────────── */}

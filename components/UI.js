@@ -19,9 +19,15 @@ export function StatCard({ label, value, sub, color, icon }) {
 // ── Date Preset Buttons ─────────────────────────────────────
 export function DatePresets({ active, onChange }) {
   const presets = [
-    { id: 'thisweek', l: 'This Week' }, { id: 'lastweek', l: 'Last Week' },
-    { id: 'thismonth', l: 'This Month' }, { id: 'last30', l: '30 Days' },
-    { id: 'last90', l: '90 Days' }, { id: 'all', l: 'All' },
+    { id: 'today',     l: 'Today' },
+    { id: 'yesterday', l: 'Yesterday' },
+    { id: 'thisweek',  l: 'This Week' },
+    { id: 'lastweek',  l: 'Last Week' },
+    { id: 'thismonth', l: 'This Month' },
+    { id: 'lastmonth', l: 'Last Month' },
+    { id: 'last90',    l: '90 Days' },
+    { id: 'thisyear',  l: 'This Year' },
+    { id: 'all',       l: 'All' },
   ];
   return (
     <div className="flex gap-1 flex-wrap">
