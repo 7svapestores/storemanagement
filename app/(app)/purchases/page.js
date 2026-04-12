@@ -16,6 +16,7 @@ export default function PurchasesPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [form, setForm] = useState({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: '' });
+  const [newVendorName, setNewVendorName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,14 +56,32 @@ export default function PurchasesPage() {
     if (unit_cost <= 0) { alert('Unit cost must be greater than 0'); return; }
     if (!form.vendor_id) { alert('Select a vendor'); return; }
 
+    // "Other" → create a new vendor row, then use its id for this purchase.
+    let effectiveVendor = vendor;
+    let effectiveVendorId = form.vendor_id;
+    if (form.vendor_id === '__other__') {
+      const name = (newVendorName || '').trim();
+      if (!name) { alert('Enter the new vendor name'); return; }
+      const { data: newVendor, error: vendErr } = await supabase
+        .from('vendors')
+        .insert({ name, category: 'Smoke/Vape Wholesale', contact: '', phone: '', email: '', notes: '' })
+        .select()
+        .single();
+      if (vendErr) { alert(`Failed to add vendor: ${vendErr.message}`); return; }
+      effectiveVendor = newVendor;
+      effectiveVendorId = newVendor.id;
+      setVendors(v => [...v, newVendor].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewVendorName('');
+    }
+
     const payload = {
       store_id: effectiveStoreId,
       week_of: form.week_of,
       item: form.item.trim(),
       quantity,
       unit_cost,
-      vendor_id: form.vendor_id,
-      supplier: vendor?.name || '',
+      vendor_id: effectiveVendorId,
+      supplier: effectiveVendor?.name || '',
     };
 
     const { data: inserted, error } = await supabase.from('purchases').insert(payload).select().single();
@@ -72,7 +91,7 @@ export default function PurchasesPage() {
       action: 'create',
       entityType: 'purchase',
       entityId: inserted?.id,
-      description: `${profile?.name} added purchase "${payload.item}" (${quantity} × ${fmtMoney(unit_cost)} = ${fmtMoney(total)}) for ${storeName} week of ${shortDate(form.week_of)} from ${vendor?.name || 'unknown vendor'}`,
+      description: `${profile?.name} added purchase "${payload.item}" (${quantity} × ${fmtMoney(unit_cost)} = ${fmtMoney(total)}) for ${storeName} week of ${shortDate(form.week_of)} from ${effectiveVendor?.name || 'unknown vendor'}`,
       storeName,
     });
     setModal(false);
@@ -138,20 +157,23 @@ export default function PurchasesPage() {
         <Field label="Unit Cost"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.unit_cost} onChange={e => setForm({...form, unit_cost: e.target.value.replace(/^-/, '')})} /></Field>
       </div>
       <Field label="Vendor">
-        {vendors.length === 0 ? (
-          <div className="text-sw-amber text-[11px] bg-sw-amberD border border-sw-amber/30 rounded p-2">
-            ⚠️ No vendors yet. Run <code className="text-sw-text">node supabase/add-vendors.mjs</code> to seed defaults, or add vendors from the Vendors page.
-          </div>
-        ) : (
-          <select value={form.vendor_id} onChange={e => setForm({...form, vendor_id: e.target.value})}>
-            <option value="">Select vendor…</option>
-            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
+        <select value={form.vendor_id} onChange={e => setForm({...form, vendor_id: e.target.value})}>
+          <option value="">Select vendor…</option>
+          {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          <option value="__other__">+ Other (add new)</option>
+        </select>
+        {form.vendor_id === '__other__' && (
+          <input
+            className="mt-2"
+            placeholder="New vendor name"
+            value={newVendorName}
+            onChange={e => setNewVendorName(e.target.value)}
+          />
         )}
       </Field>
       <div className="flex gap-2 justify-end">
-        <Button variant="secondary" onClick={() => setModal(false)}>Cancel</Button>
-        <Button onClick={handleSave} disabled={vendors.length === 0}>Save</Button>
+        <Button variant="secondary" onClick={() => { setModal(false); setNewVendorName(''); }}>Cancel</Button>
+        <Button onClick={handleSave}>Save</Button>
       </div>
     </Modal>}
     {showStorePicker && (

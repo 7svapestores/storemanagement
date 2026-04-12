@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
-import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
+import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
 export default function SalesPage() {
@@ -17,7 +17,12 @@ export default function SalesPage() {
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showStorePicker, setShowStorePicker] = useState(false);
-  const [form, setForm] = useState({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+  const [form, setForm] = useState({
+    date: today(),
+    cash_sales: '', card_sales: '',
+    register2_cash: '', register2_card: '',
+    credits: '', short_over: '', notes: '',
+  });
 
   // All queries + mutations scope to the selected store (or employee's assigned store).
   const storeId = effectiveStoreId;
@@ -90,13 +95,22 @@ export default function SalesPage() {
       setMsg('Please select a store from the sidebar first.');
       return;
     }
+    const storeForRegister = stores.find(s => s.id === storeIdToUse);
+    const usesReg2 = hasRegister2(storeForRegister?.name);
+    const r2Cash = usesReg2 ? (parseFloat(form.register2_cash) || 0) : 0;
+    const r2Card = usesReg2 ? (parseFloat(form.register2_card) || 0) : 0;
+
     const data = {
       store_id: storeIdToUse,
       // Employees can only enter for today, regardless of what's in the form.
       date: isEmployee ? today() : form.date,
       cash_sales: cs,
       card_sales: cd,
+      register2_cash: r2Cash,
+      register2_card: r2Card,
       credits: parseFloat(form.credits) || 0,
+      // Employees cannot set short/over — only owners.
+      short_over: isOwner ? (parseFloat(form.short_over) || 0) : 0,
       notes: form.notes,
       entered_by: profile.id,
     };
@@ -152,7 +166,7 @@ export default function SalesPage() {
 
     setModal(null); setEditItem(null);
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
-    setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+    setForm({ date: today(), cash_sales: '', card_sales: '', register2_cash: '', register2_card: '', credits: '', short_over: '', notes: '' });
     load();
   };
 
@@ -183,18 +197,34 @@ export default function SalesPage() {
   const handleExport = () => {
     const sn = id => stores.find(s => s.id === id)?.name || '';
     downloadCSV(`sales_${range.start}_${range.end}.csv`,
-      ['Date', 'Store', 'Cash Sales', 'Card Sales', 'Total', 'Credits', 'Tax'],
-      sales.map(s => [s.date, sn(s.store_id), s.cash_sales, s.card_sales, s.total_sales, s.credits, s.tax_collected])
+      ['Date', 'Store', 'R1 Cash', 'R1 Card', 'R2 Cash', 'R2 Card', 'Gross', 'Net', 'Credits', 'Short/Over', 'Tax'],
+      sales.map(s => [
+        s.date, sn(s.store_id),
+        s.cash_sales, s.card_sales,
+        s.register2_cash || 0, s.register2_card || 0,
+        s.gross_sales ?? s.total_sales,
+        s.net_sales ?? ((s.gross_sales ?? s.total_sales) - (s.credits || 0)),
+        s.credits, s.short_over || 0, s.tax_collected,
+      ])
     );
   };
 
-  const total = (parseFloat(form.cash_sales) || 0) + (parseFloat(form.card_sales) || 0);
+  // Live-calculated totals for the form.
+  const r1Cash = parseFloat(form.cash_sales) || 0;
+  const r1Card = parseFloat(form.card_sales) || 0;
+  const r2Cash = parseFloat(form.register2_cash) || 0;
+  const r2Card = parseFloat(form.register2_card) || 0;
+  const credits = parseFloat(form.credits) || 0;
+  const gross = r1Cash + r1Card + r2Cash + r2Card;
+  const net = gross - credits;
+  const total = gross; // legacy name used below
 
   // ── Employee simplified view ────────────────────────────
   if (isEmployee) {
     const todayStr = today();
     const todayEntry = sales.find(s => s.date === todayStr && s.store_id === profile?.store_id);
     const storeName = stores.find(s => s.id === profile?.store_id)?.name;
+    const empUsesReg2 = hasRegister2(storeName);
 
     return (
       <div className="max-w-xl mx-auto">
@@ -236,17 +266,31 @@ export default function SalesPage() {
         ) : (
           <div className="bg-sw-card rounded-xl p-5 border border-sw-border mb-4">
             <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
-            <div className="grid grid-cols-2 gap-2.5">
-              <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
-              <Field label="Card Sales"><input type="number" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value })} /></Field>
+
+            <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mt-2 mb-1">Register 1</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <Field label="Cash Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value.replace(/^-/, '') })} /></Field>
+              <Field label="Card Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value.replace(/^-/, '') })} /></Field>
             </div>
-            <Field label="Credits"><input type="number" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value })} /></Field>
+
+            {empUsesReg2 && (
+              <>
+                <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mt-2 mb-1">Register 2</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <Field label="R2 Cash Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={e => setForm({ ...form, register2_cash: e.target.value.replace(/^-/, '') })} /></Field>
+                  <Field label="R2 Card Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_card} onChange={e => setForm({ ...form, register2_card: e.target.value.replace(/^-/, '') })} /></Field>
+                </div>
+              </>
+            )}
+
+            <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value.replace(/^-/, '') })} /></Field>
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
 
-            {total > 0 && (
-              <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border flex justify-between">
-                <span className="text-sw-text text-[13px] font-bold">Total</span>
-                <span className="text-sw-green text-base font-extrabold font-mono">{fmt(total)}</span>
+            {gross > 0 && (
+              <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border space-y-1">
+                <div className="flex justify-between"><span className="text-sw-sub text-[11px]">Gross Sales</span><span className="text-sw-text text-sm font-mono font-bold">{fmt(gross)}</span></div>
+                <div className="flex justify-between"><span className="text-sw-sub text-[11px]">Credits</span><span className="text-sw-sub text-sm font-mono">- {fmt(credits)}</span></div>
+                <div className="flex justify-between border-t border-sw-border pt-1"><span className="text-sw-text text-[12px] font-bold">Net Sales</span><span className="text-sw-green text-base font-extrabold font-mono">{fmt(net)}</span></div>
               </div>
             )}
 
@@ -258,9 +302,13 @@ export default function SalesPage() {
           <div className="px-3 py-2 border-b border-sw-border"><h3 className="text-sw-text text-xs font-bold">Recent Entries (read-only)</h3></div>
           <DataTable columns={[
             { key: 'date', label: 'Date', render: v => dayLabel(v) },
-            { key: 'cash_sales', label: 'Cash', align: 'right', mono: true, render: v => fmt(v) },
-            { key: 'card_sales', label: 'Card', align: 'right', mono: true, render: v => fmt(v) },
-            { key: 'total_sales', label: 'Total', align: 'right', mono: true, render: v => <span className="text-sw-green font-bold">{fmt(v)}</span> },
+            { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
+            { key: 'net_sales', label: 'Net', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? (r.total_sales - (r.credits || 0)))}</span> },
+            { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
+              const n = Number(v || 0);
+              if (n === 0) return <span className="text-sw-dim">—</span>;
+              return <span className={n < 0 ? 'text-sw-red' : 'text-sw-green'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
+            } },
           ]} rows={sales.slice(0, 14)} isOwner={false} />
         </div>
         <div className="mt-3 p-2 bg-sw-card2 rounded-lg"><p className="text-sw-dim text-[10px]">🔒 Only the owner can edit/delete entries</p></div>
@@ -274,9 +322,11 @@ export default function SalesPage() {
   const hasStore = !!effectiveStoreId;
   const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
 
+  const ownerUsesReg2 = hasRegister2(storeName);
+
   const tryOpenAdd = () => {
     if (!hasStore) { setShowStorePicker(true); return; }
-    setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+    setForm({ date: today(), cash_sales: '', card_sales: '', register2_cash: '', register2_card: '', credits: '', short_over: '', notes: '' });
     setModal('add');
   };
 
@@ -297,14 +347,25 @@ export default function SalesPage() {
         <DataTable columns={[
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_id', label: 'Store', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
-          { key: 'cash_sales', label: 'Cash', align: 'right', mono: true, render: v => fmt(v) },
-          { key: 'card_sales', label: 'Card', align: 'right', mono: true, render: v => fmt(v) },
-          { key: 'total_sales', label: 'Total', align: 'right', mono: true, render: v => <span className="text-sw-green font-bold">{fmt(v)}</span> },
-          { key: 'tax_collected', label: 'Tax', align: 'right', mono: true, render: v => <span className="text-sw-cyan">{fmt(v)}</span> },
+          { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
+          { key: 'net_sales', label: 'Net', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
+          { key: 'cash_total', label: 'Cash', align: 'right', mono: true, render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
+          { key: 'card_total', label: 'Card', align: 'right', mono: true, render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
           { key: 'credits', label: 'Credits', align: 'right', mono: true, render: v => fmt(v) },
+          { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
+            const n = Number(v || 0);
+            if (n === 0) return <span className="text-sw-dim">—</span>;
+            return <span className={n < 0 ? 'text-sw-red font-bold' : 'text-sw-green font-bold'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
+          } },
           { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || '—'}</span> },
         ]} rows={sales} isOwner={hasStore}
-          onEdit={hasStore ? r => { setForm({ date: r.date, cash_sales: r.cash_sales, card_sales: r.card_sales, credits: r.credits, notes: r.notes || '' }); setEditItem(r); setModal('edit'); } : undefined}
+          onEdit={hasStore ? r => { setForm({
+            date: r.date,
+            cash_sales: r.cash_sales, card_sales: r.card_sales,
+            register2_cash: r.register2_cash || '', register2_card: r.register2_card || '',
+            credits: r.credits, short_over: r.short_over || '',
+            notes: r.notes || '',
+          }); setEditItem(r); setModal('edit'); } : undefined}
           onDelete={hasStore ? handleDelete : undefined} />
       </div>
 
@@ -314,12 +375,37 @@ export default function SalesPage() {
             Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
           </div>
           <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-2.5">
-            <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
-            <Field label="Card Sales"><input type="number" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value })} /></Field>
+
+          <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mt-2 mb-1">Register 1</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <Field label="Cash Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value.replace(/^-/, '') })} /></Field>
+            <Field label="Card Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={e => setForm({ ...form, card_sales: e.target.value.replace(/^-/, '') })} /></Field>
           </div>
-          <Field label="Credits"><input type="number" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value })} /></Field>
+
+          {ownerUsesReg2 && (
+            <>
+              <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mt-2 mb-1">Register 2</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <Field label="R2 Cash Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={e => setForm({ ...form, register2_cash: e.target.value.replace(/^-/, '') })} /></Field>
+                <Field label="R2 Card Sales"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_card} onChange={e => setForm({ ...form, register2_card: e.target.value.replace(/^-/, '') })} /></Field>
+              </div>
+            </>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
+            <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={e => setForm({ ...form, credits: e.target.value.replace(/^-/, '') })} /></Field>
+            <Field label="Short / Over"><input type="number" step="0.01" placeholder="0.00" value={form.short_over} onChange={e => setForm({ ...form, short_over: e.target.value })} /></Field>
+          </div>
           <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
+
+          {gross > 0 && (
+            <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border space-y-1">
+              <div className="flex justify-between"><span className="text-sw-sub text-[11px]">Gross Sales</span><span className="text-sw-text text-sm font-mono font-bold">{fmt(gross)}</span></div>
+              <div className="flex justify-between"><span className="text-sw-sub text-[11px]">Credits</span><span className="text-sw-sub text-sm font-mono">- {fmt(credits)}</span></div>
+              <div className="flex justify-between border-t border-sw-border pt-1"><span className="text-sw-text text-[12px] font-bold">Net Sales</span><span className="text-sw-green text-base font-extrabold font-mono">{fmt(net)}</span></div>
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end mt-2">
             <Button variant="secondary" onClick={() => { setModal(null); setEditItem(null); }}>Cancel</Button>
             <Button onClick={handleSave}>{modal === 'edit' ? 'Update' : 'Save'}</Button>
@@ -334,7 +420,7 @@ export default function SalesPage() {
           onSelectStore={(s) => {
             setSelectedStore(s.id);
             setShowStorePicker(false);
-            setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+            setForm({ date: today(), cash_sales: '', card_sales: '', register2_cash: '', register2_card: '', credits: '', short_over: '', notes: '' });
             setModal('add');
           }}
         />

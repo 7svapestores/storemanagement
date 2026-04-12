@@ -30,8 +30,9 @@ export default function DashboardPage() {
       const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
       setStores(storeData || []);
 
-      // Sales
-      let salesQ = supabase.from('daily_sales').select('cash_sales, card_sales, total_sales, credits, tax_collected, date, store_id')
+      // Sales — pull all the numeric columns we need for dashboard totals.
+      let salesQ = supabase.from('daily_sales')
+        .select('cash_sales, card_sales, register2_cash, register2_card, total_sales, gross_sales, net_sales, short_over, credits, tax_collected, date, store_id')
         .gte('date', range.start).lte('date', range.end);
       if (storeId) salesQ = salesQ.eq('store_id', storeId);
       const { data: sales } = await salesQ;
@@ -54,14 +55,21 @@ export default function DashboardPage() {
       setLowStock(inv?.filter(i => i.stock <= i.reorder_level).length || 0);
 
       // Compute stats
-      const totalSales = sales?.reduce((s, r) => s + (r.total_sales || 0), 0) || 0;
-      const totalCash = sales?.reduce((s, r) => s + (r.cash_sales || 0), 0) || 0;
-      const totalCard = sales?.reduce((s, r) => s + (r.card_sales || 0), 0) || 0;
+      const totalGross = sales?.reduce((s, r) => s + (r.gross_sales ?? r.total_sales ?? 0), 0) || 0;
+      const totalCash = sales?.reduce((s, r) => s + (r.cash_sales || 0) + (r.register2_cash || 0), 0) || 0;
+      const totalCard = sales?.reduce((s, r) => s + (r.card_sales || 0) + (r.register2_card || 0), 0) || 0;
+      const totalCredits = sales?.reduce((s, r) => s + (r.credits || 0), 0) || 0;
+      const totalNet = sales?.reduce((s, r) => s + (r.net_sales ?? ((r.gross_sales ?? r.total_sales ?? 0) - (r.credits || 0))), 0) || 0;
+      const totalShortOver = sales?.reduce((s, r) => s + (r.short_over || 0), 0) || 0;
       const totalTax = sales?.reduce((s, r) => s + (r.tax_collected || 0), 0) || 0;
       const totalPurch = purch?.reduce((s, r) => s + (r.total_cost || 0), 0) || 0;
       const totalExp = exps?.reduce((s, r) => s + (r.amount || 0), 0) || 0;
 
-      setStats({ totalSales, totalCash, totalCard, totalTax, totalPurch, totalExp, net: totalSales - totalPurch - totalExp });
+      setStats({
+        totalGross, totalNet, totalCash, totalCard, totalCredits, totalShortOver,
+        totalTax, totalPurch, totalExp,
+        netProfit: totalNet - totalPurch - totalExp,
+      });
 
       // Weekly trends
       const weekMap = {};
@@ -82,7 +90,7 @@ export default function DashboardPage() {
 
       // Today's snapshot — per-store sales for today
       const todayStr = today();
-      let todayQ = supabase.from('daily_sales').select('store_id, cash_sales, card_sales, total_sales').eq('date', todayStr);
+      let todayQ = supabase.from('daily_sales').select('store_id, cash_sales, card_sales, register2_cash, register2_card, gross_sales, total_sales').eq('date', todayStr);
       if (storeId) todayQ = todayQ.eq('store_id', storeId);
       const { data: todayRows } = await todayQ;
       setTodaySales(todayRows || []);
@@ -121,7 +129,7 @@ export default function DashboardPage() {
         <div className="bg-sw-card border border-sw-border rounded-xl p-4 mb-3.5">
           <h3 className="text-sw-text text-[13px] font-bold mb-3">Today's Snapshot</h3>
           {(() => {
-            const totalToday = todaySales.reduce((s, r) => s + (r.total_sales || 0), 0);
+            const totalToday = todaySales.reduce((s, r) => s + (r.gross_sales ?? r.total_sales ?? 0), 0);
             const perStore = stores.map(st => {
               const rec = todaySales.find(r => r.store_id === st.id);
               return { ...st, rec };
@@ -149,8 +157,8 @@ export default function DashboardPage() {
                       </div>
                       {s.rec ? (
                         <div className="flex items-baseline justify-between">
-                          <span className="text-sw-green font-mono font-bold">{fmt(s.rec.total_sales)}</span>
-                          <span className="text-sw-sub text-[10px]">{fK(s.rec.cash_sales)} cash · {fK(s.rec.card_sales)} card</span>
+                          <span className="text-sw-green font-mono font-bold">{fmt(s.rec.gross_sales ?? s.rec.total_sales)}</span>
+                          <span className="text-sw-sub text-[10px]">{fK((s.rec.cash_sales || 0) + (s.rec.register2_cash || 0))} cash · {fK((s.rec.card_sales || 0) + (s.rec.register2_card || 0))} card</span>
                         </div>
                       ) : (
                         <div className="text-sw-amber text-[11px] font-semibold">Not entered yet</div>
@@ -166,10 +174,15 @@ export default function DashboardPage() {
 
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
-          <StatCard label="Total Sales" value={fK(stats.totalSales)} icon="💰" color="#34D399" sub={`Cash ${fK(stats.totalCash)} · Card ${fK(stats.totalCard)}`} />
-          <StatCard label="Purchases" value={fK(stats.totalPurch)} icon="🛒" color={stats.totalPurch > stats.totalSales ? '#F87171' : '#FBBF24'} />
-          <StatCard label="Net Profit" value={fK(stats.net)} icon={stats.net >= 0 ? '✅' : '⚠️'} color={stats.net >= 0 ? '#34D399' : '#F87171'} />
-          <StatCard label="Tax Collected" value={fK(stats.totalTax)} icon="🏛️" color="#22D3EE" />
+          <StatCard label="Gross Sales" value={fK(stats.totalGross)} icon="💰" color="#34D399" sub={`Cash ${fK(stats.totalCash)} · Card ${fK(stats.totalCard)}`} />
+          <StatCard label="Net Sales" value={fK(stats.totalNet)} icon="📈" color="#60A5FA" sub={`Credits ${fK(stats.totalCredits)}`} />
+          <StatCard label="Expenses" value={fK(stats.totalExp)} icon="📋" color="#F87171" />
+          <StatCard
+            label="Short / Over"
+            value={`${stats.totalShortOver >= 0 ? '+' : ''}${fK(stats.totalShortOver)}`}
+            icon={stats.totalShortOver === 0 ? '➖' : stats.totalShortOver < 0 ? '🔴' : '🟢'}
+            color={stats.totalShortOver === 0 ? '#64748B' : stats.totalShortOver < 0 ? '#F87171' : '#34D399'}
+          />
         </div>
       )}
 
