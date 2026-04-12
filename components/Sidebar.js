@@ -20,6 +20,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/sales',     icon: '💰', label: 'Daily Sales' },
     { path: '/cash',      icon: '🏦', label: 'Cash Collection' },
     { path: '/purchases', icon: '🛒', label: 'Product Buying' },
+    { path: '/invoices',  icon: '🧾', label: 'Invoices' },
     { path: '/expenses',  icon: '📋', label: 'Expenses' },
     { path: '/reports',   icon: '📑', label: 'P&L Report' },
     { path: '/compare',   icon: '📊', label: 'Compare Stores' },

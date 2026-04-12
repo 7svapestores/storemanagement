@@ -4,6 +4,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
+import { uploadInvoice, compressImage } from '@/lib/storage';
 
 export default function PurchasesPage() {
   const { supabase, isOwner, profile, effectiveStoreId, setSelectedStore } = useAuth();
@@ -15,8 +16,13 @@ export default function PurchasesPage() {
   const [modal, setModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showStorePicker, setShowStorePicker] = useState(false);
+  const [invoiceByPurchase, setInvoiceByPurchase] = useState({});
+  const [viewInvoice, setViewInvoice] = useState(null);
   const [form, setForm] = useState({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: '' });
   const [newVendorName, setNewVendorName] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState(null);
+  const [invoicePreview, setInvoicePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,6 +40,20 @@ export default function PurchasesPage() {
       if (effectiveStoreId) q = q.eq('store_id', effectiveStoreId);
       const { data: p } = await q;
       setItems(p || []);
+
+      // Look up which of these purchases have invoices attached, in one query.
+      const purchaseIds = (p || []).map(x => x.id).filter(Boolean);
+      if (purchaseIds.length) {
+        const { data: invs } = await supabase
+          .from('invoices')
+          .select('id, purchase_id, image_url, amount, vendor_name, date')
+          .in('purchase_id', purchaseIds);
+        const map = {};
+        (invs || []).forEach(i => { if (i.purchase_id) map[i.purchase_id] = i; });
+        setInvoiceByPurchase(map);
+      } else {
+        setInvoiceByPurchase({});
+      }
 
       if (!form.vendor_id && v?.length) setForm(f => ({ ...f, vendor_id: v[0].id }));
     } catch (err) {
@@ -84,9 +104,39 @@ export default function PurchasesPage() {
       supplier: effectiveVendor?.name || '',
     };
 
+    setUploading(true);
     const { data: inserted, error } = await supabase.from('purchases').insert(payload).select().single();
-    if (error) { alert(error.message); return; }
+    if (error) { setUploading(false); alert(error.message); return; }
     const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+
+    // Optional invoice image upload — links to the purchase row we just inserted.
+    if (invoiceFile) {
+      try {
+        const compressed = await compressImage(invoiceFile);
+        const { path, url } = await uploadInvoice(supabase, compressed, {
+          storeName,
+          vendorName: effectiveVendor?.name || 'unknown',
+          date: form.week_of,
+        });
+        const { error: invErr } = await supabase.from('invoices').insert({
+          store_id: effectiveStoreId,
+          vendor_id: effectiveVendorId === '__other__' ? null : effectiveVendorId,
+          vendor_name: effectiveVendor?.name || 'unknown',
+          purchase_id: inserted?.id,
+          image_url: url,
+          image_path: path,
+          date: form.week_of,
+          amount: total,
+          notes: payload.item,
+          uploaded_by: profile?.id,
+        });
+        if (invErr) console.error('[purchases] invoice insert failed:', invErr);
+      } catch (e) {
+        console.error('[purchases] invoice upload failed:', e);
+        alert(`Purchase saved, but invoice upload failed: ${e.message || e}`);
+      }
+    }
+    setUploading(false);
     await logActivity(supabase, profile, {
       action: 'create',
       entityType: 'purchase',
@@ -95,7 +145,18 @@ export default function PurchasesPage() {
       storeName,
     });
     setModal(false);
+    setInvoiceFile(null);
+    setInvoicePreview(null);
     load();
+  };
+
+  const handleInvoicePick = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setInvoiceFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setInvoicePreview(ev.target.result);
+    reader.readAsDataURL(file);
   };
 
   const doDelete = async () => {
@@ -144,6 +205,13 @@ export default function PurchasesPage() {
           { key: 'unit_cost', label: 'Cost', align: 'right', mono: true, render: v => fmt(v) },
           { key: 'total_cost', label: 'Total', align: 'right', mono: true, render: v => <span className="text-sw-amber font-semibold">{fmt(v)}</span> },
           { key: 'supplier', label: 'Vendor' },
+          { key: '_invoice', label: '🧾', align: 'center', render: (_, r) => {
+            const inv = invoiceByPurchase[r.id];
+            if (!inv) return <span className="text-sw-dim">—</span>;
+            return (
+              <button onClick={() => setViewInvoice(inv)} title="View invoice" className="text-sw-blue text-base">🧾</button>
+            );
+          } },
         ]} rows={items} isOwner={hasStore} onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined} />
     </div>
     {modal && <Modal title="Add Purchase" onClose={() => setModal(false)}>
@@ -171,11 +239,51 @@ export default function PurchasesPage() {
           />
         )}
       </Field>
+      <Field label="Invoice Image (optional)">
+        {!invoicePreview ? (
+          <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border border-dashed border-sw-border bg-sw-card2 text-sw-sub text-[12px] cursor-pointer min-h-[44px]">
+            <span>📷</span><span>Take photo or choose file</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleInvoicePick}
+              className="hidden"
+            />
+          </label>
+        ) : (
+          <div className="space-y-2">
+            <img src={invoicePreview} alt="Invoice preview" className="max-h-48 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setInvoiceFile(null); setInvoicePreview(null); }}
+                className="text-sw-red text-[11px] font-semibold border border-sw-red/30 rounded px-2 py-1 bg-sw-redD"
+              >
+                Remove
+              </button>
+              <span className="text-sw-dim text-[10px] self-center">{invoiceFile?.name}</span>
+            </div>
+          </div>
+        )}
+      </Field>
+
       <div className="flex gap-2 justify-end">
-        <Button variant="secondary" onClick={() => { setModal(false); setNewVendorName(''); }}>Cancel</Button>
-        <Button onClick={handleSave}>Save</Button>
+        <Button variant="secondary" onClick={() => { setModal(false); setNewVendorName(''); setInvoiceFile(null); setInvoicePreview(null); }}>Cancel</Button>
+        <Button onClick={handleSave} disabled={uploading}>{uploading ? 'Saving…' : 'Save'}</Button>
       </div>
     </Modal>}
+    {viewInvoice && (
+      <Modal title="Invoice" onClose={() => setViewInvoice(null)} wide>
+        <div className="text-sw-sub text-[11px] mb-2">
+          {viewInvoice.vendor_name} · {viewInvoice.date} · {fmtMoney(viewInvoice.amount)}
+        </div>
+        <img src={viewInvoice.image_url} alt="Invoice" className="w-full max-h-[70vh] object-contain rounded-lg border border-sw-border bg-black/30" />
+        <div className="flex justify-end mt-3">
+          <a href={viewInvoice.image_url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open original</a>
+        </div>
+      </Modal>
+    )}
     {showStorePicker && (
       <StoreRequiredModal
         stores={stores}
