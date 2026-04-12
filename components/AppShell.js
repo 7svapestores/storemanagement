@@ -1,12 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import Sidebar from '@/components/Sidebar';
 
 export default function AppShell({ children }) {
-  const { loading, profile, user, isEmployee } = useAuth();
-  const [selectedStore, setSelectedStore] = useState(null);
+  const { loading, profile, user, selectedStore, setSelectedStore, effectiveStoreId } = useAuth();
   const router = useRouter();
 
   // If auth resolved but we have no user, bounce to login immediately.
@@ -50,23 +49,18 @@ export default function AppShell({ children }) {
     );
   }
 
-  // If profile is missing, render the app anyway — never block the entire
-  // UI on a failed profile fetch. AuthProvider should normally supply a
-  // fallback profile, but this is a second safety net.
-  const effectiveProfile = profile || { id: user.id, name: user.email, role: 'owner', store_id: null, __fallback: true };
-  const effectiveStore = effectiveProfile.role === 'employee' ? effectiveProfile.store_id : selectedStore;
   const showProfileWarning = !profile || profile.__fallback;
 
   return (
     <div className="md:flex min-h-screen bg-sw-bg items-start">
-      <Sidebar selectedStore={effectiveStore} onStoreChange={setSelectedStore} />
+      <Sidebar selectedStore={effectiveStoreId} onStoreChange={setSelectedStore} />
       <main className="flex-1 min-w-0 max-w-full p-3 md:p-5 pt-[60px] md:pt-5 pb-[80px] md:pb-5 min-h-screen">
         {showProfileWarning && (
           <div className="mb-3 rounded-lg border border-sw-amber/30 bg-sw-amberD text-sw-amber px-3 py-2 text-[12px]">
             ⚠️ Profile data unavailable — some permissions may be incorrect. Try signing out and back in, or contact an owner.
           </div>
         )}
-        {typeof children === 'function' ? children({ selectedStore: effectiveStore, setSelectedStore }) : children}
+        {typeof children === 'function' ? children({ selectedStore: effectiveStoreId, setSelectedStore }) : children}
       </main>
     </div>
   );

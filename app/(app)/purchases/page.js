@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
 export default function PurchasesPage() {
-  const { supabase, isOwner, profile } = useAuth();
+  const { supabase, isOwner, profile, effectiveStoreId, setSelectedStore } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
@@ -14,24 +14,33 @@ export default function PurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [form, setForm] = useState({ store_id: '', week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: '' });
+  const [showStorePicker, setShowStorePicker] = useState(false);
+  const [form, setForm] = useState({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: st }, { data: v }, { data: p }] = await Promise.all([
+      const [{ data: st }, { data: v }] = await Promise.all([
         supabase.from('stores').select('*').order('created_at'),
         supabase.from('vendors').select('*').order('name'),
-        supabase.from('purchases').select('*, stores(name, color)').gte('week_of', range.start).lte('week_of', range.end).order('week_of', { ascending: false }),
       ]);
-      setStores(st||[]); setVendors(v||[]); setItems(p||[]);
-      if (!form.store_id && st?.length) setForm(f => ({...f, store_id: st[0].id, vendor_id: v?.[0]?.id||''}));
+      setStores(st || []); setVendors(v || []);
+
+      let q = supabase.from('purchases')
+        .select('*, stores(name, color)')
+        .gte('week_of', range.start).lte('week_of', range.end)
+        .order('week_of', { ascending: false });
+      if (effectiveStoreId) q = q.eq('store_id', effectiveStoreId);
+      const { data: p } = await q;
+      setItems(p || []);
+
+      if (!form.vendor_id && v?.length) setForm(f => ({ ...f, vendor_id: v[0].id }));
     } catch (err) {
       console.error('[purchases] load failed:', err);
     } finally {
       setLoading(false);
     }
-  }, [range.start, range.end]);
+  }, [range.start, range.end, effectiveStoreId]);
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
@@ -40,14 +49,14 @@ export default function PurchasesPage() {
     const total = quantity * unit_cost;
     const vendor = vendors.find(v => v.id === form.vendor_id);
 
-    if (!form.store_id) { alert('Select a store'); return; }
+    if (!effectiveStoreId) { alert('Select a store from the sidebar first.'); return; }
     if (!(form.item || '').trim()) { alert('Item name is required'); return; }
     if (quantity <= 0) { alert('Quantity must be greater than 0'); return; }
     if (unit_cost <= 0) { alert('Unit cost must be greater than 0'); return; }
     if (!form.vendor_id) { alert('Select a vendor'); return; }
 
     const payload = {
-      store_id: form.store_id,
+      store_id: effectiveStoreId,
       week_of: form.week_of,
       item: form.item.trim(),
       quantity,
@@ -58,7 +67,7 @@ export default function PurchasesPage() {
 
     const { data: inserted, error } = await supabase.from('purchases').insert(payload).select().single();
     if (error) { alert(error.message); return; }
-    const storeName = stores.find(s => s.id === form.store_id)?.name;
+    const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
     await logActivity(supabase, profile, {
       action: 'create',
       entityType: 'purchase',
@@ -90,10 +99,19 @@ export default function PurchasesPage() {
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
+  const hasStore = !!effectiveStoreId;
+  const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+
+  const tryOpenAdd = () => {
+    if (!hasStore) { setShowStorePicker(true); return; }
+    setForm({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: vendors[0]?.id || '' });
+    setModal(true);
+  };
+
   return (<div>
-    <PageHeader title="🛒 Purchases">
+    <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores (view only)'}>
       <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Week','Store','Item','Qty','Cost','Total','Vendor'], items.map(p => [p.week_of, p.stores?.name, p.item, p.quantity, p.unit_cost, p.total_cost, p.supplier]))} className="!text-[11px]">📥 CSV</Button>
-      <Button onClick={() => { setForm({ store_id: stores[0]?.id||'', week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: vendors[0]?.id||'' }); setModal(true); }}>+ Add</Button>
+      <Button onClick={tryOpenAdd}>+ Add</Button>
     </PageHeader>
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
@@ -107,14 +125,12 @@ export default function PurchasesPage() {
           { key: 'unit_cost', label: 'Cost', align: 'right', mono: true, render: v => fmt(v) },
           { key: 'total_cost', label: 'Total', align: 'right', mono: true, render: v => <span className="text-sw-amber font-semibold">{fmt(v)}</span> },
           { key: 'supplier', label: 'Vendor' },
-        ]} rows={items} isOwner={true} onDelete={id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); }} />
+        ]} rows={items} isOwner={hasStore} onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined} />
     </div>
     {modal && <Modal title="Add Purchase" onClose={() => setModal(false)}>
-      <Field label="Store">
-        <select value={form.store_id} onChange={e => setForm({...form, store_id: e.target.value})}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </Field>
+      <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
+        Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
+      </div>
       <Field label="Week Of"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
       <Field label="Item"><input value={form.item} onChange={e => setForm({...form, item: e.target.value})} placeholder="e.g. Elf Bar 5000" /></Field>
       <div className="grid grid-cols-2 gap-2.5">
@@ -138,6 +154,18 @@ export default function PurchasesPage() {
         <Button onClick={handleSave} disabled={vendors.length === 0}>Save</Button>
       </div>
     </Modal>}
+    {showStorePicker && (
+      <StoreRequiredModal
+        stores={stores}
+        onCancel={() => setShowStorePicker(false)}
+        onSelectStore={(s) => {
+          setSelectedStore(s.id);
+          setShowStorePicker(false);
+          setForm({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: vendors[0]?.id || '' });
+          setModal(true);
+        }}
+      />
+    )}
     {confirmDelete && (
       <ConfirmModal
         title="Delete this purchase?"

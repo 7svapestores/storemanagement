@@ -168,6 +168,49 @@ export function Modal({ title, onClose, children, wide }) {
   );
 }
 
+// ── Store Required Modal ────────────────────────────────────
+// Shown when the owner tries to add/edit data while "All Stores" is selected.
+// Lets them pick a store inline and then proceeds via onSelectStore.
+export function StoreRequiredModal({ stores, onSelectStore, onCancel, title = 'Select a Store First', message }) {
+  return (
+    <Modal title={`⚠️ ${title}`} onClose={onCancel}>
+      <p className="text-sw-sub text-[13px] mb-4">
+        {message || 'To add new entries, please select a specific store from the dropdown in the sidebar.'}
+      </p>
+      {/* Desktop / tablet: button grid */}
+      <div className="hidden sm:grid grid-cols-1 gap-2 mb-3">
+        {stores.map(s => (
+          <button
+            key={s.id}
+            onClick={() => onSelectStore(s)}
+            className="flex items-center gap-2 py-2.5 px-3 rounded-lg bg-sw-card2 border border-sw-border hover:border-sw-blue hover:bg-sw-blueD text-left transition-colors min-h-[44px]"
+          >
+            <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+            <span className="text-sw-text text-[13px] font-semibold">Select {s.name}</span>
+          </button>
+        ))}
+      </div>
+      {/* Mobile: single dropdown */}
+      <div className="sm:hidden mb-3">
+        <label className="block text-sw-sub text-[10px] font-bold uppercase mb-1">Choose store</label>
+        <select
+          defaultValue=""
+          onChange={(e) => {
+            const s = stores.find(x => x.id === e.target.value);
+            if (s) onSelectStore(s);
+          }}
+        >
+          <option value="" disabled>Select a store…</option>
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      <div className="flex justify-end">
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Confirm Modal ───────────────────────────────────────────
 export function ConfirmModal({ title = 'Are you sure?', message, onCancel, onConfirm, confirmLabel = 'Delete', confirmVariant = 'danger' }) {
   return (

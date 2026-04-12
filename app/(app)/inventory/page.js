@@ -1,12 +1,13 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, StoreRequiredModal } from '@/components/UI';
 import { fmt, fK, downloadCSV, PRODUCT_CATEGORIES } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 
 export default function InventoryPage() {
-  const { supabase, isOwner, isEmployee, profile } = useAuth();
+  const { supabase, isOwner, isEmployee, profile, effectiveStoreId, setSelectedStore } = useAuth();
+  const [showStorePicker, setShowStorePicker] = useState(false);
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -22,8 +23,9 @@ export default function InventoryPage() {
   });
   const [stockForm, setStockForm] = useState({ stock: '' });
 
-  // Employees are auto-scoped to their own store.
-  const scopedStoreId = isEmployee ? profile?.store_id : null;
+  // Employees are hard-scoped to their own store. Owners scope to their
+  // sidebar-selected store (or see all when on "All Stores").
+  const scopedStoreId = isEmployee ? profile?.store_id : effectiveStoreId;
 
   const load = async () => {
     setLoading(true);
@@ -58,7 +60,7 @@ export default function InventoryPage() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, [catFilter, search]);
+  useEffect(() => { load(); }, [catFilter, search, scopedStoreId]);
 
   if (loading) return <Loading />;
 
@@ -188,6 +190,8 @@ export default function InventoryPage() {
   });
 
   const openAdd = () => {
+    // Owner must have a specific store selected to add inventory.
+    if (isOwner && !scopedStoreId) { setShowStorePicker(true); return; }
     setForm({
       store_id: scopedStoreId || stores[0]?.id || '',
       name: '',
@@ -275,12 +279,14 @@ export default function InventoryPage() {
           emptyMessage={
             isEmployee
               ? 'No inventory yet for your store. Tap + Add to start tracking products.'
-              : 'Your inventory is empty. Add your products to track stock levels.'
+              : scopedStoreId
+                ? 'Your inventory is empty. Add your products to track stock levels.'
+                : 'Select a specific store from the sidebar to add or edit inventory.'
           }
           columns={baseColumns}
           rows={items}
-          isOwner={isOwner}
-          onEdit={isOwner ? openEditFull : undefined}
+          isOwner={isOwner && !!scopedStoreId}
+          onEdit={isOwner && scopedStoreId ? openEditFull : undefined}
         />
       </div>
 
@@ -289,11 +295,9 @@ export default function InventoryPage() {
         <Modal title={modal === 'edit' ? 'Edit Product' : 'Add Product'} onClose={() => { setModal(null); setEditItem(null); }}>
           {isOwner ? (
             <>
-              <Field label="Store">
-                <select value={form.store_id} onChange={e => setForm({ ...form, store_id: e.target.value })}>
-                  {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </Field>
+              <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
+                Store: <span className="text-sw-text font-semibold">{stores.find(s => s.id === form.store_id)?.name || '—'}</span>
+              </div>
               <Field label="Product Name"><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Elf Bar 5000" /></Field>
               <Field label="Category">
                 <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
@@ -351,6 +355,26 @@ export default function InventoryPage() {
             </>
           )}
         </Modal>
+      )}
+
+      {showStorePicker && (
+        <StoreRequiredModal
+          stores={stores}
+          onCancel={() => setShowStorePicker(false)}
+          onSelectStore={(s) => {
+            setSelectedStore(s.id);
+            setShowStorePicker(false);
+            setForm({
+              store_id: s.id,
+              name: '',
+              category: PRODUCT_CATEGORIES[0],
+              cost_price: '', sell_price: '',
+              stock: '', reorder_level: '10',
+              vendor_id: vendors[0]?.id || '',
+            });
+            setModal('add');
+          }}
+        />
       )}
 
       {/* ── Stock-only quick update modal ─────────── */}

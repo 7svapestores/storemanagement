@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
 export default function SalesPage() {
-  const { supabase, isOwner, isEmployee, profile } = useAuth();
+  const { supabase, isOwner, isEmployee, profile, effectiveStoreId, setSelectedStore } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
   const [sales, setSales] = useState([]);
   const [stores, setStores] = useState([]);
@@ -16,9 +16,11 @@ export default function SalesPage() {
   const [editItem, setEditItem] = useState(null);
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [form, setForm] = useState({ store_id: '', date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+  const [showStorePicker, setShowStorePicker] = useState(false);
+  const [form, setForm] = useState({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
 
-  const storeId = isEmployee ? profile?.store_id : null;
+  // All queries + mutations scope to the selected store (or employee's assigned store).
+  const storeId = effectiveStoreId;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,9 +71,7 @@ export default function SalesPage() {
 
       setSales(merged);
 
-      if (!form.store_id && storeData?.length) {
-        setForm(f => ({ ...f, store_id: storeId || storeData[0].id }));
-      }
+      // form no longer carries store_id — use storeId from context on save
     } catch (e) {
       console.error('[sales] load failed:', e);
       setLoadError(e?.message || 'Failed to load sales data');
@@ -85,8 +85,13 @@ export default function SalesPage() {
   const handleSave = async () => {
     const cs = parseFloat(form.cash_sales) || 0;
     const cd = parseFloat(form.card_sales) || 0;
+    const storeIdToUse = isEmployee ? profile.store_id : effectiveStoreId;
+    if (!storeIdToUse) {
+      setMsg('Please select a store from the sidebar first.');
+      return;
+    }
     const data = {
-      store_id: isEmployee ? profile.store_id : form.store_id,
+      store_id: storeIdToUse,
       // Employees can only enter for today, regardless of what's in the form.
       date: isEmployee ? today() : form.date,
       cash_sales: cs,
@@ -147,7 +152,7 @@ export default function SalesPage() {
 
     setModal(null); setEditItem(null);
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
-    setForm({ store_id: storeId || stores[0]?.id || '', date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+    setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
     load();
   };
 
@@ -266,11 +271,20 @@ export default function SalesPage() {
   // ── Owner full view ─────────────────────────────────────
   if (loading) return <Loading />;
 
+  const hasStore = !!effectiveStoreId;
+  const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+
+  const tryOpenAdd = () => {
+    if (!hasStore) { setShowStorePicker(true); return; }
+    setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+    setModal('add');
+  };
+
   return (
     <div>
-      <PageHeader title="Daily Sales" subtitle={`${sales.length} entries`}>
+      <PageHeader title="Daily Sales" subtitle={hasStore ? `${storeName} · ${sales.length} entries` : `All Stores · ${sales.length} entries (view only)`}>
         <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
-        <Button onClick={() => { setForm({ store_id: storeId || stores[0]?.id || '', date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' }); setModal('add'); }}>+ Add</Button>
+        <Button onClick={tryOpenAdd}>+ Add</Button>
       </PageHeader>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
@@ -289,18 +303,16 @@ export default function SalesPage() {
           { key: 'tax_collected', label: 'Tax', align: 'right', mono: true, render: v => <span className="text-sw-cyan">{fmt(v)}</span> },
           { key: 'credits', label: 'Credits', align: 'right', mono: true, render: v => fmt(v) },
           { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || '—'}</span> },
-        ]} rows={sales} isOwner={true}
-          onEdit={r => { setForm({ store_id: r.store_id, date: r.date, cash_sales: r.cash_sales, card_sales: r.card_sales, credits: r.credits, notes: r.notes || '' }); setEditItem(r); setModal('edit'); }}
-          onDelete={handleDelete} />
+        ]} rows={sales} isOwner={hasStore}
+          onEdit={hasStore ? r => { setForm({ date: r.date, cash_sales: r.cash_sales, card_sales: r.card_sales, credits: r.credits, notes: r.notes || '' }); setEditItem(r); setModal('edit'); } : undefined}
+          onDelete={hasStore ? handleDelete : undefined} />
       </div>
 
       {modal && (
         <Modal title={modal === 'edit' ? 'Edit Sale' : 'Add Sale'} onClose={() => { setModal(null); setEditItem(null); }}>
-          <Field label="Store">
-            <select value={form.store_id} onChange={e => setForm({ ...form, store_id: e.target.value })}>
-              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Field>
+          <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
+            Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
+          </div>
           <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label="Cash Sales"><input type="number" placeholder="0.00" value={form.cash_sales} onChange={e => setForm({ ...form, cash_sales: e.target.value })} /></Field>
@@ -313,6 +325,19 @@ export default function SalesPage() {
             <Button onClick={handleSave}>{modal === 'edit' ? 'Update' : 'Save'}</Button>
           </div>
         </Modal>
+      )}
+
+      {showStorePicker && (
+        <StoreRequiredModal
+          stores={stores}
+          onCancel={() => setShowStorePicker(false)}
+          onSelectStore={(s) => {
+            setSelectedStore(s.id);
+            setShowStorePicker(false);
+            setForm({ date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
+            setModal('add');
+          }}
+        />
       )}
 
       {confirmDelete && (

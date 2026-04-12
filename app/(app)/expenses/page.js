@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, StoreRequiredModal } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 
@@ -17,7 +17,8 @@ let localIdCounter = 1;
 const newLocalId = () => `tmp_${localIdCounter++}`;
 
 export default function ExpensesPage() {
-  const { supabase, isOwner, profile } = useAuth();
+  const { supabase, isOwner, profile, effectiveStoreId, setSelectedStore } = useAuth();
+  const [showStorePicker, setShowStorePicker] = useState(null); // 'add' | 'template' | null
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,19 +41,22 @@ export default function ExpensesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: st }, { data: e }] = await Promise.all([
-        supabase.from('stores').select('*').order('created_at'),
-        supabase.from('expenses').select('*, stores(name, color)').order('month', { ascending: false }),
-      ]);
-      setStores(st || []); setItems(e || []);
-      if (!form.store_id && st?.length) setForm(f => ({ ...f, store_id: st[0].id }));
+      const { data: st } = await supabase.from('stores').select('*').order('created_at');
+      setStores(st || []);
+
+      let q = supabase.from('expenses').select('*, stores(name, color)').order('month', { ascending: false });
+      if (effectiveStoreId) q = q.eq('store_id', effectiveStoreId);
+      const { data: e } = await q;
+      setItems(e || []);
+
+      if (!form.store_id && st?.length) setForm(f => ({ ...f, store_id: effectiveStoreId || st[0].id }));
     } catch (err) {
       console.error('[expenses] load failed:', err);
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [effectiveStoreId]);
 
   const catLabel = id => EXPENSE_CATEGORIES.find(c => c.id === id);
   // For custom rows loaded from DB, show the raw name (the id) as the label.
@@ -64,7 +68,6 @@ export default function ExpensesPage() {
   // ── Single-expense form validation ──────────────────────────
   const validate = (f) => {
     const e = {};
-    if (!f.store_id) e.store_id = 'Store is required';
     if (!f.month) e.month = 'Month is required';
     if (!f.category) e.category = 'Category is required';
     const amt = parseFloat(f.amount);
@@ -332,7 +335,19 @@ export default function ExpensesPage() {
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
+  const hasStore = !!effectiveStoreId;
+  const selectedStoreName = stores.find(s => s.id === effectiveStoreId)?.name;
   const singleFormInvalid = Object.keys(validate(form)).length > 0;
+
+  const tryOpenAdd = () => {
+    if (!hasStore) { setShowStorePicker('add'); return; }
+    setForm(f => ({ ...f, store_id: effectiveStoreId }));
+    setModal(true);
+  };
+  const tryOpenTemplate = () => {
+    if (!hasStore) { setShowStorePicker('template'); return; }
+    openTemplate();
+  };
 
   // Compute store totals (fixed + custom) for the template modal footer.
   const storeTotal = (st) => {
@@ -347,14 +362,15 @@ export default function ExpensesPage() {
     }
     return sum;
   };
-  const grandTotal = stores.reduce((s, st) => s + storeTotal(st), 0);
+  const templateStores = effectiveStoreId ? stores.filter(s => s.id === effectiveStoreId) : stores;
+  const grandTotal = templateStores.reduce((s, st) => s + storeTotal(st), 0);
 
   return (
     <div>
-      <PageHeader title="📋 Expenses">
+      <PageHeader title="📋 Expenses" subtitle={hasStore ? selectedStoreName : 'All Stores (view only)'}>
         <Button variant="secondary" onClick={() => downloadCSV('expenses.csv', ['Month','Store','Category','Amount','Note'], items.map(e => [e.month, e.stores?.name, catLabel(e.category)?.label || e.category, e.amount, e.note]))} className="!text-[11px]">📥 CSV</Button>
-        <Button variant="secondary" onClick={openTemplate}>📝 Fill Monthly</Button>
-        <Button onClick={() => setModal(true)}>+ Add</Button>
+        <Button variant="secondary" onClick={tryOpenTemplate}>📝 Fill Monthly</Button>
+        <Button onClick={tryOpenAdd}>+ Add</Button>
       </PageHeader>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
@@ -371,21 +387,17 @@ export default function ExpensesPage() {
             { key: 'note', label: 'Note' },
           ]}
           rows={items}
-          isOwner={true}
-          onDelete={id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); }}
+          isOwner={hasStore}
+          onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
         />
       </div>
 
       {/* Single-expense form */}
       {modal && (
         <Modal title="Add Expense" onClose={() => { setModal(false); setErrors({}); }}>
-          <Field label="Store">
-            <select value={form.store_id} onChange={e => setForm({...form, store_id: e.target.value})} className={errors.store_id ? '!border-sw-red' : ''}>
-              <option value="">Select store…</option>
-              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            {errors.store_id && <p className="text-sw-red text-[11px] mt-1">{errors.store_id}</p>}
-          </Field>
+          <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
+            Store: <span className="text-sw-text font-semibold">{selectedStoreName || '—'}</span>
+          </div>
           <Field label="Month">
             <input type="month" value={form.month} onChange={e => setForm({...form, month: e.target.value})} className={errors.month ? '!border-sw-red' : ''} />
             {errors.month && <p className="text-sw-red text-[11px] mt-1">{errors.month}</p>}
@@ -424,7 +436,7 @@ export default function ExpensesPage() {
             <div className="py-8 text-center text-sw-dim">Loading template…</div>
           ) : (
             <div className="space-y-4 max-h-[60vh] overflow-auto pr-1">
-              {stores.map(st => {
+              {(effectiveStoreId ? stores.filter(s => s.id === effectiveStoreId) : stores).map(st => {
                 const total = storeTotal(st);
                 return (
                   <div key={st.id} className="bg-sw-card2 rounded-lg border border-sw-border p-3">
@@ -515,6 +527,23 @@ export default function ExpensesPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {showStorePicker && (
+        <StoreRequiredModal
+          stores={stores}
+          onCancel={() => setShowStorePicker(null)}
+          onSelectStore={(s) => {
+            setSelectedStore(s.id);
+            const nextAction = showStorePicker;
+            setShowStorePicker(null);
+            if (nextAction === 'template') openTemplate();
+            else {
+              setForm(f => ({ ...f, store_id: s.id }));
+              setModal(true);
+            }
+          }}
+        />
       )}
 
       {confirmDelete && (

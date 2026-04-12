@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedStore, setSelectedStore] = useState(null); // null = "All Stores"
   const supabase = createClient();
 
   useEffect(() => {
@@ -114,8 +115,15 @@ export function AuthProvider({ children }) {
   const isOwner = profile?.role === 'owner';
   const isEmployee = profile?.role === 'employee';
 
+  // Employees are hard-scoped to their assigned store regardless of selector state.
+  const effectiveStoreId = isEmployee ? (profile?.store_id || null) : selectedStore;
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut, isOwner, isEmployee, supabase }}>
+    <AuthContext.Provider value={{
+      user, profile, loading, signOut,
+      isOwner, isEmployee, supabase,
+      selectedStore, setSelectedStore, effectiveStoreId,
+    }}>
       {children}
     </AuthContext.Provider>
   );
