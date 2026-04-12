@@ -32,9 +32,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-5" style={{ background: 'radial-gradient(ellipse at 20% 30%, #0D1B2A, #060A10 65%)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🚬</div>
-          <h1 className="text-3xl font-black text-sw-text">Store<span className="text-sw-blue">Wise</span></h1>
-          <p className="text-sw-sub text-sm mt-1">Smoke Shop Management</p>
+          <div className="text-5xl mb-3">🏪</div>
+          <h1 className="text-3xl font-black text-sw-text">7S <span className="text-sw-blue">Stores</span></h1>
+          <p className="text-sw-sub text-sm mt-1">Store Management System</p>
         </div>
 
         <form onSubmit={handleLogin} className="bg-sw-card rounded-2xl p-7 border border-sw-border">
@@ -42,7 +42,7 @@ export default function LoginPage() {
 
           <div className="mb-4">
             <label className="block text-sw-sub text-[10px] font-bold uppercase tracking-wider mb-1">Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@storewise.app" autoFocus className="w-full" />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@7sstores.com" autoFocus className="w-full" />
           </div>
 
           <div className="mb-5">
@@ -58,13 +58,13 @@ export default function LoginPage() {
 
           <div className="mt-4 p-3 bg-sw-card2 rounded-lg border border-sw-border">
             <p className="text-sw-dim text-[10px] font-bold uppercase mb-2">Quick Login</p>
-            <button type="button" onClick={() => quickLogin('admin@storewise.app', 'admin123')}
+            <button type="button" onClick={() => quickLogin('admin@7sstores.com', 'admin123')}
               className="w-full text-left py-1.5 px-2 rounded text-xs text-sw-sub hover:bg-sw-border/30 font-mono">
-              Owner: admin@storewise.app
+              Owner: admin@7sstores.com
             </button>
-            <button type="button" onClick={() => quickLogin('emp1@storewise.app', 'emp123')}
+            <button type="button" onClick={() => quickLogin('bells@7sstores.com', 'emp123')}
               className="w-full text-left py-1.5 px-2 rounded text-xs text-sw-sub hover:bg-sw-border/30 font-mono">
-              Employee: emp1@storewise.app
+              Employee: bells@7sstores.com
             </button>
           </div>
         </form>

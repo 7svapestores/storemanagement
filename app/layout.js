@@ -2,8 +2,8 @@ import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata = {
-  title: 'StoreWise — Smoke Shop Management',
-  description: 'Multi-store business intelligence platform for smoke shops',
+  title: '7S Stores — Store Management System',
+  description: 'Multi-store business intelligence platform for 7S Stores',
 };
 
 export default function RootLayout({ children }) {

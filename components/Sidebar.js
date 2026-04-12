@@ -37,8 +37,8 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     <div className="w-[210px] min-h-screen bg-sw-card border-r border-sw-border flex flex-col flex-shrink-0 overflow-y-auto">
       {/* Logo */}
       <div className="p-3.5 border-b border-sw-border flex items-center gap-2">
-        <span className="text-lg">🚬</span>
-        <span className="text-[17px] font-extrabold text-sw-text">Store<span className="text-sw-blue">Wise</span></span>
+        <span className="text-lg">🏪</span>
+        <span className="text-[17px] font-extrabold text-sw-text">7S <span className="text-sw-blue">Stores</span></span>
       </div>
 
       {/* Store selector (owner only) */}
