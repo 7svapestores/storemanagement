@@ -38,31 +38,22 @@ export default function AppShell({ children }) {
     );
   }
 
-  // User is signed in but profile row missing — show a recoverable error.
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-sw-bg p-6">
-        <div className="max-w-sm text-center bg-sw-card border border-sw-border rounded-2xl p-6">
-          <div className="text-4xl mb-3">⚠️</div>
-          <div className="text-sw-text text-base font-bold mb-2">Profile not found</div>
-          <p className="text-sw-sub text-xs mb-4">
-            Your account exists but has no profile row. Ask an owner to create one, or sign out and try again.
-          </p>
-          <a href="/login" onClick={(e) => { e.preventDefault(); router.push('/login'); }}
-            className="inline-block px-4 py-2 rounded-lg bg-sw-blueD text-sw-blue text-sm font-semibold border border-sw-blue/20">
-            Back to login
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  const effectiveStore = isEmployee ? profile.store_id : selectedStore;
+  // If profile is missing, render the app anyway — never block the entire
+  // UI on a failed profile fetch. AuthProvider should normally supply a
+  // fallback profile, but this is a second safety net.
+  const effectiveProfile = profile || { id: user.id, name: user.email, role: 'owner', store_id: null, __fallback: true };
+  const effectiveStore = effectiveProfile.role === 'employee' ? effectiveProfile.store_id : selectedStore;
+  const showProfileWarning = !profile || profile.__fallback;
 
   return (
     <div className="md:flex min-h-screen bg-sw-bg">
       <Sidebar selectedStore={effectiveStore} onStoreChange={setSelectedStore} />
       <main className="flex-1 p-3 md:p-5 pt-[60px] md:pt-5 pb-[80px] md:pb-5 overflow-y-auto min-h-screen">
+        {showProfileWarning && (
+          <div className="mb-3 rounded-lg border border-sw-amber/30 bg-sw-amberD text-sw-amber px-3 py-2 text-[12px]">
+            ⚠️ Profile data unavailable — some permissions may be incorrect. Try signing out and back in, or contact an owner.
+          </div>
+        )}
         {typeof children === 'function' ? children({ selectedStore: effectiveStore, setSelectedStore }) : children}
       </main>
     </div>
