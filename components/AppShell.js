@@ -16,10 +16,13 @@ export default function AppShell({ children }) {
     }
   }, [loading, user]);
 
-  // Employees only have one page (/sales). If they land anywhere else, route them there.
+  // Employees have a limited whitelist of pages. If they land outside it, bounce to /sales.
   useEffect(() => {
     if (!loading && profile && profile.role === 'employee') {
-      if (typeof window !== 'undefined' && window.location.pathname !== '/sales') {
+      if (typeof window === 'undefined') return;
+      const allowed = ['/sales', '/inventory'];
+      const path = window.location.pathname;
+      if (!allowed.some(p => path === p || path.startsWith(p + '/'))) {
         router.replace('/sales');
       }
     }

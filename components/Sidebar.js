@@ -16,22 +16,22 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
 
   const nav = isOwner ? [
     { path: '/dashboard', icon: '📊', label: 'Dashboard' },
-    { path: '/trends', icon: '📈', label: 'Trends' },
-    { path: '/sales', icon: '💰', label: 'Daily Sales' },
-    { path: '/cash', icon: '🏦', label: 'Cash Collection' },
-    { path: '/purchases', icon: '🛒', label: 'Purchases' },
+    { path: '/trends',    icon: '📈', label: 'Trends' },
+    { path: '/sales',     icon: '💰', label: 'Daily Sales' },
+    { path: '/cash',      icon: '🏦', label: 'Cash Collection' },
+    { path: '/purchases', icon: '🛒', label: 'Product Buying' },
+    { path: '/expenses',  icon: '📋', label: 'Expenses' },
+    { path: '/reports',   icon: '📑', label: 'P&L Report' },
+    { path: '/compare',   icon: '📊', label: 'Compare Stores' },
+    { path: '/activity',  icon: '🕐', label: 'Activity Log' },
+    { path: '/exports',   icon: '📥', label: 'Export Data' },
     { path: '/inventory', icon: '📦', label: 'Inventory' },
-    { path: '/expenses', icon: '📋', label: 'Expenses' },
-    { path: '/vendors', icon: '🤝', label: 'Vendors' },
-    { path: '/reports', icon: '📑', label: 'P&L Report' },
-    { path: '/compare', icon: '📊', label: 'Compare Stores' },
-    { path: '/activity', icon: '🕐', label: 'Activity Log' },
-    { path: '/exports', icon: '📥', label: 'Export Data' },
-    { path: '/email', icon: '📧', label: 'Email Reports' },
-    { path: '/team', icon: '👥', label: 'Team' },
-    { path: '/settings', icon: '⚙️', label: 'Settings' },
+    { path: '/email',     icon: '📧', label: 'Email Reports' },
+    { path: '/team',      icon: '👥', label: 'Team' },
+    { path: '/settings',  icon: '⚙️', label: 'Settings' },
   ] : [
-    { path: '/sales', icon: '💰', label: 'Enter Sales' },
+    { path: '/sales',     icon: '💰', label: 'Enter Sales' },
+    { path: '/inventory', icon: '📦', label: 'Inventory' },
   ];
 
   // Bottom nav shows 4 primary items + More (owner only); employees just get their single item.
