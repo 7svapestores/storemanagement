@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
+import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
 export default function SalesPage() {
   const { supabase, isOwner, isEmployee, profile } = useAuth();
@@ -14,6 +15,7 @@ export default function SalesPage() {
   const [modal, setModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [msg, setMsg] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [form, setForm] = useState({ store_id: '', date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
 
   const storeId = isEmployee ? profile?.store_id : null;
@@ -57,23 +59,59 @@ export default function SalesPage() {
       entered_by: profile.id,
     };
 
-    let error;
+    const storeName = stores.find(s => s.id === data.store_id)?.name;
+    const total = data.cash_sales + data.card_sales;
+
     if (modal === 'edit' && editItem) {
-      ({ error } = await supabase.from('daily_sales').update(data).eq('id', editItem.id));
+      const { error } = await supabase.from('daily_sales').update(data).eq('id', editItem.id);
+      if (error) { setMsg(error.message); return; }
+      await logActivity(supabase, profile, {
+        action: 'update',
+        entityType: 'daily_sales',
+        entityId: editItem.id,
+        description: `${profile?.name} updated daily sale of ${fmtMoney(total)} for ${storeName} on ${shortDate(data.date)}`,
+        storeName,
+        metadata: { before: editItem, after: data },
+      });
     } else {
-      ({ error } = await supabase.from('daily_sales').insert(data));
+      const { data: inserted, error } = await supabase.from('daily_sales').insert(data).select().single();
+      if (error) { setMsg(error.message); return; }
+      await logActivity(supabase, profile, {
+        action: 'create',
+        entityType: 'daily_sales',
+        entityId: inserted?.id,
+        description: `${profile?.name} added daily sale of ${fmtMoney(total)} for ${storeName} on ${shortDate(data.date)}`,
+        storeName,
+      });
     }
 
-    if (error) { setMsg(error.message); return; }
     setModal(null); setEditItem(null);
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
     setForm({ store_id: storeId || stores[0]?.id || '', date: today(), cash_sales: '', card_sales: '', credits: '', notes: '' });
     load();
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Delete this sale?')) return;
-    await supabase.from('daily_sales').delete().eq('id', id);
+  const handleDelete = (id) => {
+    const row = sales.find(s => s.id === id);
+    if (!row) return;
+    setConfirmDelete(row);
+  };
+
+  const confirmDeleteSale = async () => {
+    const row = confirmDelete;
+    if (!row) return;
+    const { error } = await supabase.from('daily_sales').delete().eq('id', row.id);
+    if (error) { setMsg(error.message); setConfirmDelete(null); return; }
+    const storeName = row.stores?.name || stores.find(s => s.id === row.store_id)?.name;
+    await logActivity(supabase, profile, {
+      action: 'delete',
+      entityType: 'daily_sales',
+      entityId: row.id,
+      description: `${profile?.name} deleted daily sale of ${fmtMoney(row.total_sales)} for ${storeName} on ${shortDate(row.date)}`,
+      storeName,
+      metadata: { deleted: row },
+    });
+    setConfirmDelete(null);
     load();
   };
 
@@ -178,6 +216,15 @@ export default function SalesPage() {
             <Button onClick={handleSave}>{modal === 'edit' ? 'Update' : 'Save'}</Button>
           </div>
         </Modal>
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete this sale?"
+          message={`Are you sure? This will be logged in the activity trail. Deleting daily sale for ${confirmDelete.stores?.name || 'store'} on ${shortDate(confirmDelete.date)}.`}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={confirmDeleteSale}
+        />
       )}
     </div>
   );

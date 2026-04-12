@@ -3,9 +3,10 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert } from '@/components/UI';
 import { fmt, fK, downloadCSV, PRODUCT_CATEGORIES } from '@/lib/utils';
+import { logActivity, fmtMoney } from '@/lib/activity';
 
 export default function InventoryPage() {
-  const { supabase, isOwner } = useAuth();
+  const { supabase, isOwner, profile } = useAuth();
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -94,8 +95,20 @@ export default function InventoryPage() {
       {parseFloat(form.cost_price) > 0 && parseFloat(form.sell_price) > 0 && <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border"><span className="text-sw-sub text-[11px]">Margin: </span><span className="text-sw-green text-sm font-bold font-mono">{(((parseFloat(form.sell_price)-parseFloat(form.cost_price))/parseFloat(form.sell_price))*100).toFixed(1)}%</span></div>}
       <div className="flex gap-2 justify-end"><Button variant="secondary" onClick={() => { setModal(null); setEditItem(null); }}>Cancel</Button><Button onClick={async () => {
         const d = { ...form, cost_price: parseFloat(form.cost_price)||0, sell_price: parseFloat(form.sell_price)||0, stock: parseInt(form.stock)||0, reorder_level: parseInt(form.reorder_level)||10 };
-        const { error } = modal === 'edit' ? await supabase.from('inventory').update(d).eq('id', editItem.id) : await supabase.from('inventory').insert(d);
-        if (error) { alert(error.message); return; }
+        const wasEdit = modal === 'edit';
+        const res = wasEdit
+          ? await supabase.from('inventory').update(d).eq('id', editItem.id).select().single()
+          : await supabase.from('inventory').insert(d).select().single();
+        if (res.error) { alert(res.error.message); return; }
+        const storeName = stores.find(s => s.id === d.store_id)?.name;
+        await logActivity(supabase, profile, {
+          action: wasEdit ? 'update' : 'create',
+          entityType: 'inventory',
+          entityId: res.data?.id,
+          description: `${profile?.name} ${wasEdit ? 'updated' : 'added'} inventory "${d.name}" (stock ${d.stock}, cost ${fmtMoney(d.cost_price)}, sell ${fmtMoney(d.sell_price)}) at ${storeName}`,
+          storeName,
+          metadata: wasEdit ? { before: editItem, after: d } : null,
+        });
         setModal(null); setEditItem(null); load();
       }}>{modal==='edit'?'Update':'Add'}</Button></div>
     </Modal>}

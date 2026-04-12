@@ -3,9 +3,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert } from '@/components/UI';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
+import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
 export default function CashPage() {
-  const { supabase, isOwner } = useAuth();
+  const { supabase, isOwner, profile } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
   const [recon, setRecon] = useState([]);
   const [stores, setStores] = useState([]);
@@ -47,8 +48,17 @@ export default function CashPage() {
   }, [form.store_id, form.date]);
 
   const handleSave = async () => {
-    const { error } = await supabase.from('cash_collections').upsert({ store_id: form.store_id, date: form.date, cash_collected: parseFloat(form.cash_collected)||0, note: form.note }, { onConflict: 'store_id,date' });
+    const cashCollected = parseFloat(form.cash_collected) || 0;
+    const { error } = await supabase.from('cash_collections').upsert({ store_id: form.store_id, date: form.date, cash_collected: cashCollected, note: form.note, collected_by: profile?.id }, { onConflict: 'store_id,date' });
     if (error) { alert(error.message); return; }
+    const storeName = stores.find(s => s.id === form.store_id)?.name;
+    const wasEdit = modal === 'edit';
+    await logActivity(supabase, profile, {
+      action: wasEdit ? 'update' : 'create',
+      entityType: 'cash_collection',
+      description: `${profile?.name} ${wasEdit ? 'updated' : 'recorded'} cash collection of ${fmtMoney(cashCollected)} for ${storeName} on ${shortDate(form.date)}`,
+      storeName,
+    });
     setModal(null); load();
   };
 

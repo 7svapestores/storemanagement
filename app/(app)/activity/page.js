@@ -1,0 +1,175 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/components/AuthProvider';
+import { PageHeader, DateBar, useDateRange, Loading, Alert } from '@/components/UI';
+
+const ENTITY_LABEL = {
+  daily_sales: 'Daily Sale',
+  cash_collection: 'Cash Collection',
+  purchase: 'Purchase',
+  expense: 'Expense',
+  inventory: 'Inventory',
+  vendor: 'Vendor',
+  store: 'Store',
+  user: 'User',
+};
+
+const ACTION_STYLE = {
+  create: { bg: 'bg-sw-greenD', text: 'text-sw-green', label: 'CREATE', icon: '➕' },
+  update: { bg: 'bg-sw-blueD',  text: 'text-sw-blue',  label: 'UPDATE', icon: '✎'  },
+  delete: { bg: 'bg-sw-redD',   text: 'text-sw-red',   label: 'DELETE', icon: '✕'  },
+};
+
+function fmtTime(ts) {
+  try {
+    return new Date(ts).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    });
+  } catch { return String(ts); }
+}
+
+export default function ActivityPage() {
+  const { supabase, isOwner } = useAuth();
+  const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
+  const [rows, setRows] = useState([]);
+  const [stores, setStores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionFilter, setActionFilter] = useState('');
+  const [entityFilter, setEntityFilter] = useState('');
+  const [storeFilter, setStoreFilter] = useState('');
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const { data: st } = await supabase.from('stores').select('id, name').order('name');
+        setStores(st || []);
+
+        let q = supabase
+          .from('activity_log')
+          .select('*')
+          .gte('created_at', range.start)
+          .lte('created_at', range.end + 'T23:59:59')
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (actionFilter) q = q.eq('action', actionFilter);
+        if (entityFilter) q = q.eq('entity_type', entityFilter);
+        if (storeFilter) q = q.eq('store_name', storeFilter);
+
+        const { data, error } = await q;
+        if (error) throw error;
+        setRows(data || []);
+      } catch (e) {
+        console.error('[activity] load failed:', e);
+        setLoadError(e?.message || 'Failed to load activity log');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [range.start, range.end, actionFilter, entityFilter, storeFilter]);
+
+  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (loading) return <Loading />;
+
+  const counts = {
+    create: rows.filter(r => r.action === 'create').length,
+    update: rows.filter(r => r.action === 'update').length,
+    delete: rows.filter(r => r.action === 'delete').length,
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="🕐 Activity Log"
+        subtitle={`${rows.length} events · ${counts.create} created · ${counts.update} updated · ${counts.delete} deleted`}
+      />
+
+      {loadError && <Alert type="error">{loadError}</Alert>}
+
+      <DateBar
+        preset={preset} onPreset={selectPreset}
+        startDate={range.start} endDate={range.end}
+        onStartChange={setStart} onEndChange={setEnd}
+      />
+
+      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)} className="!w-auto !min-w-[140px] !py-1.5 !text-[11px]">
+          <option value="">All actions</option>
+          <option value="create">Create</option>
+          <option value="update">Update</option>
+          <option value="delete">Delete</option>
+        </select>
+        <select value={entityFilter} onChange={e => setEntityFilter(e.target.value)} className="!w-auto !min-w-[160px] !py-1.5 !text-[11px]">
+          <option value="">All entities</option>
+          {Object.entries(ENTITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)} className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]">
+          <option value="">All stores</option>
+          {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+        </select>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="bg-sw-card rounded-xl border border-sw-border p-8 text-center text-sw-dim">
+          No activity recorded for this period.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map(r => {
+            const style = ACTION_STYLE[r.action] || ACTION_STYLE.update;
+            const isOpen = expanded === r.id;
+            const hasMeta = r.metadata && Object.keys(r.metadata).length > 0;
+            return (
+              <div key={r.id} className="bg-sw-card rounded-xl border border-sw-border p-3">
+                <div className="flex items-start gap-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${style.bg} ${style.text} text-base font-bold flex-shrink-0`}>
+                    {style.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${style.bg} ${style.text} uppercase tracking-wide`}>
+                        {style.label}
+                      </span>
+                      <span className="text-sw-sub text-[10px] font-semibold uppercase tracking-wide">
+                        {ENTITY_LABEL[r.entity_type] || r.entity_type}
+                      </span>
+                      {r.store_name && (
+                        <span className="text-sw-dim text-[10px]">· {r.store_name}</span>
+                      )}
+                    </div>
+                    <div className="text-sw-text text-[13px] font-medium break-words">
+                      {r.description}
+                    </div>
+                    <div className="text-sw-dim text-[11px] mt-1">
+                      <span className="text-sw-sub font-semibold">{r.user_name}</span>
+                      <span className="capitalize"> ({r.user_role})</span>
+                      <span> · {fmtTime(r.created_at)}</span>
+                    </div>
+                    {hasMeta && (
+                      <button
+                        onClick={() => setExpanded(isOpen ? null : r.id)}
+                        className="mt-2 text-sw-blue text-[11px] underline"
+                      >
+                        {isOpen ? 'Hide details' : 'Show deleted data'}
+                      </button>
+                    )}
+                    {hasMeta && isOpen && (
+                      <pre className="mt-2 text-[10px] bg-sw-card2 border border-sw-border rounded-lg p-2 overflow-auto text-sw-sub max-h-60">
+{JSON.stringify(r.metadata, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
