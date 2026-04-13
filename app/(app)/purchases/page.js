@@ -18,6 +18,8 @@ export default function PurchasesPage() {
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [invoiceByPurchase, setInvoiceByPurchase] = useState({});
   const [viewInvoice, setViewInvoice] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [vendorFilter, setVendorFilter] = useState('');
   const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
 
   const blankForm = () => ({ week_of: today(), amount: '', vendor_id: vendors[0]?.id || '', notes: '' });
@@ -122,7 +124,12 @@ export default function PurchasesPage() {
     };
 
     setUploading(true);
-    const { data: inserted, error } = await supabase.from('purchases').insert(payload).select().single();
+    const wasEdit = !!editItem;
+    const result = wasEdit
+      ? await supabase.from('purchases').update(payload).eq('id', editItem.id).select().single()
+      : await supabase.from('purchases').insert(payload).select().single();
+    const inserted = result.data;
+    const error = result.error;
     if (error) { setUploading(false); alert(error.message); return; }
     const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
 
@@ -155,13 +162,15 @@ export default function PurchasesPage() {
     }
     setUploading(false);
     await logActivity(supabase, profile, {
-      action: 'create',
+      action: wasEdit ? 'update' : 'create',
       entityType: 'purchase',
       entityId: inserted?.id,
-      description: `${profile?.name} added purchase of ${fmtMoney(amount)} from ${effectiveVendor?.name || 'unknown vendor'} for ${storeName} on ${shortDate(form.week_of)}`,
+      description: `${profile?.name} ${wasEdit ? 'updated' : 'added'} purchase of ${fmtMoney(amount)} from ${effectiveVendor?.name || 'unknown vendor'} for ${storeName} on ${shortDate(form.week_of)}`,
       storeName,
+      metadata: wasEdit ? { before: editItem, after: payload } : null,
     });
     setModal(false);
+    setEditItem(null);
     setInvoiceFile(null);
     setInvoicePreview(null);
     load();
@@ -222,16 +231,55 @@ export default function PurchasesPage() {
 
   const tryOpenAdd = () => {
     if (!hasStore) { setShowStorePicker(true); return; }
+    setEditItem(null);
     setForm(blankForm());
+    setInvoiceFile(null);
+    setInvoicePreview(null);
     setModal(true);
   };
 
+  const openEdit = (row) => {
+    setEditItem(row);
+    setForm({
+      week_of: row.week_of,
+      amount: String(row.total_cost ?? row.unit_cost ?? ''),
+      vendor_id: row.vendor_id || vendors.find(v => v.name === row.supplier)?.id || '',
+      notes: row.notes || '',
+    });
+    setInvoiceFile(null);
+    setInvoicePreview(null);
+    setModal(true);
+  };
+
+  // Vendor filter applied client-side on the already-loaded rows.
+  const visibleItems = vendorFilter
+    ? items.filter(p => p.supplier === vendorFilter)
+    : items;
+
+  const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.total_cost || 0), 0);
+
   return (<div>
     <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores (view only)'}>
-      <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Week','Store','Item','Qty','Cost','Total','Vendor'], items.map(p => [p.week_of, p.stores?.name, p.item, p.quantity, p.unit_cost, p.total_cost, p.supplier]))} className="!text-[11px]">📥 CSV</Button>
-      <Button onClick={tryOpenAdd}>+ Add</Button>
+      <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Date','Store','Vendor','Amount','Notes'], visibleItems.map(p => [p.week_of, p.stores?.name, p.supplier, p.total_cost, p.notes]))} className="!text-[11px]">📥 CSV</Button>
+      {hasStore && <Button onClick={tryOpenAdd}>+ Add</Button>}
     </PageHeader>
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
+
+    {/* Vendor filter */}
+    <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <label className="text-sw-sub text-[10px] font-bold uppercase">Vendor</label>
+      <select
+        value={vendorFilter}
+        onChange={e => setVendorFilter(e.target.value)}
+        className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]"
+      >
+        <option value="">All Vendors</option>
+        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+      </select>
+      {vendorFilter && (
+        <button onClick={() => setVendorFilter('')} className="text-sw-dim text-[10px] underline">clear</button>
+      )}
+    </div>
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
       <DataTable
         emptyMessage="No purchases yet. Tap + Add to log an invoice."
@@ -240,21 +288,54 @@ export default function PurchasesPage() {
           ...(!effectiveStoreId ? [{ key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
           { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
           { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span> },
-          { key: '_invoice', label: '🧾', align: 'center', render: (_, r) => {
+          { key: '_invoice', label: 'Invoice', align: 'center', render: (_, r) => {
             const inv = invoiceByPurchase[r.id];
-            if (!inv) return <span className="text-sw-dim">—</span>;
+            if (!inv) return <span className="text-sw-dim text-base">—</span>;
             return (
-              <button onClick={() => setViewInvoice(inv)} title="View invoice" className="text-sw-blue text-lg">🧾</button>
+              <button
+                onClick={() => setViewInvoice(inv)}
+                title="View invoice"
+                className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-sw-blue border border-sw-blue/30 text-xl"
+              >
+                📷
+              </button>
             );
           } },
           { key: 'notes', label: 'Notes', render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
+          ...(hasStore ? [{
+            key: '_actions', label: '', align: 'right', render: (_, r) => (
+              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                <button
+                  onClick={() => openEdit(r)}
+                  title="Edit"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-card2 border border-sw-border text-sw-blue text-sm"
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(r)}
+                  title="Delete"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-sm"
+                >
+                  🗑️
+                </button>
+              </div>
+            ),
+          }] : []),
         ]}
-        rows={items}
-        isOwner={hasStore}
-        onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
+        rows={visibleItems}
+        isOwner={false}
       />
+      {visibleItems.length > 0 && (
+        <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center">
+          <span className="text-sw-sub text-[11px] font-bold uppercase tracking-wide">
+            Total{vendorFilter ? ` (${vendorFilter})` : ''}
+          </span>
+          <span className="text-sw-amber text-[16px] font-extrabold font-mono">{fmt(visibleTotal)}</span>
+        </div>
+      )}
     </div>
-    {modal && <Modal title="Log Purchase" onClose={() => setModal(false)}>
+    {modal && <Modal title={editItem ? 'Edit Purchase' : 'Log Purchase'} onClose={() => { setModal(false); setEditItem(null); }}>
       <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
         Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
       </div>
@@ -334,8 +415,8 @@ export default function PurchasesPage() {
       </Field>
 
       <div className="flex gap-2 justify-end">
-        <Button variant="secondary" onClick={() => { setModal(false); setNewVendorName(''); setInvoiceFile(null); setInvoicePreview(null); }}>Cancel</Button>
-        <Button onClick={handleSave} disabled={uploading}>{uploading ? 'Saving…' : 'Save'}</Button>
+        <Button variant="secondary" onClick={() => { setModal(false); setEditItem(null); setNewVendorName(''); setInvoiceFile(null); setInvoicePreview(null); }}>Cancel</Button>
+        <Button onClick={handleSave} disabled={uploading}>{uploading ? 'Saving…' : (editItem ? 'Update' : 'Save')}</Button>
       </div>
     </Modal>}
     {viewInvoice && (
