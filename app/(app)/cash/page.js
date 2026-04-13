@@ -91,7 +91,7 @@ export default function CashPage() {
   };
 
   return (<div>
-    <PageHeader title="🏦 Cash Collection" subtitle={hasStore ? `${storeName} · Auto short/over vs sales` : 'All Stores (view only)'}>
+    <PageHeader title="🏦 Cash Collection" subtitle={hasStore ? `${storeName} · Auto short/over vs sales` : 'All Stores · Auto short/over vs sales'}>
       <Button onClick={tryOpenCollect}>+ Collect</Button>
     </PageHeader>
     {loadError && <Alert type="error">{loadError}</Alert>}
@@ -110,7 +110,7 @@ export default function CashPage() {
         { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-sw-blue font-semibold">{fmt(v)}</span> : <span className="text-sw-dim">—</span> },
         { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-sw-amber text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span> },
         { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v) },
-      ]} rows={recon} isOwner={hasStore} onEdit={hasStore ? r => { setForm({ date: r.date, cash_collected: r.cash_collected, note: '' }); setModal('edit'); } : undefined} />
+      ]} rows={recon} isOwner={isOwner} onEdit={isOwner ? r => { setForm({ date: r.date, cash_collected: r.cash_collected, note: '' }); setModal('edit'); } : undefined} />
     </div>
     {modal && <Modal title={modal==='edit'?'Edit':'Collect Cash'} onClose={() => setModal(null)}>
       <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">

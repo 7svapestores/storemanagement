@@ -261,7 +261,7 @@ export default function PurchasesPage() {
   const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.total_cost || 0), 0);
 
   return (<div>
-    <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores (view only)'}>
+    <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores'}>
       <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Date','Store','Vendor','Amount','Notes'], visibleItems.map(p => [p.week_of, p.stores?.name, p.supplier, p.total_cost, p.notes]))} className="!text-[11px]">📥 CSV</Button>
       {hasStore && <Button onClick={tryOpenAdd} className="hidden md:inline-flex">+ Add</Button>}
     </PageHeader>
@@ -332,7 +332,7 @@ export default function PurchasesPage() {
             );
           } },
           { key: 'notes', label: 'Notes', hideOnMobile: true, render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
-          ...(hasStore ? [{
+          ...(isOwner ? [{
             key: '_actions', label: '', align: 'right', render: (_, r) => (
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                 <button

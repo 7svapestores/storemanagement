@@ -285,8 +285,8 @@ export default function InventoryPage() {
           }
           columns={baseColumns}
           rows={items}
-          isOwner={isOwner && !!scopedStoreId}
-          onEdit={isOwner && scopedStoreId ? openEditFull : undefined}
+          isOwner={isOwner}
+          onEdit={isOwner ? openEditFull : undefined}
         />
       </div>
 

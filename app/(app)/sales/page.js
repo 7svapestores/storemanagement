@@ -1206,9 +1206,9 @@ export default function SalesPage() {
 
   return (
     <div>
-      <PageHeader title="Daily Sales" subtitle={hasStore ? `${storeName} · ${sales.length} entries` : `All Stores · ${sales.length} entries (view only)`}>
+      <PageHeader title="Daily Sales" subtitle={`${hasStore ? storeName : 'All Stores'} · ${sales.length} entries`}>
         <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
-        <Button onClick={tryOpenAdd}>+ Add</Button>
+        {hasStore && <Button onClick={tryOpenAdd}>+ Add</Button>}
       </PageHeader>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
@@ -1406,7 +1406,7 @@ export default function SalesPage() {
           { key: 'entered_by', label: 'By',
             sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
             render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
-          ...(hasStore ? [{
+          ...(isOwner ? [{
             key: '_actions', label: '', align: 'right', sortable: false, render: (_, r) => (
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                 <button

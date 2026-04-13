@@ -367,7 +367,7 @@ export default function ExpensesPage() {
 
   return (
     <div>
-      <PageHeader title="📋 Expenses" subtitle={hasStore ? selectedStoreName : 'All Stores (view only)'}>
+      <PageHeader title="📋 Expenses" subtitle={hasStore ? selectedStoreName : 'All Stores'}>
         <Button variant="secondary" onClick={() => downloadCSV('expenses.csv', ['Month','Store','Category','Amount','Note'], items.map(e => [e.month, e.stores?.name, catLabel(e.category)?.label || e.category, e.amount, e.note]))} className="!text-[11px]">📥 CSV</Button>
         <Button variant="secondary" onClick={tryOpenTemplate}>📝 Fill Monthly</Button>
         <Button onClick={tryOpenAdd}>+ Add</Button>
@@ -387,8 +387,8 @@ export default function ExpensesPage() {
             { key: 'note', label: 'Note' },
           ]}
           rows={items}
-          isOwner={hasStore}
-          onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
+          isOwner={isOwner}
+          onDelete={isOwner ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
         />
       </div>
 
