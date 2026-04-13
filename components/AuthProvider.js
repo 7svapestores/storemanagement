@@ -36,6 +36,15 @@ export function AuthProvider({ children }) {
         // bypasses RLS entirely — can't stall on a bad policy).
         const p = await fetchProfile({ force: true });
         if (!mounted) return;
+        // Deactivated employees are signed out immediately.
+        if (p && p.is_active === false) {
+          alert('Your account has been deactivated. Please contact the owner.');
+          try { await supabase.auth.signOut(); } catch {}
+          clearProfileCache();
+          setUser(null); setProfile(null); setLoading(false);
+          if (typeof window !== 'undefined') window.location.href = '/login';
+          return;
+        }
         if (p) {
           setProfile(p);
         } else {
