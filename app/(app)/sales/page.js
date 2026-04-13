@@ -73,7 +73,7 @@ export default function SalesPage() {
       if (enteredByIds.length) {
         const { data: profs, error: profErr } = await supabase
           .from('profiles')
-          .select('id, name, role')
+          .select('id, name, username, role')
           .in('id', enteredByIds);
         if (profErr) {
           console.warn('[sales] profile lookup failed (non-fatal):', profErr);
@@ -313,11 +313,6 @@ export default function SalesPage() {
               </Field>
             </div>
             <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={onNum('credits')} /></Field>
-            {r1Mismatch && (r1Cash || r1Card || r1Gross) > 0 && (
-              <div className="rounded-lg border border-sw-red/30 bg-sw-redD text-sw-red text-[11px] p-2">
-                ⚠️ Cash ({fmt(r1Cash)}) + Card ({fmt(r1Card)}) = {fmt(r1Cash + r1Card)} but Gross was entered as {fmt(r1Gross)} — mismatch of {fmt(Math.abs(r1Diff))}
-              </div>
-            )}
           </div>
         )}
 
@@ -338,11 +333,6 @@ export default function SalesPage() {
               </Field>
             </div>
             <Field label="R2 Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_credits} onChange={onNum('register2_credits')} /></Field>
-            {r2Mismatch && (r2Cash || r2Card || r2Gross) > 0 && (
-              <div className="rounded-lg border border-sw-red/30 bg-sw-redD text-sw-red text-[11px] p-2">
-                ⚠️ R2 Cash ({fmt(r2Cash)}) + Card ({fmt(r2Card)}) = {fmt(r2Cash + r2Card)} but Gross was entered as {fmt(r2Gross)} — mismatch of {fmt(Math.abs(r2Diff))}
-              </div>
-            )}
           </div>
         )}
 
@@ -357,7 +347,7 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(r1Card)}</div>
                 <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r1Credits)}</div>
               </div>
-              {r1Mismatch && (r1Cash || r1Card || r1Gross) > 0 && (
+              {allowShortOver && r1Mismatch && (r1Cash || r1Card || r1Gross) > 0 && (
                 <div className="mt-2 rounded border border-sw-red/30 bg-sw-redD text-sw-red text-[10px] p-1.5">
                   ⚠️ Cash + Card ({fmt(r1Cash + r1Card)}) ≠ Gross ({fmt(r1Gross)}) — mismatch {fmt(Math.abs(r1Diff))}
                 </div>
@@ -374,7 +364,7 @@ export default function SalesPage() {
                   <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(r2Card)}</div>
                   <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r2Credits)}</div>
                 </div>
-                {r2Mismatch && (r2Cash || r2Card || r2Gross) > 0 && (
+                {allowShortOver && r2Mismatch && (r2Cash || r2Card || r2Gross) > 0 && (
                   <div className="mt-2 rounded border border-sw-red/30 bg-sw-redD text-sw-red text-[10px] p-1.5">
                     ⚠️ Cash + Card ({fmt(r2Cash + r2Card)}) ≠ Gross ({fmt(r2Gross)}) — mismatch {fmt(Math.abs(r2Diff))}
                   </div>
@@ -534,7 +524,7 @@ export default function SalesPage() {
             if (n === 0) return <span className="text-sw-dim">—</span>;
             return <span className={n < 0 ? 'text-sw-red font-bold' : 'text-sw-green font-bold'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
           } },
-          { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || '—'}</span> },
+          { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
           onEdit={hasStore ? r => { setForm({
             date: r.date,

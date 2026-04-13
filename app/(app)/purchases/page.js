@@ -27,11 +27,27 @@ export default function PurchasesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: st }, { data: v }] = await Promise.all([
+      const [{ data: st }, { data: v0 }] = await Promise.all([
         supabase.from('stores').select('*').order('created_at'),
         supabase.from('vendors').select('*').order('name'),
       ]);
-      setStores(st || []); setVendors(v || []);
+      setStores(st || []);
+
+      // Fallback: if vendors table is empty, seed the 7 defaults so the
+      // dropdown is never blank on a fresh install.
+      let v = v0;
+      if (!v || v.length === 0) {
+        const defaults = ['Rave', 'Frontline', 'SmokeHub', 'Smoke and Vape King', 'Nepa', 'American', 'DXD']
+          .map(name => ({ name, category: 'Smoke/Vape Wholesale', contact: '', phone: '', email: '', notes: '' }));
+        const { error: seedErr } = await supabase.from('vendors').insert(defaults);
+        if (seedErr) {
+          console.error('[purchases] vendor seed failed:', seedErr);
+        } else {
+          const { data: reloaded } = await supabase.from('vendors').select('*').order('name');
+          v = reloaded || [];
+        }
+      }
+      setVendors(v || []);
 
       let q = supabase.from('purchases')
         .select('*, stores(name, color)')
