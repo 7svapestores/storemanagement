@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
@@ -27,6 +27,8 @@ export default function PurchasesPage() {
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const invoiceCameraRef = useRef(null);
+  const invoiceLibraryRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -335,17 +337,17 @@ export default function PurchasesPage() {
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                 <button
                   onClick={() => openEdit(r)}
-                  title="Edit"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-card2 border border-sw-border text-sw-blue text-sm"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold"
+                  style={{ minHeight: 32 }}
                 >
-                  ✎
+                  Edit
                 </button>
                 <button
                   onClick={() => setConfirmDelete(r)}
-                  title="Delete"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-sm"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-[12px] font-semibold"
+                  style={{ minHeight: 32 }}
                 >
-                  🗑️
+                  Delete
                 </button>
               </div>
             ),
@@ -401,16 +403,24 @@ export default function PurchasesPage() {
 
       <Field label="Invoice Image (optional)">
         {!invoicePreview ? (
-          <label className="flex items-center justify-center gap-2 py-4 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold cursor-pointer min-h-[56px]">
-            <span className="text-xl">📷</span>
-            <span>Take photo or upload invoice</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleInvoicePick}
-              className="hidden"
-            />
-          </label>
+          <div className="flex gap-2 flex-col sm:flex-row">
+            <button
+              type="button"
+              onClick={() => invoiceCameraRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+            >
+              <span className="text-lg">📷</span><span>Take Photo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => invoiceLibraryRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+            >
+              <span className="text-lg">📁</span><span>From Library</span>
+            </button>
+            <input ref={invoiceCameraRef} type="file" accept="image/*" capture="environment" onChange={handleInvoicePick} className="hidden" />
+            <input ref={invoiceLibraryRef} type="file" accept="image/*" onChange={handleInvoicePick} className="hidden" />
+          </div>
         ) : (
           <div className="space-y-2">
             <button

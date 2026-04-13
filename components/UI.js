@@ -455,8 +455,26 @@ export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emp
                 ))}
                 {(onEdit || onDelete) && isOwner && (
                   <td className="!whitespace-nowrap">
-                    {onEdit && <button onClick={() => onEdit(row)} className="text-sw-blue text-[11px] mr-1.5 hover:underline">✎</button>}
-                    {onDelete && <button onClick={() => onDelete(row.id)} className="text-sw-dim text-[11px] hover:text-sw-red">✕</button>}
+                    <div className="flex items-center justify-end gap-1.5">
+                      {onEdit && (
+                        <button
+                          onClick={() => onEdit(row)}
+                          className="inline-flex items-center justify-center px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold min-h-[32px] md:min-h-[32px]"
+                          style={{ minHeight: 32 }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          onClick={() => onDelete(row.id)}
+                          className="inline-flex items-center justify-center px-3 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-[12px] font-semibold"
+                          style={{ minHeight: 32 }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>

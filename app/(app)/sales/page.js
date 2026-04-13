@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
@@ -7,7 +7,7 @@ import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage, fileToBase64 } from '@/lib/storage';
 
 export default function SalesPage() {
-  const { supabase, isOwner, isEmployee, profile, effectiveStoreId, setSelectedStore } = useAuth();
+  const { supabase, isOwner, isEmployee, profile, effectiveStoreId } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
   const [sales, setSales] = useState([]);
   const [stores, setStores] = useState([]);
@@ -18,6 +18,10 @@ export default function SalesPage() {
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showStorePicker, setShowStorePicker] = useState(false);
+  // Local form-only store id. Used when the owner picks a store for a
+  // specific Add entry while "All Stores" is selected in the sidebar.
+  // This is NEVER written back to the sidebar's selectedStore.
+  const [formStoreId, setFormStoreId] = useState(null);
   const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
   const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
   // Receipt verification state
@@ -28,6 +32,11 @@ export default function SalesPage() {
   const [verifyStage, setVerifyStage] = useState('idle'); // 'idle' | 'verifying' | 'mismatch' | 'ready'
   const [mismatches, setMismatches] = useState(null); // array of {field, label, entered, receipt, diff} or null
   const [aiExtracted, setAiExtracted] = useState(null); // raw AI numbers to save alongside
+  // Refs for hidden file inputs — one for camera, one for library per receipt.
+  const shiftCameraRef = useRef(null);
+  const shiftLibraryRef = useRef(null);
+  const safeCameraRef = useRef(null);
+  const safeLibraryRef = useRef(null);
   // Owner review state — per-row text input for the mismatch review card list.
   const [reviewNotes, setReviewNotes] = useState({}); // { [saleId]: noteText }
   const [reviewBusy, setReviewBusy] = useState(null); // id of row currently saving
@@ -151,7 +160,9 @@ export default function SalesPage() {
 
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
-    const storeIdToUse = isEmployee ? profile.store_id : effectiveStoreId;
+    // Owner's save target: sidebar selection takes precedence, then a
+    // form-local store the owner picked via the "Select a Store" modal.
+    const storeIdToUse = isEmployee ? profile.store_id : (effectiveStoreId || formStoreId);
     if (!storeIdToUse) {
       setMsg('Please select a store from the sidebar first.');
       return;
@@ -472,6 +483,7 @@ export default function SalesPage() {
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
+    setFormStoreId(null);
     setShiftReportFile(null); setShiftReportPreview(null);
     setSafeDropFile(null); setSafeDropPreview(null);
     setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
@@ -901,16 +913,29 @@ export default function SalesPage() {
                   Register Shift Report {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
                 </label>
                 {!shiftReportPreview ? (
-                  <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
-                    <span className="text-lg">📷</span>
-                    <span>Take photo or choose file</span>
-                    <input type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
-                  </label>
+                  <div className="flex gap-2 flex-col sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => shiftCameraRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                    >
+                      <span className="text-lg">📷</span><span>Take Photo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => shiftLibraryRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                    >
+                      <span className="text-lg">📁</span><span>From Library</span>
+                    </button>
+                    <input ref={shiftCameraRef} type="file" accept="image/*" capture="environment" onChange={handleShiftPick} className="hidden" />
+                    <input ref={shiftLibraryRef} type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     <img src={shiftReportPreview} alt="Shift report preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
                     <button type="button" onClick={() => { setShiftReportFile(null); setShiftReportPreview(null); setVerifyStage('idle'); }}
-                      className="text-sw-red text-[10px] font-semibold underline">Remove</button>
+                      className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
                   </div>
                 )}
               </div>
@@ -921,16 +946,29 @@ export default function SalesPage() {
                   Safe Drop Receipt {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
                 </label>
                 {!safeDropPreview ? (
-                  <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
-                    <span className="text-lg">📷</span>
-                    <span>Take photo or choose file</span>
-                    <input type="file" accept="image/*" onChange={handleSafeDropPick} className="hidden" />
-                  </label>
+                  <div className="flex gap-2 flex-col sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => safeCameraRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                    >
+                      <span className="text-lg">📷</span><span>Take Photo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => safeLibraryRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                    >
+                      <span className="text-lg">📁</span><span>From Library</span>
+                    </button>
+                    <input ref={safeCameraRef} type="file" accept="image/*" capture="environment" onChange={handleSafeDropPick} className="hidden" />
+                    <input ref={safeLibraryRef} type="file" accept="image/*" onChange={handleSafeDropPick} className="hidden" />
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     <img src={safeDropPreview} alt="Safe drop preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
                     <button type="button" onClick={() => { setSafeDropFile(null); setSafeDropPreview(null); setVerifyStage('idle'); }}
-                      className="text-sw-red text-[10px] font-semibold underline">Remove</button>
+                      className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
                   </div>
                 )}
               </div>
@@ -1136,7 +1174,8 @@ export default function SalesPage() {
   if (loading) return <Loading />;
 
   const hasStore = !!effectiveStoreId;
-  const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+  // Display name in the modal prefers the sidebar-selected store, then the form-local store.
+  const storeName = stores.find(s => s.id === (effectiveStoreId || formStoreId))?.name;
 
   const ownerUsesReg2 = hasRegister2(storeName);
 
@@ -1161,6 +1200,7 @@ export default function SalesPage() {
     setEditItem(null);
     setFieldErrors({});
     setModalError('');
+    setFormStoreId(null);
     resetReceipts();
   };
 
@@ -1371,17 +1411,17 @@ export default function SalesPage() {
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                 <button
                   onClick={() => openEditRow(r)}
-                  title="Edit"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-sm"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold"
+                  style={{ minHeight: 32 }}
                 >
-                  ✎
+                  Edit
                 </button>
                 <button
                   onClick={() => setConfirmDelete(r)}
-                  title="Delete"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-sm"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-[12px] font-semibold"
+                  style={{ minHeight: 32 }}
                 >
-                  🗑️
+                  Delete
                 </button>
               </div>
             ),
@@ -1426,10 +1466,14 @@ export default function SalesPage() {
           stores={stores}
           onCancel={() => setShowStorePicker(false)}
           onSelectStore={(s) => {
-            setSelectedStore(s.id);
+            // Only set the form-local store — never mutate the sidebar.
+            setFormStoreId(s.id);
             setShowStorePicker(false);
             setForm(blankForm());
             setActiveTab('r1');
+            setFieldErrors({});
+            setModalError('');
+            resetReceipts();
             setModal('add');
           }}
         />
