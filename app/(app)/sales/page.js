@@ -24,7 +24,10 @@ export default function SalesPage() {
     r1_gross: '', r1_net: '',
     cash_sales: '', card_sales: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
-    credits: '',
+    // House Account — name dropdown + amount
+    r1_house_account_choice: '', // 'billy' | 'elias' | 'other' | ''
+    r1_house_account_custom: '', // used when choice === 'other'
+    r1_house_account_amount: '',
     // Register 2 (Bells/Kerens) — no gross, no card, no credits
     r2_net: '',
     register2_cash: '', // cash-to-cash (R2 cash transferred to R1)
@@ -37,12 +40,23 @@ export default function SalesPage() {
     r1_gross: '', r1_net: '',
     cash_sales: '', card_sales: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
-    credits: '',
+    r1_house_account_choice: '',
+    r1_house_account_custom: '',
+    r1_house_account_amount: '',
     r2_net: '',
     register2_cash: '',
     r2_safe_drop: '',
     notes: '',
   });
+
+  // Resolve the saved house account name from the dropdown + custom input.
+  const resolvedHouseAccountName = () => {
+    const c = form.r1_house_account_choice;
+    if (c === 'billy') return 'Billy';
+    if (c === 'elias') return 'Elias';
+    if (c === 'other') return (form.r1_house_account_custom || '').trim() || null;
+    return null;
+  };
 
   // All queries + mutations scope to the selected store (or employee's assigned store).
   const storeId = effectiveStoreId;
@@ -124,6 +138,15 @@ export default function SalesPage() {
       setActiveTab('r1');
       return;
     }
+    // If a house account amount > 0 is entered, a name is required.
+    if (num(form.r1_house_account_amount) > 0) {
+      const nm = resolvedHouseAccountName();
+      if (!nm) {
+        setMsg('House Account: select a name (Billy / Elias / Other) or enter a custom name.');
+        setActiveTab('r1');
+        return;
+      }
+    }
     if (usesReg2 && (form.r2_net === '' || form.register2_cash === '' || form.r2_safe_drop === '')) {
       setMsg('Register 2: Net, Cash, and Safe Drop are all required.');
       setActiveTab('r2');
@@ -142,7 +165,11 @@ export default function SalesPage() {
       r1_canceled_basket: num(form.r1_canceled_basket),
       r1_safe_drop: num(form.r1_safe_drop),
       r1_sales_tax: num(form.r1_sales_tax),
-      credits: num(form.credits),
+      r1_house_account_name: resolvedHouseAccountName(),
+      r1_house_account_amount: num(form.r1_house_account_amount),
+      // `credits` is kept in sync by the DB trigger but we also send it here
+      // for clients/reports that read it directly.
+      credits: num(form.r1_house_account_amount),
       // Register 2 (zeros for single-register stores)
       r2_net: usesReg2 ? num(form.r2_net) : 0,
       r2_gross: usesReg2 ? num(form.r2_net) : 0, // legacy column kept in sync
@@ -296,7 +323,10 @@ export default function SalesPage() {
   const r1CancelBasket = num(form.r1_canceled_basket);
   const r1SafeDrop     = num(form.r1_safe_drop);
   const r1SalesTax     = num(form.r1_sales_tax);
-  const r1Credits      = num(form.credits);
+  const r1HouseAmount  = num(form.r1_house_account_amount);
+  const r1HouseName    = resolvedHouseAccountName();
+  // Legacy alias used by the table display code.
+  const r1Credits      = r1HouseAmount;
 
   const r2Net          = num(form.r2_net);
   const r2Cash         = num(form.register2_cash);
@@ -307,10 +337,10 @@ export default function SalesPage() {
   const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
 
   // Short/over — positive = SHORT (red), negative = OVER (green).
-  //   r1 = cash_sales - r1_safe_drop
+  //   r1 = cash_sales - (r1_safe_drop + r1_house_account_amount)
   //   r2 = r2_net - r2_safe_drop
   //   Basket diff is tracked separately and NOT rolled into total_short.
-  const r1ShortOverCalc = r1Cash - r1SafeDrop;
+  const r1ShortOverCalc = r1Cash - (r1SafeDrop + r1HouseAmount);
   const r2ShortOverCalc = r2Net - r2SafeDrop;
   const basketR2Diff = r2Net - r1CancelBasket;
   const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc : 0);
@@ -383,15 +413,46 @@ export default function SalesPage() {
               <Field label={<>Sales Tax {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_sales_tax} onChange={onNum('r1_sales_tax')} />
               </Field>
-              <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={onNum('credits')} /></Field>
             </div>
 
-            {/* Live R1 short/over preview — Cash Sales minus Safe Drop (positive = short). */}
+            {/* House Account — dropdown + amount */}
+            <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
+              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">House Account</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Field label="Name">
+                  <select
+                    value={form.r1_house_account_choice}
+                    onChange={(e) => setForm({ ...form, r1_house_account_choice: e.target.value, r1_house_account_custom: e.target.value === 'other' ? form.r1_house_account_custom : '' })}
+                  >
+                    <option value="">None</option>
+                    <option value="billy">Billy</option>
+                    <option value="elias">Elias</option>
+                    <option value="other">Other…</option>
+                  </select>
+                </Field>
+                <Field label="Amount">
+                  <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_house_account_amount} onChange={onNum('r1_house_account_amount')} />
+                </Field>
+              </div>
+              {form.r1_house_account_choice === 'other' && (
+                <Field label="Custom Name">
+                  <input
+                    type="text"
+                    placeholder="Enter name"
+                    value={form.r1_house_account_custom}
+                    onChange={(e) => setForm({ ...form, r1_house_account_custom: e.target.value })}
+                  />
+                </Field>
+              )}
+            </div>
+
+            {/* Live R1 short/over preview — Cash Sales − (Safe Drop + House Account). */}
             {(form.r1_safe_drop !== '' || form.cash_sales !== '') && (
               <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
                 <span className="text-sw-sub text-[11px] font-semibold uppercase">R1 Short/Over</span>
                 {(() => {
-                  const v = (parseFloat(form.cash_sales) || 0) - (parseFloat(form.r1_safe_drop) || 0);
+                  const v = (parseFloat(form.cash_sales) || 0)
+                          - ((parseFloat(form.r1_safe_drop) || 0) + (parseFloat(form.r1_house_account_amount) || 0));
                   if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
                   if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
                   return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
@@ -442,9 +503,14 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Canceled Basket</div><div className="text-right font-mono">{fmt(r1CancelBasket)}</div>
                 <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(r1SafeDrop)}</div>
                 <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(r1SalesTax)}</div>
-                <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r1Credits)}</div>
+                <div className="text-sw-sub">House Account</div>
+                <div className="text-right font-mono">
+                  {r1HouseAmount > 0
+                    ? <span className="text-sw-text">{r1HouseName || 'Unnamed'} · {fmt(r1HouseAmount)}</span>
+                    : <span className="text-sw-dim">None · {fmt(0)}</span>}
+                </div>
                 <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
-                  <span>Short/Over <span className="text-sw-dim text-[10px]">(Cash − Safe Drop)</span></span>
+                  <span>Short/Over <span className="text-sw-dim text-[10px]">(Cash − Safe Drop − House Account)</span></span>
                   {(() => {
                     if (Math.abs(r1ShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
                     if (r1ShortOverCalc > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(r1ShortOverCalc)}</span>;
@@ -578,7 +644,14 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Canceled Basket</div><div className="text-right font-mono">{fmt(todayEntry.r1_canceled_basket || 0)}</div>
                 <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(todayEntry.r1_safe_drop || 0)}</div>
                 <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(todayEntry.r1_sales_tax ?? todayEntry.tax_collected ?? 0)}</div>
-                <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(todayEntry.credits || 0)}</div>
+                <div className="text-sw-sub">House Account</div>
+                <div className="text-right font-mono">
+                  {Number(todayEntry.r1_house_account_amount ?? todayEntry.credits ?? 0) > 0 ? (
+                    <span className="text-sw-text">{todayEntry.r1_house_account_name || 'Unnamed'} · {fmt(todayEntry.r1_house_account_amount ?? todayEntry.credits)}</span>
+                  ) : (
+                    <span className="text-sw-dim">None · {fmt(0)}</span>
+                  )}
+                </div>
                 <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
                   <span>R1 Short/Over</span>
                   {(() => {
@@ -720,7 +793,18 @@ export default function SalesPage() {
           { key: 'net_sales', label: 'Net', align: 'right', mono: true, sortValue: (r) => Number(r.net_sales ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0))), render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
           { key: 'cash_total', label: 'Cash', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.cash_sales || 0) + Number(r.register2_cash || 0)), render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
           { key: 'card_total', label: 'Card', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.card_sales || 0) + Number(r.register2_card || 0)), render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
-          { key: 'credits', label: 'Credits', align: 'right', mono: true, sortValue: (r) => Number(r.credits || 0), render: v => fmt(v) },
+          { key: 'credits', label: 'H/A', align: 'right', mono: true,
+            sortValue: (r) => Number(r.r1_house_account_amount ?? r.credits ?? 0),
+            render: (_, r) => {
+              const amt = Number(r.r1_house_account_amount ?? r.credits ?? 0);
+              if (amt === 0) return <span className="text-sw-dim">{fmt(0)}</span>;
+              const nm = r.r1_house_account_name;
+              return (
+                <span className="text-sw-text">
+                  {fmt(amt)}{nm ? <span className="text-sw-sub text-[10px]"> ({nm})</span> : null}
+                </span>
+              );
+            } },
           { key: 'short_over', label: 'S/O', align: 'right', mono: true,
             sortValue: (r) => Number(r.short_over ?? 0),
             render: v => {
@@ -755,21 +839,33 @@ export default function SalesPage() {
             sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
             render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
-          onEdit={hasStore ? r => { setForm({
-            date: r.date,
-            r1_gross: r.r1_gross ?? r.gross_sales ?? '',
-            r1_net: r.r1_net ?? r.net_sales ?? '',
-            cash_sales: r.cash_sales ?? '',
-            card_sales: r.card_sales ?? '',
-            r1_canceled_basket: r.r1_canceled_basket ?? '',
-            r1_safe_drop: r.r1_safe_drop ?? '',
-            r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
-            credits: r.credits ?? '',
-            r2_net: r.r2_net ?? '',
-            register2_cash: r.register2_cash ?? '',
-            r2_safe_drop: r.r2_safe_drop ?? '',
-            notes: r.notes || '',
-          }); setEditItem(r); setActiveTab('r1'); setModal('edit'); } : undefined}
+          onEdit={hasStore ? r => {
+            // Reverse-map house account name back into the dropdown + custom fields.
+            const nm = (r.r1_house_account_name || '').trim();
+            let choice = '';
+            let customName = '';
+            if (nm.toLowerCase() === 'billy') choice = 'billy';
+            else if (nm.toLowerCase() === 'elias') choice = 'elias';
+            else if (nm) { choice = 'other'; customName = nm; }
+            setForm({
+              date: r.date,
+              r1_gross: r.r1_gross ?? r.gross_sales ?? '',
+              r1_net: r.r1_net ?? r.net_sales ?? '',
+              cash_sales: r.cash_sales ?? '',
+              card_sales: r.card_sales ?? '',
+              r1_canceled_basket: r.r1_canceled_basket ?? '',
+              r1_safe_drop: r.r1_safe_drop ?? '',
+              r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
+              r1_house_account_choice: choice,
+              r1_house_account_custom: customName,
+              r1_house_account_amount: r.r1_house_account_amount ?? r.credits ?? '',
+              r2_net: r.r2_net ?? '',
+              register2_cash: r.register2_cash ?? '',
+              r2_safe_drop: r.r2_safe_drop ?? '',
+              notes: r.notes || '',
+            });
+            setEditItem(r); setActiveTab('r1'); setModal('edit');
+          } : undefined}
           onDelete={hasStore ? handleDelete : undefined} />
       </div>
 
