@@ -116,8 +116,8 @@ export default function SalesPage() {
       setActiveTab('r1');
       return;
     }
-    if (usesReg2 && (form.r2_gross === '' || form.r2_net === '' || form.register2_cash === '' || form.register2_card === '')) {
-      setMsg('Register 2: Gross, Net, Cash, and Card are all required.');
+    if (usesReg2 && (form.r2_gross === '' || form.r2_net === '' || form.register2_cash === '')) {
+      setMsg('Register 2: Gross, Net, and Cash are all required.');
       setActiveTab('r2');
       return;
     }
@@ -132,11 +132,12 @@ export default function SalesPage() {
       cash_sales: num(form.cash_sales),
       card_sales: num(form.card_sales),
       credits: num(form.credits),
-      // Register 2 (zeros for stores without it)
+      // Register 2 (zeros for stores without it). Card is removed from R2 —
+      // all card transactions at Bells/Kerens go through Register 1.
       r2_gross: usesReg2 ? num(form.r2_gross) : 0,
       r2_net: usesReg2 ? num(form.r2_net) : 0,
       register2_cash: usesReg2 ? num(form.register2_cash) : 0,
-      register2_card: usesReg2 ? num(form.register2_card) : 0,
+      register2_card: 0,
       register2_credits: usesReg2 ? num(form.register2_credits) : 0,
       // Short/over — owner only
       r1_short_over: isOwner ? num(form.r1_short_over) : 0,
@@ -148,9 +149,42 @@ export default function SalesPage() {
     const storeName = stores.find(s => s.id === data.store_id)?.name;
     const total = data.cash_sales + data.card_sales;
 
+    // Owner-side upsert into the employee_shortover ledger. Triggered whenever
+    // a sale has a non-zero short/over entered. Keyed by sales row id.
+    const upsertShortOver = async (salesId) => {
+      if (!isOwner) return;
+      const r1 = data.r1_short_over || 0;
+      const r2 = data.r2_short_over || 0;
+      const total = r1 + r2;
+      if (total === 0 && r1 === 0 && r2 === 0) {
+        // If cleared, remove any existing row for this sale.
+        await supabase.from('employee_shortover').delete().eq('sales_id', salesId);
+        return;
+      }
+      // Look up the employee's name from profiles.
+      const { data: empProfile } = await supabase
+        .from('profiles').select('name').eq('id', data.entered_by).maybeSingle();
+      const payload = {
+        sales_id: salesId,
+        employee_id: data.entered_by,
+        employee_name: empProfile?.name || null,
+        store_id: data.store_id,
+        date: data.date,
+        r1_short: r1,
+        r2_short: r2,
+        total_short: total,
+      };
+      // Upsert by unique sales_id.
+      const { error: eoErr } = await supabase
+        .from('employee_shortover')
+        .upsert(payload, { onConflict: 'sales_id' });
+      if (eoErr) console.warn('[sales] employee_shortover upsert failed:', eoErr);
+    };
+
     if (modal === 'edit' && editItem) {
       const { error } = await supabase.from('daily_sales').update(data).eq('id', editItem.id);
       if (error) { setMsg(error.message); return; }
+      await upsertShortOver(editItem.id);
       await logActivity(supabase, profile, {
         action: 'update',
         entityType: 'daily_sales',
@@ -185,6 +219,7 @@ export default function SalesPage() {
         }
         return;
       }
+      if (inserted?.id) await upsertShortOver(inserted.id);
       await logActivity(supabase, profile, {
         action: 'create',
         entityType: 'daily_sales',
@@ -327,9 +362,6 @@ export default function SalesPage() {
               </Field>
               <Field label={<>R2 Cash Sales {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} />
-              </Field>
-              <Field label={<>R2 Card Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_card} onChange={onNum('register2_card')} />
               </Field>
             </div>
             <Field label="R2 Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_credits} onChange={onNum('register2_credits')} /></Field>

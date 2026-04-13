@@ -26,10 +26,11 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/compare',   icon: '📊', label: 'Compare Stores' },
     { path: '/activity',  icon: '🕐', label: 'Activity Log' },
     { path: '/exports',   icon: '📥', label: 'Export Data' },
-    { path: '/inventory', icon: '📦', label: 'Inventory' },
-    { path: '/email',     icon: '📧', label: 'Email Reports' },
-    { path: '/team',      icon: '👥', label: 'Team' },
-    { path: '/settings',  icon: '⚙️', label: 'Settings' },
+    { path: '/inventory',        icon: '📦', label: 'Inventory' },
+    { path: '/employee-shorts',  icon: '💸', label: 'Employee Shorts' },
+    { path: '/team',             icon: '👤', label: 'Admin' },
+    { path: '/email',            icon: '📧', label: 'Email Reports' },
+    { path: '/settings',         icon: '⚙️', label: 'Settings' },
   ] : [
     { path: '/sales',     icon: '💰', label: 'Enter Sales' },
     { path: '/inventory', icon: '📦', label: 'Inventory' },
@@ -164,7 +165,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
         <div className="md:hidden fixed inset-0 z-50 flex items-end" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
           <div onClick={e => e.stopPropagation()}
-            className="relative w-full bg-sw-card border-t border-sw-border rounded-t-2xl p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] max-h-[80vh] overflow-auto">
+            className="relative w-full bg-sw-card border-t border-sw-border rounded-t-2xl p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] max-h-[70vh] overflow-auto">
             <div className="flex justify-between items-center mb-3 px-1">
               <div className="flex items-center gap-2">
                 <div className={`w-8 h-8 rounded-md flex items-center justify-center text-[12px] font-bold

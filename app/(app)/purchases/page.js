@@ -261,8 +261,20 @@ export default function PurchasesPage() {
   return (<div>
     <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores (view only)'}>
       <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Date','Store','Vendor','Amount','Notes'], visibleItems.map(p => [p.week_of, p.stores?.name, p.supplier, p.total_cost, p.notes]))} className="!text-[11px]">📥 CSV</Button>
-      {hasStore && <Button onClick={tryOpenAdd}>+ Add</Button>}
+      {hasStore && <Button onClick={tryOpenAdd} className="hidden md:inline-flex">+ Add</Button>}
     </PageHeader>
+
+    {/* Mobile-only floating action button — sits above the bottom nav */}
+    {hasStore && (
+      <button
+        onClick={tryOpenAdd}
+        className="md:hidden fixed right-4 z-30 rounded-full bg-sw-blue text-black text-2xl font-extrabold shadow-lg w-14 h-14 flex items-center justify-center"
+        style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
+        aria-label="Add purchase"
+      >
+        +
+      </button>
+    )}
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Vendor filter */}
