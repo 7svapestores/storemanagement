@@ -1132,7 +1132,7 @@ export default function SalesPage() {
     <div>
       <PageHeader title="Daily Sales" subtitle={`${hasStore ? storeName : 'All Stores'} · ${sales.length} entries`}>
         <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
-        {hasStore && <Button onClick={tryOpenAdd}>+ Add</Button>}
+        {isOwner && <Button onClick={tryOpenAdd}>+ Add</Button>}
       </PageHeader>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
