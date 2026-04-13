@@ -43,15 +43,23 @@ export function DatePresets({ active, onChange }) {
   const activeLabel = ALL_PRESETS.find(p => p.id === active)?.l;
   const activeInOverflow = OVERFLOW_PRESETS.some(p => p.id === active);
 
+  // Structure: a non-overflow `relative` wrapper holds the scrolling preset
+  // row AND the "More" button + dropdown. The dropdown escapes any scroll
+  // clipping because its ancestor isn't `overflow: auto`.
   return (
-    <div className="flex gap-1 md:flex-wrap flex-nowrap overflow-x-auto items-center relative" style={{ WebkitOverflowScrolling: 'touch' }}>
-      {PRIMARY_PRESETS.map(p => (
-        <button key={p.id} onClick={() => onChange(p.id)}
-          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex-shrink-0
-            ${active === p.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}>
-          {p.l}
-        </button>
-      ))}
+    <div className="flex gap-1 items-center relative flex-wrap">
+      <div
+        className="flex gap-1 md:flex-wrap flex-nowrap overflow-x-auto items-center"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
+        {PRIMARY_PRESETS.map(p => (
+          <button key={p.id} onClick={() => onChange(p.id)}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex-shrink-0
+              ${active === p.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}>
+            {p.l}
+          </button>
+        ))}
+      </div>
       <button
         onClick={() => setOpen(o => !o)}
         className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex-shrink-0
@@ -61,13 +69,15 @@ export function DatePresets({ active, onChange }) {
       </button>
       {open && (
         <>
+          {/* Tap-outside backdrop */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 z-40 bg-sw-card border border-sw-border rounded-lg shadow-lg py-1 min-w-[160px]">
+          {/* Dropdown — absolute relative to the non-overflow wrapper */}
+          <div className="absolute right-0 top-full mt-1 z-40 bg-sw-card border border-sw-border rounded-lg shadow-lg py-1 min-w-[180px]">
             {OVERFLOW_PRESETS.map(p => (
               <button
                 key={p.id}
                 onClick={() => { onChange(p.id); setOpen(false); }}
-                className={`block w-full text-left px-3 py-1.5 text-[11px] font-semibold transition-colors
+                className={`block w-full text-left px-3 py-2 text-[12px] font-semibold transition-colors
                   ${active === p.id ? 'bg-sw-blueD text-sw-blue' : 'text-sw-sub hover:bg-sw-card2 hover:text-sw-text'}`}
               >
                 {p.l}
@@ -406,16 +416,18 @@ export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emp
             <tr>
               {columns.map(c => {
                 const active = sort?.key === c.key;
-                const arrow = active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
                 const sortable = isSortable(c);
+                const arrow = active
+                  ? (sort.dir === 'asc' ? ' ↑' : ' ↓')
+                  : (sortable ? <span className="text-sw-dim/60 ml-0.5">↕</span> : '');
                 return (
                   <th
                     key={c.key}
-                    className={`${colClass(c)} ${sortable ? 'cursor-pointer select-none' : ''} ${active ? '!text-sw-blue' : ''}`}
+                    className={`${colClass(c)} ${sortable ? 'cursor-pointer select-none hover:!text-sw-text transition-colors' : ''} ${active ? '!text-sw-blue' : ''}`}
                     style={{ textAlign: c.align || 'left' }}
                     onClick={() => handleSort(c)}
                   >
-                    {c.label}{arrow}
+                    {c.label}{typeof arrow === 'string' ? arrow : null}{typeof arrow !== 'string' ? arrow : null}
                   </th>
                 );
               })}
