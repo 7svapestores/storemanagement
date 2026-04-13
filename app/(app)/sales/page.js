@@ -302,27 +302,26 @@ export default function SalesPage() {
   const r2Cash         = num(form.register2_cash);
   const r2SafeDrop     = num(form.r2_safe_drop);
 
-  // Short/over = safe drop minus cash sales (positive = over, negative = short).
-  const r1ShortOverCalc = r1SafeDrop - r1Cash;
-  const r2ShortOverCalc = r2SafeDrop - r2Cash;
-  const totalShortOverCalc = r1ShortOverCalc + r2ShortOverCalc;
+  // Determine register 2 applicability first — short/over total depends on it.
+  const currentStoreObj = stores.find(s => s.id === (isEmployee ? profile?.store_id : effectiveStoreId));
+  const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
 
-  // Owner-only mismatch signal: R1 canceled basket should equal R2 cash-to-cash.
-  const cancelMismatch = Math.abs(r1CancelBasket - r2Cash) >= 0.01;
-  const cancelDiff = r1CancelBasket - r2Cash;
-
-  // Difference between R1 canceled basket and R2 net sales (displayed in form + table).
+  // Short/over — positive = SHORT, negative = OVER.
+  //   r1 = cash sales - safe drop (employee handed in less cash than register)
+  //   r2 = net sales - safe drop
+  //   diff = canceled basket - r2 net sales
+  //   total = r1 + r2 + diff  (r2 + diff only added for R2 stores)
+  const r1ShortOverCalc = r1Cash - r1SafeDrop;
+  const r2ShortOverCalc = r2Net - r2SafeDrop;
   const basketVsR2NetDiff = r1CancelBasket - r2Net;
+  const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc + basketVsR2NetDiff : 0);
 
   const totalGross = r1Gross + r2Net; // R2 has no gross, use net
   const totalNet   = r1Net + r2Net;
   const totalCash  = r1Cash + r2Cash;
   const totalCard  = r1Card; // R2 has no card
 
-  // Compute next/last tab for the employee "Next →" flow. Needs to know
-  // the current store to decide whether R2 is in the flow at all.
-  const currentStoreObj = stores.find(s => s.id === (isEmployee ? profile?.store_id : effectiveStoreId));
-  const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
+  // Employee "Next →" flow.
   const flowTabs = ['r1', ...(currentUsesReg2 ? ['r2'] : []), 'summary'];
   const curIdx = flowTabs.indexOf(activeTab);
   const nextTabId = curIdx >= 0 && curIdx < flowTabs.length - 1 ? flowTabs[curIdx + 1] : null;
@@ -388,15 +387,15 @@ export default function SalesPage() {
               <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={onNum('credits')} /></Field>
             </div>
 
-            {/* Live R1 short/over preview — Safe Drop minus Cash Sales */}
+            {/* Live R1 short/over preview — Cash Sales minus Safe Drop (positive = short). */}
             {(form.r1_safe_drop !== '' || form.cash_sales !== '') && (
               <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
                 <span className="text-sw-sub text-[11px] font-semibold uppercase">R1 Short/Over</span>
                 {(() => {
-                  const diff = (parseFloat(form.r1_safe_drop) || 0) - (parseFloat(form.cash_sales) || 0);
-                  if (Math.abs(diff) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
-                  if (diff > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(diff)}</span>;
-                  return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(diff))}</span>;
+                  const v = (parseFloat(form.cash_sales) || 0) - (parseFloat(form.r1_safe_drop) || 0);
+                  if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                  if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
+                  return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
                 })()}
               </div>
             )}
@@ -417,15 +416,15 @@ export default function SalesPage() {
               </Field>
             </div>
 
-            {/* Live R2 short/over preview */}
-            {(form.r2_safe_drop !== '' || form.register2_cash !== '') && (
+            {/* Live R2 short/over preview — R2 Net Sales minus R2 Safe Drop. */}
+            {(form.r2_safe_drop !== '' || form.r2_net !== '') && (
               <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
                 <span className="text-sw-sub text-[11px] font-semibold uppercase">R2 Short/Over</span>
                 {(() => {
-                  const diff = (parseFloat(form.r2_safe_drop) || 0) - (parseFloat(form.register2_cash) || 0);
-                  if (Math.abs(diff) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
-                  if (diff > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(diff)}</span>;
-                  return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(diff))}</span>;
+                  const v = (parseFloat(form.r2_net) || 0) - (parseFloat(form.r2_safe_drop) || 0);
+                  if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                  if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
+                  return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
                 })()}
               </div>
             )}
@@ -446,11 +445,11 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(r1SalesTax)}</div>
                 <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r1Credits)}</div>
                 <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
-                  <span>Short/Over</span>
+                  <span>Short/Over <span className="text-sw-dim text-[10px]">(Cash − Safe Drop)</span></span>
                   {(() => {
                     if (Math.abs(r1ShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
-                    if (r1ShortOverCalc > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(r1ShortOverCalc)}</span>;
-                    return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(r1ShortOverCalc))}</span>;
+                    if (r1ShortOverCalc > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(r1ShortOverCalc)}</span>;
+                    return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(r1ShortOverCalc))}</span>;
                   })()}
                 </div>
               </div>
@@ -461,14 +460,14 @@ export default function SalesPage() {
                 <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Register 2</div>
                 <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[11px]">
                   <div className="text-sw-sub">Net</div><div className="text-right font-mono text-sw-text">{fmt(r2Net)}</div>
-                  <div className="text-sw-sub">Cash to Cash</div><div className="text-right font-mono">{fmt(r2Cash)}</div>
+                  <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(r2Cash)}</div>
                   <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(r2SafeDrop)}</div>
                   <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
-                    <span>Short/Over</span>
+                    <span>Short/Over <span className="text-sw-dim text-[10px]">(Net − Safe Drop)</span></span>
                     {(() => {
                       if (Math.abs(r2ShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
-                      if (r2ShortOverCalc > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(r2ShortOverCalc)}</span>;
-                      return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(r2ShortOverCalc))}</span>;
+                      if (r2ShortOverCalc > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(r2ShortOverCalc)}</span>;
+                      return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(r2ShortOverCalc))}</span>;
                     })()}
                   </div>
                 </div>
@@ -482,33 +481,50 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Total Net</div><div className="text-right font-mono font-bold text-sw-green">{fmt(totalNet)}</div>
                 <div className="text-sw-sub">Total Cash</div><div className="text-right font-mono">{fmt(totalCash)}</div>
                 <div className="text-sw-sub">Total Card</div><div className="text-right font-mono">{fmt(totalCard)}</div>
-                <div className="text-sw-sub col-span-2 border-t border-sw-blue/30 pt-1 mt-1 flex justify-between">
-                  <span>Total Short/Over</span>
-                  <span className={totalShortOverCalc === 0 ? 'text-sw-dim font-mono font-bold' : totalShortOverCalc < 0 ? 'text-sw-red font-mono font-bold' : 'text-sw-green font-mono font-bold'}>
-                    {totalShortOverCalc > 0 ? '+' : ''}{fmt(totalShortOverCalc)}
-                  </span>
-                </div>
               </div>
             </div>
 
-            {/* Basket vs R2 Net difference — visible to everyone, no validation/warning. */}
-            {usesReg2 && (
-              <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
-                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Basket vs R2 Difference</div>
-                <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[11px]">
-                  <div className="text-sw-sub">R1 Canceled Basket</div><div className="text-right font-mono">{fmt(r1CancelBasket)}</div>
-                  <div className="text-sw-sub">R2 Net Sales</div><div className="text-right font-mono">{fmt(r2Net)}</div>
-                  <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
-                    <span>Difference</span>
-                    {(() => {
-                      if (Math.abs(basketVsR2NetDiff) < 0.01) return <span className="text-sw-green font-mono font-bold">✅ Matched</span>;
-                      if (basketVsR2NetDiff > 0) return <span className="text-sw-amber font-mono font-bold">+{fmt(basketVsR2NetDiff)}</span>;
-                      return <span className="text-sw-red font-mono font-bold">-{fmt(Math.abs(basketVsR2NetDiff))}</span>;
-                    })()}
-                  </div>
-                </div>
+            {/* Short/Over roll-up: R1 + R2 + Basket diff = Total */}
+            <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
+              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Short / Over Breakdown</div>
+              <div className="space-y-1 text-[12px]">
+                {(() => {
+                  const fmtSO = (v) => {
+                    if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono">{fmt(0)}</span>;
+                    if (v > 0) return <span className="text-sw-red font-mono font-bold">-{fmt(v)}</span>;
+                    return <span className="text-sw-green font-mono font-bold">+{fmt(Math.abs(v))}</span>;
+                  };
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-sw-sub">R1 Short/Over <span className="text-sw-dim text-[10px]">(Cash − Safe Drop)</span></span>
+                        {fmtSO(r1ShortOverCalc)}
+                      </div>
+                      {usesReg2 && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-sw-sub">R2 Short/Over <span className="text-sw-dim text-[10px]">(Net − Safe Drop)</span></span>
+                            {fmtSO(r2ShortOverCalc)}
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sw-sub">Basket vs R2 Net <span className="text-sw-dim text-[10px]">(Basket − R2 Net)</span></span>
+                            {fmtSO(basketVsR2NetDiff)}
+                          </div>
+                        </>
+                      )}
+                      <div className="flex justify-between border-t border-sw-border pt-1.5 mt-1 text-[13px]">
+                        <span className="text-sw-text font-bold uppercase tracking-wide">Total Short/Over</span>
+                        {(() => {
+                          if (Math.abs(totalShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-extrabold">Matched {fmt(0)}</span>;
+                          if (totalShortOverCalc > 0) return <span className="text-sw-red font-mono font-extrabold">Short -{fmt(totalShortOverCalc)}</span>;
+                          return <span className="text-sw-green font-mono font-extrabold">Over +{fmt(Math.abs(totalShortOverCalc))}</span>;
+                        })()}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-            )}
+            </div>
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
           </div>
@@ -557,8 +573,8 @@ export default function SalesPage() {
                   {(() => {
                     const v = Number(todayEntry.r1_short_over || 0);
                     if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched $0.00</span>;
-                    if (v > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(v)}</span>;
-                    return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(v))}</span>;
+                    if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
+                    return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
                   })()}
                 </div>
               </div>
@@ -577,8 +593,8 @@ export default function SalesPage() {
                     {(() => {
                       const v = Number(todayEntry.r2_short_over || 0);
                       if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched $0.00</span>;
-                      if (v > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(v)}</span>;
-                      return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(v))}</span>;
+                      if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
+                      return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
                     })()}
                   </div>
                 </div>
@@ -590,9 +606,9 @@ export default function SalesPage() {
               <span className="text-sw-blue text-[11px] font-bold uppercase">Total Short/Over</span>
               {(() => {
                 const v = Number(todayEntry.short_over || 0);
-                if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-extrabold">$0.00</span>;
-                if (v > 0) return <span className="text-sw-green font-mono font-extrabold">+{fmt(v)}</span>;
-                return <span className="text-sw-red font-mono font-extrabold">-{fmt(Math.abs(v))}</span>;
+                if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-extrabold">Matched $0.00</span>;
+                if (v > 0) return <span className="text-sw-red font-mono font-extrabold">Short -{fmt(v)}</span>;
+                return <span className="text-sw-green font-mono font-extrabold">Over +{fmt(Math.abs(v))}</span>;
               })()}
             </div>
 
@@ -623,8 +639,9 @@ export default function SalesPage() {
             { key: 'net_sales', label: 'Net', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? (r.total_sales - (r.credits || 0)))}</span> },
             { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
               const n = Number(v || 0);
-              if (n === 0) return <span className="text-sw-dim">—</span>;
-              return <span className={n < 0 ? 'text-sw-red' : 'text-sw-green'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
+              if (Math.abs(n) < 0.01) return <span className="text-sw-dim">—</span>;
+              if (n > 0) return <span className="text-sw-red">-{fmt(n)}</span>;
+              return <span className="text-sw-green">+{fmt(Math.abs(n))}</span>;
             } },
           ]} rows={sales.slice(0, 14)} isOwner={false} />
         </div>
@@ -689,8 +706,11 @@ export default function SalesPage() {
           { key: 'credits', label: 'Credits', align: 'right', mono: true, render: v => fmt(v) },
           { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
             const n = Number(v || 0);
-            if (n === 0) return <span className="text-sw-dim">—</span>;
-            return <span className={n < 0 ? 'text-sw-red font-bold' : 'text-sw-green font-bold'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
+            if (Math.abs(n) < 0.01) return <span className="text-sw-dim">—</span>;
+            // Positive = short (employee owes money) → red.
+            // Negative = over → green.
+            if (n > 0) return <span className="text-sw-red font-bold">-{fmt(n)}</span>;
+            return <span className="text-sw-green font-bold">+{fmt(Math.abs(n))}</span>;
           } },
           { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, render: (_, r) => {
             const cb = Number(r.r1_canceled_basket || 0);
