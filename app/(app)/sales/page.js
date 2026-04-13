@@ -306,15 +306,15 @@ export default function SalesPage() {
   const currentStoreObj = stores.find(s => s.id === (isEmployee ? profile?.store_id : effectiveStoreId));
   const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
 
-  // Short/over — positive = SHORT, negative = OVER.
-  //   r1 = cash sales - safe drop (employee handed in less cash than register)
-  //   r2 = net sales - safe drop
-  //   diff = canceled basket - r2 net sales
-  //   total = r1 + r2 + diff  (r2 + diff only added for R2 stores)
+  // Short/over — positive = SHORT (red), negative = OVER (green).
+  //   r1 = cash_sales - r1_safe_drop
+  //   r2 = r2_net - r2_safe_drop
+  //   basketR2Diff = r2_net - r1_canceled_basket   (negative = money missing)
+  //   total_short = r1 + r2 - basketR2Diff         (subtracting so missing money adds to short)
   const r1ShortOverCalc = r1Cash - r1SafeDrop;
   const r2ShortOverCalc = r2Net - r2SafeDrop;
-  const basketVsR2NetDiff = r1CancelBasket - r2Net;
-  const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc + basketVsR2NetDiff : 0);
+  const basketR2Diff = r2Net - r1CancelBasket;
+  const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc - basketR2Diff : 0);
 
   const totalGross = r1Gross + r2Net; // R2 has no gross, use net
   const totalNet   = r1Net + r2Net;
@@ -489,10 +489,17 @@ export default function SalesPage() {
               <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Short / Over Breakdown</div>
               <div className="space-y-1 text-[12px]">
                 {(() => {
+                  // Short/over lines: positive = short (red -), negative = over (green +).
                   const fmtSO = (v) => {
                     if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono">{fmt(0)}</span>;
                     if (v > 0) return <span className="text-sw-red font-mono font-bold">-{fmt(v)}</span>;
                     return <span className="text-sw-green font-mono font-bold">+{fmt(Math.abs(v))}</span>;
+                  };
+                  // Basket diff: negative = money missing (red -), positive = extra (green +), zero = matched.
+                  const fmtDiff = (v) => {
+                    if (Math.abs(v) < 0.01) return <span className="text-sw-green font-mono font-bold">{fmt(0)} ✅</span>;
+                    if (v < 0) return <span className="text-sw-red font-mono font-bold">-{fmt(Math.abs(v))}</span>;
+                    return <span className="text-sw-green font-mono font-bold">+{fmt(v)}</span>;
                   };
                   return (
                     <>
@@ -507,8 +514,10 @@ export default function SalesPage() {
                             {fmtSO(r2ShortOverCalc)}
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-sw-sub">Basket vs R2 Net <span className="text-sw-dim text-[10px]">(Basket − R2 Net)</span></span>
-                            {fmtSO(basketVsR2NetDiff)}
+                            <span className="text-sw-sub">
+                              Basket vs R2 <span className="text-sw-dim text-[10px]">(R2 Net {fmt(r2Net)} − Basket {fmt(r1CancelBasket)})</span>
+                            </span>
+                            {fmtDiff(basketR2Diff)}
                           </div>
                         </>
                       )}
@@ -680,23 +689,7 @@ export default function SalesPage() {
 
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable columns={[
-          { key: '_mismatch', label: '', align: 'center', render: (_, r) => {
-            // Owner-only signal: R1 canceled basket should equal R2 cash-to-cash
-            // (that's the money moved from R2 to R1 to cover voided baskets).
-            const cb = Number(r.r1_canceled_basket || 0);
-            const r2c = Number(r.register2_cash || 0);
-            if (cb === 0 && r2c === 0) return null;
-            const diff = cb - r2c;
-            if (Math.abs(diff) < 0.01) return null;
-            return (
-              <span
-                title={`R1 Canceled Basket (${fmt(cb)}) vs R2 Cash to Cash (${fmt(r2c)}) — mismatch ${fmt(Math.abs(diff))}`}
-                className="text-sw-red text-base"
-              >
-                ⚠️
-              </span>
-            );
-          } },
+          // (legacy mismatch column removed — the Diff column now shows this signal directly)
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_id', label: 'Store', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
           { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
@@ -716,10 +709,11 @@ export default function SalesPage() {
             const cb = Number(r.r1_canceled_basket || 0);
             const r2n = Number(r.r2_net || 0);
             if (cb === 0 && r2n === 0) return <span className="text-sw-dim">—</span>;
-            const diff = cb - r2n;
-            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">✅</span>;
-            if (diff > 0) return <span className="text-sw-amber">+{fmt(diff)}</span>;
-            return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
+            // Prefer the stored column; fall back to computing on the fly for rows saved before the migration.
+            const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (r2n - cb);
+            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)} ✅</span>;
+            if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
+            return <span className="text-sw-green">+{fmt(diff)}</span>;
           } },
           { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
