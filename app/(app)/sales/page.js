@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
-import { uploadReceipt, compressImage, fileToBase64 } from '@/lib/storage';
+import { uploadReceipt, compressImage } from '@/lib/storage';
 
 export default function SalesPage() {
   const { supabase, isOwner, isEmployee, profile, effectiveStoreId } = useAuth();
@@ -24,34 +24,35 @@ export default function SalesPage() {
   const [formStoreId, setFormStoreId] = useState(null);
   const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
   const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
-  // Receipt verification state — single shift report image only.
+  // Receipt upload state — simple image storage for record keeping, no AI.
+  // R1 = Register 1 shift report (saved to shift_report_url)
+  // R2 = Register 2 shift report (saved to safe_drop_url for back-compat)
   const [shiftReportFile, setShiftReportFile] = useState(null);
   const [shiftReportPreview, setShiftReportPreview] = useState(null);
-  const [verifyStage, setVerifyStage] = useState('idle'); // 'idle' | 'verifying' | 'mismatch' | 'ready'
-  const [mismatches, setMismatches] = useState(null); // array of {field, label, entered, receipt, diff} or null
-  const [aiExtracted, setAiExtracted] = useState(null); // raw AI numbers to save alongside
-  // Refs for hidden file inputs — camera + library.
+  const [r2ReportFile, setR2ReportFile] = useState(null);
+  const [r2ReportPreview, setR2ReportPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
   const shiftCameraRef = useRef(null);
   const shiftLibraryRef = useRef(null);
-  // Owner review state — per-row text input for the mismatch review card list.
-  const [reviewNotes, setReviewNotes] = useState({}); // { [saleId]: noteText }
-  const [reviewBusy, setReviewBusy] = useState(null); // id of row currently saving
+  const r2CameraRef = useRef(null);
+  const r2LibraryRef = useRef(null);
+  // Receipt view modal (click 📷 in the owner table).
+  const [viewReceipts, setViewReceipts] = useState(null); // { r1Url, r2Url, storeName, date }
   const [viewReceipt, setViewReceipt] = useState(null); // { url, caption } for full-screen viewer
-  const [collapsedReviews, setCollapsedReviews] = useState({}); // { [id]: true }
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
     // Register 1
     r1_gross: '', r1_net: '',
     cash_sales: '', card_sales: '',
+    cashapp_check: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
-    // House Account — name dropdown + amount
-    r1_house_account_choice: '', // 'billy' | 'elias' | 'other' | ''
-    r1_house_account_custom: '', // used when choice === 'other'
+    r1_house_account_choice: '',
+    r1_house_account_custom: '',
     r1_house_account_amount: '',
-    // Register 2 (Bells/Kerens) — no gross, no card, no credits
+    // Register 2 (Bells/Kerens)
     r2_net: '',
-    register2_cash: '', // cash-to-cash (R2 cash transferred to R1)
+    register2_cash: '',
     r2_safe_drop: '',
     notes: '',
   });
@@ -60,6 +61,7 @@ export default function SalesPage() {
     date: today(),
     r1_gross: '', r1_net: '',
     cash_sales: '', card_sales: '',
+    cashapp_check: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
     r1_house_account_choice: '',
     r1_house_account_custom: '',
@@ -152,6 +154,7 @@ export default function SalesPage() {
   };
 
   const handleShiftPick = pickFile(setShiftReportFile, setShiftReportPreview);
+  const handleR2Pick = pickFile(setR2ReportFile, setR2ReportPreview);
 
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
@@ -167,7 +170,7 @@ export default function SalesPage() {
 
     // ── Validation ─────────────────────────────────────────────
     const errs = {};
-    const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
+    const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'cashapp_check', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
     r1Required.forEach(k => { if (form[k] === '') errs[k] = true; });
 
     if (usesReg2) {
@@ -208,118 +211,40 @@ export default function SalesPage() {
       return;
     }
 
-    // ── AI verification (skipped for owners with no receipt, or on override) ──
+    // ── Employee must also upload R2 receipt if their store has R2 ──
+    if (isEmployee && usesReg2 && !r2ReportFile) {
+      setModalError('Please upload the Register 2 receipt screenshot before submitting.');
+      setActiveTab('r2');
+      return;
+    }
+
+    // ── Upload receipts to storage (simple, no AI) ──
     let receiptShiftUrl = null, receiptShiftPath = null;
-    let aiVerified = false;
-    let verifiedMismatches = null;
-
+    let receiptR2Url = null, receiptR2Path = null;
     const storeForPath = stores.find(s => s.id === storeIdToUse);
-    const skipVerify = !hasReceipt;
 
-    if (!skipVerify && verifyStage !== 'ready') {
-      setVerifyStage('verifying');
-      setModalError('');
-      try {
+    setSaving(true);
+    try {
+      if (shiftReportFile) {
         const shiftCompressed = await compressImage(shiftReportFile);
         const shiftUp = await uploadReceipt(supabase, shiftCompressed, {
           storeName: storeForPath?.name, date: form.date || today(), kind: 'shift',
         });
         receiptShiftUrl = shiftUp.url;
         receiptShiftPath = shiftUp.path;
-
-        const shiftB64 = await fileToBase64(shiftCompressed);
-        const res = await fetch('/api/read-receipt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shiftReportBase64: shiftB64 }),
-        });
-        const aiData = await res.json();
-        if (!res.ok) throw new Error(aiData?.error || 'AI read failed');
-
-        // Handle "unclear" response — clear the image and prompt a retake.
-        if (aiData.shiftReport?.error === 'unclear') {
-          setShiftReportFile(null);
-          setShiftReportPreview(null);
-          setModalError('❌ The Register Shift Report photo is not clear enough. Please take a new photo with better lighting and make sure the full receipt is visible.');
-          setVerifyStage('idle');
-          setActiveTab('r1');
-          return;
-        }
-
-        // Store the flat shape the DB expects.
-        setAiExtracted({
-          grossSales:     Number(aiData.shiftReport?.grossSales ?? 0),
-          netSales:       Number(aiData.shiftReport?.netSales ?? 0),
-          cashSales:      Number(aiData.shiftReport?.cashSales ?? 0),
-          cardSales:      Number(aiData.shiftReport?.cardSales ?? 0),
-          salesTax:       Number(aiData.shiftReport?.salesTax ?? 0),
-          canceledBasket: Number(aiData.shiftReport?.canceledBasket ?? 0),
-          safeDrop:       Number(aiData.shiftReport?.safeDrop ?? 0),
-        });
-
-        const entered = {
-          grossSales:      num(form.r1_gross),
-          netSales:        num(form.r1_net),
-          cashSales:       num(form.cash_sales),
-          cardSales:       num(form.card_sales),
-          salesTax:        num(form.r1_sales_tax),
-          canceledBasket:  num(form.r1_canceled_basket),
-          safeDrop:        num(form.r1_safe_drop),
-        };
-        const receipt = {
-          grossSales:      Number(aiData.shiftReport?.grossSales ?? 0),
-          netSales:        Number(aiData.shiftReport?.netSales ?? 0),
-          cashSales:       Number(aiData.shiftReport?.cashSales ?? 0),
-          cardSales:       Number(aiData.shiftReport?.cardSales ?? 0),
-          salesTax:        Number(aiData.shiftReport?.salesTax ?? 0),
-          canceledBasket:  Number(aiData.shiftReport?.canceledBasket ?? 0),
-          safeDrop:        Number(aiData.shiftReport?.safeDrop ?? 0),
-        };
-        const TOL = 1.00;
-        const compare = [
-          { field: 'r1_gross',           label: 'R1 Gross Sales',     e: entered.grossSales,     r: receipt.grossSales },
-          { field: 'r1_net',             label: 'R1 Net Sales',       e: entered.netSales,       r: receipt.netSales },
-          { field: 'cash_sales',         label: 'R1 Cash Sales',      e: entered.cashSales,      r: receipt.cashSales },
-          { field: 'card_sales',         label: 'R1 Card Sales',      e: entered.cardSales,      r: receipt.cardSales },
-          { field: 'r1_sales_tax',       label: 'R1 Sales Tax',       e: entered.salesTax,       r: receipt.salesTax },
-          { field: 'r1_canceled_basket', label: 'R1 Canceled Basket', e: entered.canceledBasket, r: receipt.canceledBasket },
-          { field: 'r1_safe_drop',       label: 'Safe Drop',          e: entered.safeDrop,       r: receipt.safeDrop },
-        ];
-        const diffs = compare
-          .filter(c => Math.abs(c.e - c.r) > TOL)
-          .map(c => ({ field: c.field, label: c.label, entered: c.e, receipt: c.r, diff: +(c.e - c.r).toFixed(2) }));
-
-        if (diffs.length > 0) {
-          setMismatches(diffs);
-          setVerifyStage('mismatch');
-          return; // bail — let user fix or override
-        }
-
-        aiVerified = true;
-        verifiedMismatches = null;
-      } catch (e) {
-        console.error('[sales] verify failed:', e);
-        setModalError(`Verification failed: ${e.message || e}. You can fix your entries and try again, or add a note and submit anyway.`);
-        setVerifyStage('mismatch'); // surface the "Submit Anyway" path even on API failure
-        setMismatches([]);
-        return;
       }
-    } else if (!skipVerify) {
-      // User pressed "Submit Anyway" — upload the shift report now
-      // (verification already ran on the previous click), mark as overridden.
-      try {
-        const shiftCompressed = await compressImage(shiftReportFile);
-        const shiftUp = await uploadReceipt(supabase, shiftCompressed, {
-          storeName: storeForPath?.name, date: form.date || today(), kind: 'shift',
+      if (r2ReportFile) {
+        const r2Compressed = await compressImage(r2ReportFile);
+        const r2Up = await uploadReceipt(supabase, r2Compressed, {
+          storeName: storeForPath?.name, date: form.date || today(), kind: 'r2',
         });
-        receiptShiftUrl = shiftUp.url;
-        receiptShiftPath = shiftUp.path;
-      } catch (e) {
-        setModalError(`Failed to upload receipt: ${e.message || e}`);
-        return;
+        receiptR2Url = r2Up.url;
+        receiptR2Path = r2Up.path;
       }
-      aiVerified = false;
-      verifiedMismatches = mismatches || [];
+    } catch (e) {
+      setSaving(false);
+      setModalError(`Failed to upload receipt: ${e.message || e}`);
+      return;
     }
 
     const data = {
@@ -331,6 +256,7 @@ export default function SalesPage() {
       r1_net: num(form.r1_net),
       cash_sales: num(form.cash_sales),
       card_sales: num(form.card_sales),
+      cashapp_check: num(form.cashapp_check),
       r1_canceled_basket: num(form.r1_canceled_basket),
       r1_safe_drop: num(form.r1_safe_drop),
       r1_sales_tax: num(form.r1_sales_tax),
@@ -346,12 +272,12 @@ export default function SalesPage() {
       r2_safe_drop: usesReg2 ? num(form.r2_safe_drop) : 0,
       register2_card: 0,
       register2_credits: 0,
-      // Receipt verification
-      shift_report_url: receiptShiftUrl,
-      shift_report_path: receiptShiftPath,
-      ai_verified: aiVerified,
-      ai_mismatches: verifiedMismatches && verifiedMismatches.length ? verifiedMismatches : null,
-      ai_extracted_data: aiExtracted,
+      // Receipts — plain image storage, no AI. On edit without a new file
+      // uploaded, preserve the existing URLs on the row.
+      shift_report_url: receiptShiftUrl ?? editItem?.shift_report_url ?? null,
+      shift_report_path: receiptShiftPath ?? editItem?.shift_report_path ?? null,
+      safe_drop_url: receiptR2Url ?? editItem?.safe_drop_url ?? null,   // reused for R2 receipt
+      safe_drop_path: receiptR2Path ?? editItem?.safe_drop_path ?? null,
       // Short/over is now derived by the DB trigger from safe_drop - cash_sales.
       // We still send 0 so existing column-level checks don't break; trigger overwrites.
       r1_short_over: 0,
@@ -443,6 +369,7 @@ export default function SalesPage() {
       });
     }
 
+    setSaving(false);
     setModal(null); setEditItem(null);
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
     setForm(blankForm());
@@ -451,7 +378,7 @@ export default function SalesPage() {
     setModalError('');
     setFormStoreId(null);
     setShiftReportFile(null); setShiftReportPreview(null);
-    setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
+    setR2ReportFile(null); setR2ReportPreview(null);
     load();
   };
 
@@ -510,30 +437,6 @@ export default function SalesPage() {
     setModalError('');
     resetReceipts();
     setModal('edit');
-  };
-
-  // Persist an owner review note on a mismatched row.
-  const saveReviewNote = async (saleId) => {
-    const note = (reviewNotes[saleId] || '').trim();
-    if (!note) return;
-    setReviewBusy(saleId);
-    try {
-      const { error } = await supabase.from('daily_sales').update({
-        owner_review_note: note,
-        owner_reviewed_at: new Date().toISOString(),
-        owner_reviewed_by: profile?.id,
-      }).eq('id', saleId);
-      if (error) { alert(error.message); return; }
-      await logActivity(supabase, profile, {
-        action: 'update',
-        entityType: 'daily_sales',
-        entityId: saleId,
-        description: `${profile?.name} reviewed mismatched sales entry: "${note}"`,
-      });
-      load();
-    } finally {
-      setReviewBusy(null);
-    }
   };
 
   const handleExport = () => {
@@ -650,6 +553,10 @@ export default function SalesPage() {
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={onNum('card_sales')} className={errCls('card_sales')} />
                 {errHint('card_sales')}
               </Field>
+              <Field label={<>CashApp / Check {reqMark}</>}>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.cashapp_check} onChange={onNum('cashapp_check')} className={errCls('cashapp_check')} />
+                {errHint('cashapp_check')}
+              </Field>
               <Field label={<>Canceled Basket {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_canceled_basket} onChange={onNum('r1_canceled_basket')} className={errCls('r1_canceled_basket')} />
                 {errHint('r1_canceled_basket')}
@@ -715,10 +622,10 @@ export default function SalesPage() {
               </div>
             )}
 
-            {/* Single receipt upload — Register 1 tab only */}
+            {/* R1 receipt upload */}
             <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
               <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5 flex items-center gap-2">
-                <span>📷 Register Shift Report Screenshot</span>
+                <span>📷 Register 1 Shift Report</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
                   {isEmployee ? 'Required' : 'Optional'}
                 </span>
@@ -782,6 +689,42 @@ export default function SalesPage() {
                 })()}
               </div>
             )}
+
+            {/* R2 receipt upload */}
+            <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
+              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5 flex items-center gap-2">
+                <span>📷 Register 2 Report</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
+                  {isEmployee ? 'Required' : 'Optional'}
+                </span>
+              </div>
+              {!r2ReportPreview ? (
+                <div className="flex gap-2 flex-col sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => r2CameraRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                  >
+                    <span className="text-lg">📷</span><span>Take Photo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => r2LibraryRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                  >
+                    <span className="text-lg">📁</span><span>From Library</span>
+                  </button>
+                  <input ref={r2CameraRef} type="file" accept="image/*" capture="environment" onChange={handleR2Pick} className="hidden" />
+                  <input ref={r2LibraryRef} type="file" accept="image/*" onChange={handleR2Pick} className="hidden" />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <img src={r2ReportPreview} alt="R2 receipt preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                  <button type="button" onClick={() => { setR2ReportFile(null); setR2ReportPreview(null); }}
+                    className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -898,64 +841,6 @@ export default function SalesPage() {
             )}
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
-
-            {/* Verifying spinner */}
-            {verifyStage === 'verifying' && (
-              <div className="bg-sw-blueD border border-sw-blue/30 rounded-lg p-3 text-center">
-                <div className="text-sw-blue text-[12px] font-bold">⏳ Verifying numbers against screenshots…</div>
-                <div className="text-sw-sub text-[10px] mt-0.5">This can take a few seconds.</div>
-              </div>
-            )}
-
-            {/* Mismatch warning — replaces Submit button */}
-            {verifyStage === 'mismatch' && mismatches && mismatches.length > 0 && (
-              <div className="bg-sw-redD border border-sw-red/30 rounded-lg p-3">
-                <div className="text-sw-red text-[13px] font-extrabold mb-2">⚠️ Numbers don't match the register screenshot</div>
-                <div className="overflow-x-auto mb-2">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field</th>
-                        <th style={{ textAlign: 'right' }}>You entered</th>
-                        <th style={{ textAlign: 'right' }}>Receipt</th>
-                        <th style={{ textAlign: 'right' }}>Diff</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {mismatches.map(m => (
-                        <tr key={m.field}>
-                          <td className="!text-sw-text">{m.label}</td>
-                          <td className="!text-right !font-mono">{fmt(m.entered)}</td>
-                          <td className="!text-right !font-mono">{fmt(m.receipt)}</td>
-                          <td className="!text-right !font-mono text-sw-red">{m.diff > 0 ? '+' : ''}{fmt(m.diff)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-sw-sub text-[11px] mb-2">
-                  Please correct the highlighted values or submit anyway. The owner will review this entry.
-                </p>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setMismatches(null);
-                      setVerifyStage('idle');
-                      setActiveTab('r1');
-                    }}
-                  >
-                    Go Back and Fix
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => { setVerifyStage('ready'); handleSave(); }}
-                  >
-                    Submit Anyway
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1063,11 +948,9 @@ export default function SalesPage() {
               <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             ))}
             {isOnSummaryTab ? (
-              // Hide primary Submit when in verifying/mismatch state so the
-              // inline actions above are the only way forward.
-              verifyStage === 'idle' || verifyStage === 'ready' ? (
-                <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl mt-4">Submit Sales</Button>
-              ) : null
+              <Button onClick={handleSave} disabled={saving} className="w-full !py-3 !text-sm !rounded-xl mt-4">
+                {saving ? 'Saving…' : 'Submit Sales'}
+              </Button>
             ) : (
               <Button onClick={() => setActiveTab(nextTabId)} className="w-full !py-3 !text-sm !rounded-xl mt-4">
                 Next →
@@ -1106,7 +989,7 @@ export default function SalesPage() {
 
   const resetReceipts = () => {
     setShiftReportFile(null); setShiftReportPreview(null);
-    setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
+    setR2ReportFile(null); setR2ReportPreview(null);
   };
 
   const tryOpenAdd = () => {
@@ -1141,104 +1024,6 @@ export default function SalesPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      {/* Owner mismatch review cards — unreviewed entries with AI mismatches */}
-      {(() => {
-        const mismatched = sales.filter(s =>
-          Array.isArray(s.ai_mismatches) && s.ai_mismatches.length > 0 && !s.owner_review_note
-        );
-        if (!mismatched.length) return null;
-        return (
-          <div className="mb-4 space-y-3">
-            <div className="bg-sw-redD border border-sw-red/30 rounded-lg px-3 py-2 text-sw-red text-[13px] font-bold flex items-center gap-2">
-              <span className="text-lg">🔴</span>
-              <span>{mismatched.length} {mismatched.length === 1 ? 'entry' : 'entries'} with unreviewed mismatches</span>
-            </div>
-            {mismatched.map(row => {
-              const collapsed = !!collapsedReviews[row.id];
-              return (
-                <div key={row.id} className="bg-sw-redD/60 border border-sw-red/30 rounded-xl p-3">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sw-red text-lg">⚠️</span>
-                      <span className="text-sw-text text-[13px] font-bold">
-                        {row.stores?.name || 'Store'} · {dayLabel(row.date)}
-                      </span>
-                      <span className="text-sw-sub text-[11px]">
-                        by {row.profiles?.name || row.profiles?.username || 'Unknown'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setCollapsedReviews(p => ({ ...p, [row.id]: !p[row.id] }))}
-                      className="text-sw-sub text-[11px] underline flex-shrink-0"
-                    >
-                      {collapsed ? 'Show' : 'Hide'}
-                    </button>
-                  </div>
-
-                  {!collapsed && (
-                    <>
-                      {/* Mismatched fields list */}
-                      <ul className="space-y-1 mb-3 text-[12px]">
-                        {row.ai_mismatches.map((m, i) => (
-                          <li key={i} className="text-sw-text">
-                            <span className="text-sw-sub">• {m.label}:</span>{' '}
-                            <span>Employee entered <span className="font-mono text-sw-red font-bold">{fmt(m.entered)}</span>,
-                              Receipt shows <span className="font-mono text-sw-amber font-bold">{fmt(m.receipt)}</span>
-                              {' '}(Diff: <span className="font-mono">{m.diff > 0 ? '+' : ''}{fmt(m.diff)}</span>)
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-
-                      {/* Thumbnails */}
-                      <div className="flex gap-2 mb-3 flex-wrap">
-                        {row.shift_report_url && (
-                          <button
-                            onClick={() => setViewReceipt({ url: row.shift_report_url, caption: `Shift report · ${row.stores?.name} · ${row.date}` })}
-                            className="block"
-                          >
-                            <img src={row.shift_report_url} alt="Shift report" className="h-20 rounded border border-sw-border bg-black/20 object-cover" />
-                            <div className="text-sw-sub text-[9px] mt-0.5 text-center">Shift report</div>
-                          </button>
-                        )}
-                        {row.safe_drop_url && (
-                          <button
-                            onClick={() => setViewReceipt({ url: row.safe_drop_url, caption: `Safe drop · ${row.stores?.name} · ${row.date}` })}
-                            className="block"
-                          >
-                            <img src={row.safe_drop_url} alt="Safe drop" className="h-20 rounded border border-sw-border bg-black/20 object-cover" />
-                            <div className="text-sw-sub text-[9px] mt-0.5 text-center">Safe drop</div>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Review note input */}
-                      <div className="flex gap-2 items-end">
-                        <div className="flex-1">
-                          <label className="block text-sw-sub text-[10px] font-bold uppercase mb-0.5">Add reason (optional)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Employee miscounted, Register error, Verified correct"
-                            value={reviewNotes[row.id] || ''}
-                            onChange={(e) => setReviewNotes(p => ({ ...p, [row.id]: e.target.value }))}
-                          />
-                        </div>
-                        <Button
-                          onClick={() => saveReviewNote(row.id)}
-                          disabled={reviewBusy === row.id || !(reviewNotes[row.id] || '').trim()}
-                        >
-                          {reviewBusy === row.id ? 'Saving…' : 'Save Note'}
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
-
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable
           defaultSort={{ key: 'date', dir: 'desc' }}
@@ -1269,7 +1054,8 @@ export default function SalesPage() {
           { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, sortValue: (r) => Number(r.gross_sales ?? r.total_sales ?? 0), render: (v, r) => fmt(v ?? r.total_sales) },
           { key: 'net_sales', label: 'Net', align: 'right', mono: true, sortValue: (r) => Number(r.net_sales ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0))), render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
           { key: 'cash_total', label: 'Cash', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.cash_sales || 0) + Number(r.register2_cash || 0)), render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
-          { key: 'card_total', label: 'Card', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.card_sales || 0) + Number(r.register2_card || 0)), render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
+          { key: 'card_sales', label: 'Card', align: 'right', mono: true, sortValue: (r) => Number(r.card_sales || 0), render: v => fmt(v) },
+          { key: 'cashapp_check', label: 'CApp/Chk', align: 'right', mono: true, sortValue: (r) => Number(r.cashapp_check || 0), render: v => fmt(v) },
           { key: 'credits', label: 'H/A', align: 'right', mono: true,
             sortValue: (r) => Number(r.r1_house_account_amount ?? r.credits ?? 0),
             render: (_, r) => {
@@ -1312,20 +1098,23 @@ export default function SalesPage() {
               if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
               return <span className="text-sw-amber">+{fmt(diff)}</span>;
             } },
-          { key: '_verify', label: '🔎', align: 'center', sortable: false, render: (_, r) => {
+          { key: '_receipt', label: '📷', align: 'center', sortable: false, render: (_, r) => {
             const hasReceipts = !!(r.shift_report_url || r.safe_drop_url);
             if (!hasReceipts) return <span className="text-sw-dim">—</span>;
-            if (r.ai_verified) {
-              return <span className="text-sw-green text-base" title="Verified against register receipts">✅</span>;
-            }
-            if (r.ai_mismatches && Array.isArray(r.ai_mismatches) && r.ai_mismatches.length) {
-              const list = r.ai_mismatches.map(m => `${m.label}: entered ${fmt(m.entered)}, receipt ${fmt(m.receipt)}`).join('\n');
-              if (r.owner_review_note) {
-                return <span className="text-sw-amber text-base" title={`Reviewed: ${r.owner_review_note}\n\nMismatches:\n${list}`}>⚠️</span>;
-              }
-              return <span className="text-sw-red text-base" title={`UNREVIEWED — ${r.ai_mismatches.length} mismatch(es):\n${list}`}>🔴</span>;
-            }
-            return <span className="text-sw-blue text-base" title="Receipts uploaded">📷</span>;
+            return (
+              <button
+                onClick={() => setViewReceipts({
+                  r1Url: r.shift_report_url || null,
+                  r2Url: r.safe_drop_url || null,
+                  storeName: r.stores?.name || '',
+                  date: r.date,
+                })}
+                title="View receipts"
+                className="text-sw-blue text-lg"
+              >
+                📷
+              </button>
+            );
           } },
           { key: 'entered_by', label: 'By',
             sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
@@ -1368,21 +1157,44 @@ export default function SalesPage() {
           ))}
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="secondary" onClick={closeModal}>Cancel</Button>
-            {(verifyStage === 'idle' || verifyStage === 'ready') && (
-              <Button onClick={handleSave} disabled={verifyStage === 'verifying'}>
-                {verifyStage === 'verifying' ? 'Verifying…' : (modal === 'edit' ? 'Update' : 'Save')}
-              </Button>
-            )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : (modal === 'edit' ? 'Update' : 'Save')}
+            </Button>
           </div>
         </Modal>
       )}
 
-      {viewReceipt && (
-        <ImageViewer
-          src={viewReceipt.url}
-          caption={viewReceipt.caption}
-          onClose={() => setViewReceipt(null)}
-        />
+      {viewReceipts && (
+        <Modal title={`Receipts · ${viewReceipts.storeName} · ${shortDate(viewReceipts.date)}`} onClose={() => setViewReceipts(null)} wide>
+          <div className="space-y-4">
+            {viewReceipts.r1Url && (
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1">Register 1 Shift Report</div>
+                <img src={viewReceipts.r1Url} alt="R1 receipt" className="w-full max-h-[60vh] object-contain rounded-lg border border-sw-border bg-black/30" />
+                <div className="flex gap-3 mt-1.5">
+                  <a href={viewReceipts.r1Url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open</a>
+                  <a href={viewReceipts.r1Url} download className="text-sw-blue text-[11px] underline">Download</a>
+                </div>
+              </div>
+            )}
+            {viewReceipts.r2Url && (
+              <div>
+                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1">Register 2 Report</div>
+                <img src={viewReceipts.r2Url} alt="R2 receipt" className="w-full max-h-[60vh] object-contain rounded-lg border border-sw-border bg-black/30" />
+                <div className="flex gap-3 mt-1.5">
+                  <a href={viewReceipts.r2Url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open</a>
+                  <a href={viewReceipts.r2Url} download className="text-sw-blue text-[11px] underline">Download</a>
+                </div>
+              </div>
+            )}
+            {!viewReceipts.r1Url && !viewReceipts.r2Url && (
+              <div className="text-sw-dim text-center py-6">No receipts uploaded for this entry.</div>
+            )}
+          </div>
+          <div className="flex justify-end mt-3">
+            <Button variant="secondary" onClick={() => setViewReceipts(null)}>Close</Button>
+          </div>
+        </Modal>
       )}
 
       {showStorePicker && (
