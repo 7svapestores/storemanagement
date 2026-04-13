@@ -44,17 +44,17 @@ export function DatePresets({ active, onChange }) {
   const activeInOverflow = OVERFLOW_PRESETS.some(p => p.id === active);
 
   return (
-    <div className="flex gap-1 flex-wrap items-center relative">
+    <div className="flex gap-1 md:flex-wrap flex-nowrap overflow-x-auto items-center relative" style={{ WebkitOverflowScrolling: 'touch' }}>
       {PRIMARY_PRESETS.map(p => (
         <button key={p.id} onClick={() => onChange(p.id)}
-          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors
+          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex-shrink-0
             ${active === p.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}>
           {p.l}
         </button>
       ))}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors
+        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex-shrink-0
           ${activeInOverflow ? 'bg-sw-blueD text-sw-blue border border-sw-blue/20' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}
       >
         {activeInOverflow ? activeLabel : 'More'} ▾
@@ -349,9 +349,13 @@ export function EmptyState({ icon = '📭', title = 'Nothing here yet', message,
 }
 
 // ── Data Table ──────────────────────────────────────────────
+// Per-column prop `hideOnMobile: true` makes that column disappear below
+// 768px via an extra className. Used for table-column hiding on phones
+// without hand-rolling media queries on every caller.
 export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data' }) {
   const visible = rows?.slice(0, 100) || [];
   const total = rows?.length || 0;
+  const colClass = (c) => c.hideOnMobile ? 'hidden md:table-cell' : '';
   return (
     <div>
       <div className="overflow-x-auto relative">
@@ -359,7 +363,7 @@ export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emp
           <thead>
             <tr>
               {columns.map(c => (
-                <th key={c.key} style={{ textAlign: c.align || 'left' }}>{c.label}</th>
+                <th key={c.key} className={colClass(c)} style={{ textAlign: c.align || 'left' }}>{c.label}</th>
               ))}
               {(onEdit || onDelete) && isOwner && <th style={{ width: 60 }} />}
             </tr>
@@ -375,7 +379,11 @@ export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emp
             {visible.map((row, i) => (
               <tr key={row.id || i}>
                 {columns.map(c => (
-                  <td key={c.key} style={{ textAlign: c.align || 'left', fontFamily: c.mono ? "'IBM Plex Mono', monospace" : 'inherit' }}>
+                  <td
+                    key={c.key}
+                    className={colClass(c)}
+                    style={{ textAlign: c.align || 'left', fontFamily: c.mono ? "'IBM Plex Mono', monospace" : 'inherit' }}
+                  >
                     {c.render ? c.render(row[c.key], row) : row[c.key]}
                   </td>
                 ))}

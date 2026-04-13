@@ -285,10 +285,26 @@ export default function PurchasesPage() {
         emptyMessage="No purchases yet. Tap + Add to log an invoice."
         columns={[
           { key: 'week_of', label: 'Date', render: v => weekLabel(v) },
-          ...(!effectiveStoreId ? [{ key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
+          ...(!effectiveStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
           { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
-          { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span> },
-          { key: '_invoice', label: 'Invoice', align: 'center', render: (_, r) => {
+          { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: (v, r) => {
+            const inv = invoiceByPurchase[r.id];
+            return (
+              <span className="inline-flex items-center gap-1.5 justify-end">
+                {inv && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }}
+                    title="View invoice"
+                    className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-sm"
+                  >
+                    📷
+                  </button>
+                )}
+                <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span>
+              </span>
+            );
+          } },
+          { key: '_invoice', label: 'Invoice', align: 'center', hideOnMobile: true, render: (_, r) => {
             const inv = invoiceByPurchase[r.id];
             if (!inv) return <span className="text-sw-dim text-base">—</span>;
             return (
@@ -301,7 +317,7 @@ export default function PurchasesPage() {
               </button>
             );
           } },
-          { key: 'notes', label: 'Notes', render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
+          { key: 'notes', label: 'Notes', hideOnMobile: true, render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
           ...(hasStore ? [{
             key: '_actions', label: '', align: 'right', render: (_, r) => (
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
