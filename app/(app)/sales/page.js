@@ -17,6 +17,8 @@ export default function SalesPage() {
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showStorePicker, setShowStorePicker] = useState(false);
+  const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
+  const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
@@ -131,27 +133,40 @@ export default function SalesPage() {
     const storeForRegister = stores.find(s => s.id === storeIdToUse);
     const usesReg2 = hasRegister2(storeForRegister?.name);
 
-    // Required Register 1 fields.
+    // ── Validation ─────────────────────────────────────────────
+    const errs = {};
     const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
-    if (r1Required.some(k => form[k] === '')) {
-      setMsg('Register 1: Gross, Net, Cash, Card, Canceled Basket, Safe Drop, and Sales Tax are all required.');
-      setActiveTab('r1');
-      return;
+    r1Required.forEach(k => { if (form[k] === '') errs[k] = true; });
+
+    if (usesReg2) {
+      if (form.r2_net === '')          errs.r2_net = true;
+      if (form.register2_cash === '')  errs.register2_cash = true;
+      if (form.r2_safe_drop === '')    errs.r2_safe_drop = true;
     }
-    // If a house account amount > 0 is entered, a name is required.
+
+    // House account: if amount > 0, a name is required.
     if (num(form.r1_house_account_amount) > 0) {
-      const nm = resolvedHouseAccountName();
-      if (!nm) {
-        setMsg('House Account: select a name (Billy / Elias / Other) or enter a custom name.');
-        setActiveTab('r1');
-        return;
+      if (!resolvedHouseAccountName()) {
+        errs.r1_house_account_choice = true;
+        if (form.r1_house_account_choice === 'other') {
+          errs.r1_house_account_custom = true;
+        }
       }
     }
-    if (usesReg2 && (form.r2_net === '' || form.register2_cash === '' || form.r2_safe_drop === '')) {
-      setMsg('Register 2: Net, Cash, and Safe Drop are all required.');
-      setActiveTab('r2');
+
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      setModalError('Please fill all required fields.');
+      // Jump to whichever tab has the first error.
+      if (errs.r2_net || errs.register2_cash || errs.r2_safe_drop) {
+        setActiveTab('r2');
+      } else {
+        setActiveTab('r1');
+      }
       return;
     }
+    setFieldErrors({});
+    setModalError('');
 
     const data = {
       store_id: storeIdToUse,
@@ -243,7 +258,7 @@ export default function SalesPage() {
           .eq('date', data.date)
           .maybeSingle();
         if (existing) {
-          setMsg(`Sales already entered for this store on ${shortDate(data.date)}. Contact the owner if you need to make changes.`);
+          setModalError(`Sales already entered for ${storeName || 'this store'} on ${shortDate(data.date)}. Contact the owner to make changes.`);
           return;
         }
       }
@@ -252,9 +267,9 @@ export default function SalesPage() {
       if (error) {
         // Postgres unique_violation. Translate the raw error into a clear message.
         if (error.code === '23505' || /duplicate key|unique/i.test(error.message)) {
-          setMsg(`Sales already entered for this store on ${shortDate(data.date)}. Contact the owner if you need to make changes.`);
+          setModalError(`Sales already entered for ${storeName || 'this store'} on ${shortDate(data.date)}. ${isOwner ? 'Use Edit on the existing row to change it.' : 'Contact the owner to make changes.'}`);
         } else {
-          setMsg(error.message);
+          setModalError(error.message);
         }
         return;
       }
@@ -272,6 +287,8 @@ export default function SalesPage() {
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
     setForm(blankForm());
     setActiveTab('r1');
+    setFieldErrors({});
+    setModalError('');
     load();
   };
 
@@ -371,6 +388,11 @@ export default function SalesPage() {
 
     const onNum = (key) => (e) => setForm({ ...form, [key]: e.target.value.replace(/^-/, '') });
     const reqMark = <span className="text-sw-red">*</span>;
+    // Red border + "Required" text when a field is flagged.
+    const errCls = (name) => fieldErrors[name] ? '!border-sw-red' : '';
+    const errHint = (name) => fieldErrors[name]
+      ? <p className="text-sw-red text-[10px] mt-0.5">Required</p>
+      : null;
 
     return (
       <div>
@@ -393,25 +415,32 @@ export default function SalesPage() {
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <Field label={<>Gross Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_gross} onChange={onNum('r1_gross')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_gross} onChange={onNum('r1_gross')} className={errCls('r1_gross')} />
+                {errHint('r1_gross')}
               </Field>
               <Field label={<>Net Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_net} onChange={onNum('r1_net')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_net} onChange={onNum('r1_net')} className={errCls('r1_net')} />
+                {errHint('r1_net')}
               </Field>
               <Field label={<>Cash Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.cash_sales} onChange={onNum('cash_sales')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.cash_sales} onChange={onNum('cash_sales')} className={errCls('cash_sales')} />
+                {errHint('cash_sales')}
               </Field>
               <Field label={<>Card Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={onNum('card_sales')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={onNum('card_sales')} className={errCls('card_sales')} />
+                {errHint('card_sales')}
               </Field>
               <Field label={<>Canceled Basket {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_canceled_basket} onChange={onNum('r1_canceled_basket')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_canceled_basket} onChange={onNum('r1_canceled_basket')} className={errCls('r1_canceled_basket')} />
+                {errHint('r1_canceled_basket')}
               </Field>
               <Field label={<>Safe Drop {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_safe_drop} onChange={onNum('r1_safe_drop')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_safe_drop} onChange={onNum('r1_safe_drop')} className={errCls('r1_safe_drop')} />
+                {errHint('r1_safe_drop')}
               </Field>
               <Field label={<>Sales Tax {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_sales_tax} onChange={onNum('r1_sales_tax')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_sales_tax} onChange={onNum('r1_sales_tax')} className={errCls('r1_sales_tax')} />
+                {errHint('r1_sales_tax')}
               </Field>
             </div>
 
@@ -423,12 +452,16 @@ export default function SalesPage() {
                   <select
                     value={form.r1_house_account_choice}
                     onChange={(e) => setForm({ ...form, r1_house_account_choice: e.target.value, r1_house_account_custom: e.target.value === 'other' ? form.r1_house_account_custom : '' })}
+                    className={errCls('r1_house_account_choice')}
                   >
-                    <option value="">None</option>
+                    <option value="">Select name…</option>
                     <option value="billy">Billy</option>
                     <option value="elias">Elias</option>
                     <option value="other">Other…</option>
                   </select>
+                  {fieldErrors.r1_house_account_choice && (
+                    <p className="text-sw-red text-[10px] mt-0.5">Required when amount is entered</p>
+                  )}
                 </Field>
                 <Field label="Amount">
                   <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_house_account_amount} onChange={onNum('r1_house_account_amount')} />
@@ -441,7 +474,9 @@ export default function SalesPage() {
                     placeholder="Enter name"
                     value={form.r1_house_account_custom}
                     onChange={(e) => setForm({ ...form, r1_house_account_custom: e.target.value })}
+                    className={errCls('r1_house_account_custom')}
                   />
+                  {errHint('r1_house_account_custom')}
                 </Field>
               )}
             </div>
@@ -466,13 +501,16 @@ export default function SalesPage() {
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <Field label={<>R2 Net Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_net} onChange={onNum('r2_net')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_net} onChange={onNum('r2_net')} className={errCls('r2_net')} />
+                {errHint('r2_net')}
               </Field>
               <Field label={<>Cash {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} className={errCls('register2_cash')} />
+                {errHint('register2_cash')}
               </Field>
               <Field label={<>R2 Safe Drop {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_safe_drop} onChange={onNum('r2_safe_drop')} />
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_safe_drop} onChange={onNum('r2_safe_drop')} className={errCls('r2_safe_drop')} />
+                {errHint('r2_safe_drop')}
               </Field>
             </div>
 
@@ -702,6 +740,11 @@ export default function SalesPage() {
           </div>
         ) : (
           <div className="bg-sw-card rounded-xl p-5 border border-sw-border mb-4">
+            {modalError && (
+              <div className="mb-3 rounded-lg border border-sw-red/30 bg-sw-redD text-sw-red text-[12px] p-2.5">
+                ⚠️ {modalError}
+              </div>
+            )}
             {renderTabbedForm(empUsesReg2, /*allowShortOver*/ false, (
               <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             ))}
@@ -746,7 +789,16 @@ export default function SalesPage() {
     if (!hasStore) { setShowStorePicker(true); return; }
     setForm(blankForm());
     setActiveTab('r1');
+    setFieldErrors({});
+    setModalError('');
     setModal('add');
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setEditItem(null);
+    setFieldErrors({});
+    setModalError('');
   };
 
   return (
@@ -870,7 +922,12 @@ export default function SalesPage() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'edit' ? 'Edit Sale' : 'Add Sale'} onClose={() => { setModal(null); setEditItem(null); }}>
+        <Modal title={modal === 'edit' ? 'Edit Sale' : 'Add Sale'} onClose={closeModal}>
+          {modalError && (
+            <div className="mb-3 rounded-lg border border-sw-red/30 bg-sw-redD text-sw-red text-[12px] p-2.5">
+              ⚠️ {modalError}
+            </div>
+          )}
           <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
             Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
           </div>
@@ -878,7 +935,7 @@ export default function SalesPage() {
             <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
           ))}
           <div className="flex gap-2 justify-end mt-4">
-            <Button variant="secondary" onClick={() => { setModal(null); setEditItem(null); }}>Cancel</Button>
+            <Button variant="secondary" onClick={closeModal}>Cancel</Button>
             <Button onClick={handleSave}>{modal === 'edit' ? 'Update' : 'Save'}</Button>
           </div>
         </Modal>
