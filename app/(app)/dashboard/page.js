@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState('');
   const [todaySales, setTodaySales] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [unreviewedCount, setUnreviewedCount] = useState(0);
 
   // Dashboard honors the sidebar store selector. Employees are always scoped
   // to their own store via effectiveStoreId in AuthProvider.
@@ -99,8 +100,18 @@ export default function DashboardPage() {
       if (isOwner) {
         const { data: acts } = await supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(10);
         setRecentActivity(acts || []);
+
+        // Unreviewed mismatch count — non-empty ai_mismatches and no review note.
+        const { data: mm } = await supabase
+          .from('daily_sales')
+          .select('id, ai_mismatches, owner_review_note');
+        const unreviewed = (mm || []).filter(r =>
+          Array.isArray(r.ai_mismatches) && r.ai_mismatches.length > 0 && !r.owner_review_note
+        );
+        setUnreviewedCount(unreviewed.length);
       } else {
         setRecentActivity([]);
+        setUnreviewedCount(0);
       }
       } catch (e) {
         console.error('[dashboard] load failed:', e);
@@ -123,6 +134,15 @@ export default function DashboardPage() {
 
       {loadError && <Alert type="error">{loadError}</Alert>}
       {lowStock > 0 && <Alert type="warning"><b>{lowStock}</b> items below reorder level</Alert>}
+      {isOwner && unreviewedCount > 0 && (
+        <a
+          href="/sales"
+          className="block mb-3 rounded-lg border border-sw-red/30 bg-sw-redD text-sw-red px-3 py-2.5 text-[13px] font-bold flex items-center gap-2 hover:bg-sw-red/20 transition-colors"
+        >
+          <span className="text-lg">🔴</span>
+          <span>{unreviewedCount} {unreviewedCount === 1 ? 'entry' : 'entries'} with unreviewed mismatches — click to review</span>
+        </a>
+      )}
 
       {/* Today's snapshot — per-store */}
       {stores.length > 0 && (

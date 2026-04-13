@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage, fileToBase64 } from '@/lib/storage';
@@ -27,7 +27,12 @@ export default function SalesPage() {
   const [safeDropPreview, setSafeDropPreview] = useState(null);
   const [verifyStage, setVerifyStage] = useState('idle'); // 'idle' | 'verifying' | 'mismatch' | 'ready'
   const [mismatches, setMismatches] = useState(null); // array of {field, label, entered, receipt, diff} or null
-  const [overrideNote, setOverrideNote] = useState('');
+  const [aiExtracted, setAiExtracted] = useState(null); // raw AI numbers to save alongside
+  // Owner review state — per-row text input for the mismatch review card list.
+  const [reviewNotes, setReviewNotes] = useState({}); // { [saleId]: noteText }
+  const [reviewBusy, setReviewBusy] = useState(null); // id of row currently saving
+  const [viewReceipt, setViewReceipt] = useState(null); // { url, caption } for full-screen viewer
+  const [collapsedReviews, setCollapsedReviews] = useState({}); // { [id]: true }
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
@@ -233,6 +238,17 @@ export default function SalesPage() {
         const aiData = await res.json();
         if (!res.ok) throw new Error(aiData?.error || 'AI read failed');
 
+        // Store the flat shape the DB expects.
+        setAiExtracted({
+          grossSales:     Number(aiData.shiftReport?.grossSales ?? 0),
+          netSales:       Number(aiData.shiftReport?.netSales ?? 0),
+          cashSales:      Number(aiData.shiftReport?.cashSales ?? 0),
+          cardSales:      Number(aiData.shiftReport?.cardSales ?? 0),
+          salesTax:       Number(aiData.shiftReport?.salesTax ?? 0),
+          canceledBasket: Number(aiData.shiftReport?.canceledBasket ?? 0),
+          safeDrop:       Number(aiData.safeDrop?.safeDrop ?? 0),
+        });
+
         const entered = {
           grossSales:      num(form.r1_gross),
           netSales:        num(form.r1_net),
@@ -333,7 +349,7 @@ export default function SalesPage() {
       safe_drop_path: receiptSafePath,
       ai_verified: aiVerified,
       ai_mismatches: verifiedMismatches && verifiedMismatches.length ? verifiedMismatches : null,
-      ai_override_note: (verifyStage === 'ready' && overrideNote.trim()) ? overrideNote.trim() : null,
+      ai_extracted_data: aiExtracted,
       // Short/over is now derived by the DB trigger from safe_drop - cash_sales.
       // We still send 0 so existing column-level checks don't break; trigger overwrites.
       r1_short_over: 0,
@@ -433,7 +449,7 @@ export default function SalesPage() {
     setModalError('');
     setShiftReportFile(null); setShiftReportPreview(null);
     setSafeDropFile(null); setSafeDropPreview(null);
-    setVerifyStage('idle'); setMismatches(null); setOverrideNote('');
+    setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
     load();
   };
 
@@ -459,6 +475,30 @@ export default function SalesPage() {
     });
     setConfirmDelete(null);
     load();
+  };
+
+  // Persist an owner review note on a mismatched row.
+  const saveReviewNote = async (saleId) => {
+    const note = (reviewNotes[saleId] || '').trim();
+    if (!note) return;
+    setReviewBusy(saleId);
+    try {
+      const { error } = await supabase.from('daily_sales').update({
+        owner_review_note: note,
+        owner_reviewed_at: new Date().toISOString(),
+        owner_reviewed_by: profile?.id,
+      }).eq('id', saleId);
+      if (error) { alert(error.message); return; }
+      await logActivity(supabase, profile, {
+        action: 'update',
+        entityType: 'daily_sales',
+        entityId: saleId,
+        description: `${profile?.name} reviewed mismatched sales entry: "${note}"`,
+      });
+      load();
+    } finally {
+      setReviewBusy(null);
+    }
   };
 
   const handleExport = () => {
@@ -864,15 +904,8 @@ export default function SalesPage() {
                   </table>
                 </div>
                 <p className="text-sw-sub text-[11px] mb-2">
-                  Please correct the highlighted values or submit anyway with a note.
+                  Please correct the highlighted values or submit anyway. The owner will review this entry.
                 </p>
-                <Field label="Note (if submitting anyway)">
-                  <input
-                    placeholder="e.g. Counted wrong, sorry"
-                    value={overrideNote}
-                    onChange={(e) => setOverrideNote(e.target.value)}
-                  />
-                </Field>
                 <div className="flex gap-2 flex-wrap">
                   <Button
                     variant="secondary"
@@ -887,9 +920,8 @@ export default function SalesPage() {
                   <Button
                     variant="danger"
                     onClick={() => { setVerifyStage('ready'); handleSave(); }}
-                    disabled={!overrideNote.trim()}
                   >
-                    Submit Anyway with Note
+                    Submit Anyway
                   </Button>
                 </div>
               </div>
@@ -1044,7 +1076,7 @@ export default function SalesPage() {
   const resetReceipts = () => {
     setShiftReportFile(null); setShiftReportPreview(null);
     setSafeDropFile(null); setSafeDropPreview(null);
-    setVerifyStage('idle'); setMismatches(null); setOverrideNote('');
+    setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
   };
 
   const tryOpenAdd = () => {
@@ -1077,6 +1109,104 @@ export default function SalesPage() {
       {loadError && <Alert type="error">{loadError}</Alert>}
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
+
+      {/* Owner mismatch review cards — unreviewed entries with AI mismatches */}
+      {(() => {
+        const mismatched = sales.filter(s =>
+          Array.isArray(s.ai_mismatches) && s.ai_mismatches.length > 0 && !s.owner_review_note
+        );
+        if (!mismatched.length) return null;
+        return (
+          <div className="mb-4 space-y-3">
+            <div className="bg-sw-redD border border-sw-red/30 rounded-lg px-3 py-2 text-sw-red text-[13px] font-bold flex items-center gap-2">
+              <span className="text-lg">🔴</span>
+              <span>{mismatched.length} {mismatched.length === 1 ? 'entry' : 'entries'} with unreviewed mismatches</span>
+            </div>
+            {mismatched.map(row => {
+              const collapsed = !!collapsedReviews[row.id];
+              return (
+                <div key={row.id} className="bg-sw-redD/60 border border-sw-red/30 rounded-xl p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sw-red text-lg">⚠️</span>
+                      <span className="text-sw-text text-[13px] font-bold">
+                        {row.stores?.name || 'Store'} · {dayLabel(row.date)}
+                      </span>
+                      <span className="text-sw-sub text-[11px]">
+                        by {row.profiles?.name || row.profiles?.username || 'Unknown'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setCollapsedReviews(p => ({ ...p, [row.id]: !p[row.id] }))}
+                      className="text-sw-sub text-[11px] underline flex-shrink-0"
+                    >
+                      {collapsed ? 'Show' : 'Hide'}
+                    </button>
+                  </div>
+
+                  {!collapsed && (
+                    <>
+                      {/* Mismatched fields list */}
+                      <ul className="space-y-1 mb-3 text-[12px]">
+                        {row.ai_mismatches.map((m, i) => (
+                          <li key={i} className="text-sw-text">
+                            <span className="text-sw-sub">• {m.label}:</span>{' '}
+                            <span>Employee entered <span className="font-mono text-sw-red font-bold">{fmt(m.entered)}</span>,
+                              Receipt shows <span className="font-mono text-sw-amber font-bold">{fmt(m.receipt)}</span>
+                              {' '}(Diff: <span className="font-mono">{m.diff > 0 ? '+' : ''}{fmt(m.diff)}</span>)
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {/* Thumbnails */}
+                      <div className="flex gap-2 mb-3 flex-wrap">
+                        {row.shift_report_url && (
+                          <button
+                            onClick={() => setViewReceipt({ url: row.shift_report_url, caption: `Shift report · ${row.stores?.name} · ${row.date}` })}
+                            className="block"
+                          >
+                            <img src={row.shift_report_url} alt="Shift report" className="h-20 rounded border border-sw-border bg-black/20 object-cover" />
+                            <div className="text-sw-sub text-[9px] mt-0.5 text-center">Shift report</div>
+                          </button>
+                        )}
+                        {row.safe_drop_url && (
+                          <button
+                            onClick={() => setViewReceipt({ url: row.safe_drop_url, caption: `Safe drop · ${row.stores?.name} · ${row.date}` })}
+                            className="block"
+                          >
+                            <img src={row.safe_drop_url} alt="Safe drop" className="h-20 rounded border border-sw-border bg-black/20 object-cover" />
+                            <div className="text-sw-sub text-[9px] mt-0.5 text-center">Safe drop</div>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Review note input */}
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="block text-sw-sub text-[10px] font-bold uppercase mb-0.5">Add reason (optional)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Employee miscounted, Register error, Verified correct"
+                            value={reviewNotes[row.id] || ''}
+                            onChange={(e) => setReviewNotes(p => ({ ...p, [row.id]: e.target.value }))}
+                          />
+                        </div>
+                        <Button
+                          onClick={() => saveReviewNote(row.id)}
+                          disabled={reviewBusy === row.id || !(reviewNotes[row.id] || '').trim()}
+                        >
+                          {reviewBusy === row.id ? 'Saving…' : 'Save Note'}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable
@@ -1153,15 +1283,17 @@ export default function SalesPage() {
             } },
           { key: '_verify', label: '🔎', align: 'center', sortable: false, render: (_, r) => {
             if (!r.shift_report_url && !r.safe_drop_url) {
-              return <span className="text-sw-dim text-base" title="No receipts uploaded">❌</span>;
+              return <span className="text-sw-dim text-base" title="No receipts uploaded">📷</span>;
             }
             if (r.ai_verified) {
               return <span className="text-sw-green text-base" title="Verified against register receipts">✅</span>;
             }
             if (r.ai_mismatches && Array.isArray(r.ai_mismatches) && r.ai_mismatches.length) {
               const list = r.ai_mismatches.map(m => `${m.label}: entered ${fmt(m.entered)}, receipt ${fmt(m.receipt)}`).join('\n');
-              const note = r.ai_override_note ? `\nNote: ${r.ai_override_note}` : '';
-              return <span className="text-sw-amber text-base" title={`Mismatches:\n${list}${note}`}>⚠️</span>;
+              if (r.owner_review_note) {
+                return <span className="text-sw-amber text-base" title={`Reviewed: ${r.owner_review_note}\n\nMismatches:\n${list}`}>⚠️</span>;
+              }
+              return <span className="text-sw-red text-base" title={`UNREVIEWED — ${r.ai_mismatches.length} mismatch(es):\n${list}`}>🔴</span>;
             }
             return <span className="text-sw-sub text-base" title="Receipts uploaded, not verified">📷</span>;
           } },
@@ -1221,6 +1353,14 @@ export default function SalesPage() {
             )}
           </div>
         </Modal>
+      )}
+
+      {viewReceipt && (
+        <ImageViewer
+          src={viewReceipt.url}
+          caption={viewReceipt.caption}
+          onClose={() => setViewReceipt(null)}
+        />
       )}
 
       {showStorePicker && (
