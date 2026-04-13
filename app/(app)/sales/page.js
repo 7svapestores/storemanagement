@@ -4,6 +4,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
+import { uploadReceipt, compressImage, fileToBase64 } from '@/lib/storage';
 
 export default function SalesPage() {
   const { supabase, isOwner, isEmployee, profile, effectiveStoreId, setSelectedStore } = useAuth();
@@ -19,6 +20,14 @@ export default function SalesPage() {
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
   const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
+  // Receipt verification state
+  const [shiftReportFile, setShiftReportFile] = useState(null);
+  const [shiftReportPreview, setShiftReportPreview] = useState(null);
+  const [safeDropFile, setSafeDropFile] = useState(null);
+  const [safeDropPreview, setSafeDropPreview] = useState(null);
+  const [verifyStage, setVerifyStage] = useState('idle'); // 'idle' | 'verifying' | 'mismatch' | 'ready'
+  const [mismatches, setMismatches] = useState(null); // array of {field, label, entered, receipt, diff} or null
+  const [overrideNote, setOverrideNote] = useState('');
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
@@ -123,6 +132,18 @@ export default function SalesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const pickFile = (setter, previewSetter) => async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setter(f);
+    const reader = new FileReader();
+    reader.onload = (ev) => previewSetter(ev.target.result);
+    reader.readAsDataURL(f);
+  };
+
+  const handleShiftPick = pickFile(setShiftReportFile, setShiftReportPreview);
+  const handleSafeDropPick = pickFile(setSafeDropFile, setSafeDropPreview);
+
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
     const storeIdToUse = isEmployee ? profile.store_id : effectiveStoreId;
@@ -168,6 +189,119 @@ export default function SalesPage() {
     setFieldErrors({});
     setModalError('');
 
+    // ── Receipt screenshots required ─────────────────────────
+    if (!shiftReportFile || !safeDropFile) {
+      setModalError('Please upload both the Register Shift Report and Safe Drop receipt screenshots before submitting.');
+      setActiveTab('summary');
+      return;
+    }
+
+    // ── AI verification (skipped when the user chose "Submit Anyway") ──
+    let receiptShiftUrl = null, receiptShiftPath = null;
+    let receiptSafeUrl = null, receiptSafePath = null;
+    let aiVerified = false;
+    let verifiedMismatches = null;
+
+    const storeForPath = stores.find(s => s.id === storeIdToUse);
+
+    if (verifyStage !== 'ready') {
+      setVerifyStage('verifying');
+      setModalError('');
+      try {
+        // Upload + compress both images in parallel.
+        const [shiftCompressed, safeCompressed] = await Promise.all([
+          compressImage(shiftReportFile),
+          compressImage(safeDropFile),
+        ]);
+        const [shiftUp, safeUp] = await Promise.all([
+          uploadReceipt(supabase, shiftCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'shift' }),
+          uploadReceipt(supabase, safeCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'safe' }),
+        ]);
+        receiptShiftUrl = shiftUp.url; receiptShiftPath = shiftUp.path;
+        receiptSafeUrl = safeUp.url;  receiptSafePath = safeUp.path;
+
+        // Convert to base64 + call the read-receipt API.
+        const [shiftB64, safeB64] = await Promise.all([
+          fileToBase64(shiftCompressed),
+          fileToBase64(safeCompressed),
+        ]);
+        const res = await fetch('/api/read-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shiftReportBase64: shiftB64, safeDropBase64: safeB64 }),
+        });
+        const aiData = await res.json();
+        if (!res.ok) throw new Error(aiData?.error || 'AI read failed');
+
+        const entered = {
+          grossSales:      num(form.r1_gross),
+          netSales:        num(form.r1_net),
+          cashSales:       num(form.cash_sales),
+          cardSales:       num(form.card_sales),
+          salesTax:        num(form.r1_sales_tax),
+          canceledBasket:  num(form.r1_canceled_basket),
+          safeDrop:        num(form.r1_safe_drop),
+        };
+        const receipt = {
+          grossSales:      Number(aiData.shiftReport?.grossSales ?? 0),
+          netSales:        Number(aiData.shiftReport?.netSales ?? 0),
+          cashSales:       Number(aiData.shiftReport?.cashSales ?? 0),
+          cardSales:       Number(aiData.shiftReport?.cardSales ?? 0),
+          salesTax:        Number(aiData.shiftReport?.salesTax ?? 0),
+          canceledBasket:  Number(aiData.shiftReport?.canceledBasket ?? 0),
+          safeDrop:        Number(aiData.safeDrop?.safeDrop ?? 0),
+        };
+        const TOL = 1.00;
+        const compare = [
+          { field: 'r1_gross',          label: 'Gross Sales',     e: entered.grossSales,      r: receipt.grossSales },
+          { field: 'r1_net',            label: 'Net Sales',       e: entered.netSales,        r: receipt.netSales },
+          { field: 'cash_sales',        label: 'Cash Sales',      e: entered.cashSales,       r: receipt.cashSales },
+          { field: 'card_sales',        label: 'Card Sales',      e: entered.cardSales,       r: receipt.cardSales },
+          { field: 'r1_sales_tax',      label: 'Sales Tax',       e: entered.salesTax,        r: receipt.salesTax },
+          { field: 'r1_canceled_basket',label: 'Canceled Basket', e: entered.canceledBasket,  r: receipt.canceledBasket },
+          { field: 'r1_safe_drop',      label: 'Safe Drop',       e: entered.safeDrop,        r: receipt.safeDrop },
+        ];
+        const diffs = compare
+          .filter(c => Math.abs(c.e - c.r) > TOL)
+          .map(c => ({ field: c.field, label: c.label, entered: c.e, receipt: c.r, diff: +(c.e - c.r).toFixed(2) }));
+
+        if (diffs.length > 0) {
+          setMismatches(diffs);
+          setVerifyStage('mismatch');
+          return; // bail — let user fix or override
+        }
+
+        aiVerified = true;
+        verifiedMismatches = null;
+      } catch (e) {
+        console.error('[sales] verify failed:', e);
+        setModalError(`Verification failed: ${e.message || e}. You can fix your entries and try again, or add a note and submit anyway.`);
+        setVerifyStage('mismatch'); // surface the "Submit Anyway" path even on API failure
+        setMismatches([]);
+        return;
+      }
+    } else {
+      // User pressed "Submit Anyway" — do the upload now (verification was
+      // already run on the previous click), mark as overridden.
+      try {
+        const [shiftCompressed, safeCompressed] = await Promise.all([
+          compressImage(shiftReportFile),
+          compressImage(safeDropFile),
+        ]);
+        const [shiftUp, safeUp] = await Promise.all([
+          uploadReceipt(supabase, shiftCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'shift' }),
+          uploadReceipt(supabase, safeCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'safe' }),
+        ]);
+        receiptShiftUrl = shiftUp.url; receiptShiftPath = shiftUp.path;
+        receiptSafeUrl = safeUp.url;  receiptSafePath = safeUp.path;
+      } catch (e) {
+        setModalError(`Failed to upload receipt: ${e.message || e}`);
+        return;
+      }
+      aiVerified = false;
+      verifiedMismatches = mismatches || [];
+    }
+
     const data = {
       store_id: storeIdToUse,
       // Employees can only enter for today.
@@ -192,6 +326,14 @@ export default function SalesPage() {
       r2_safe_drop: usesReg2 ? num(form.r2_safe_drop) : 0,
       register2_card: 0,
       register2_credits: 0,
+      // Receipt verification
+      shift_report_url: receiptShiftUrl,
+      shift_report_path: receiptShiftPath,
+      safe_drop_url: receiptSafeUrl,
+      safe_drop_path: receiptSafePath,
+      ai_verified: aiVerified,
+      ai_mismatches: verifiedMismatches && verifiedMismatches.length ? verifiedMismatches : null,
+      ai_override_note: (verifyStage === 'ready' && overrideNote.trim()) ? overrideNote.trim() : null,
       // Short/over is now derived by the DB trigger from safe_drop - cash_sales.
       // We still send 0 so existing column-level checks don't break; trigger overwrites.
       r1_short_over: 0,
@@ -289,6 +431,9 @@ export default function SalesPage() {
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
+    setShiftReportFile(null); setShiftReportPreview(null);
+    setSafeDropFile(null); setSafeDropPreview(null);
+    setVerifyStage('idle'); setMismatches(null); setOverrideNote('');
     load();
   };
 
@@ -642,6 +787,113 @@ export default function SalesPage() {
             )}
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
+
+            {/* Receipt uploads — required before submit */}
+            <div className="bg-sw-card2 border border-sw-border rounded-lg p-3 space-y-3">
+              <div className="text-sw-sub text-[10px] font-bold uppercase">Receipt Verification</div>
+
+              {/* Shift report upload */}
+              <div>
+                <label className="block text-sw-sub text-[11px] font-semibold mb-1">Register Shift Report {reqMark}</label>
+                {!shiftReportPreview ? (
+                  <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
+                    <span className="text-lg">📷</span>
+                    <span>Take photo or choose file</span>
+                    <input type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="space-y-1">
+                    <img src={shiftReportPreview} alt="Shift report preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                    <button type="button" onClick={() => { setShiftReportFile(null); setShiftReportPreview(null); setVerifyStage('idle'); }}
+                      className="text-sw-red text-[10px] font-semibold underline">Remove</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Safe drop upload */}
+              <div>
+                <label className="block text-sw-sub text-[11px] font-semibold mb-1">Safe Drop Receipt {reqMark}</label>
+                {!safeDropPreview ? (
+                  <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
+                    <span className="text-lg">📷</span>
+                    <span>Take photo or choose file</span>
+                    <input type="file" accept="image/*" onChange={handleSafeDropPick} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="space-y-1">
+                    <img src={safeDropPreview} alt="Safe drop preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                    <button type="button" onClick={() => { setSafeDropFile(null); setSafeDropPreview(null); setVerifyStage('idle'); }}
+                      className="text-sw-red text-[10px] font-semibold underline">Remove</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Verifying spinner */}
+            {verifyStage === 'verifying' && (
+              <div className="bg-sw-blueD border border-sw-blue/30 rounded-lg p-3 text-center">
+                <div className="text-sw-blue text-[12px] font-bold">⏳ Verifying numbers against screenshots…</div>
+                <div className="text-sw-sub text-[10px] mt-0.5">This can take a few seconds.</div>
+              </div>
+            )}
+
+            {/* Mismatch warning — replaces Submit button */}
+            {verifyStage === 'mismatch' && mismatches && mismatches.length > 0 && (
+              <div className="bg-sw-redD border border-sw-red/30 rounded-lg p-3">
+                <div className="text-sw-red text-[13px] font-extrabold mb-2">⚠️ Numbers don't match the register screenshot</div>
+                <div className="overflow-x-auto mb-2">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th style={{ textAlign: 'right' }}>You entered</th>
+                        <th style={{ textAlign: 'right' }}>Receipt</th>
+                        <th style={{ textAlign: 'right' }}>Diff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mismatches.map(m => (
+                        <tr key={m.field}>
+                          <td className="!text-sw-text">{m.label}</td>
+                          <td className="!text-right !font-mono">{fmt(m.entered)}</td>
+                          <td className="!text-right !font-mono">{fmt(m.receipt)}</td>
+                          <td className="!text-right !font-mono text-sw-red">{m.diff > 0 ? '+' : ''}{fmt(m.diff)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-sw-sub text-[11px] mb-2">
+                  Please correct the highlighted values or submit anyway with a note.
+                </p>
+                <Field label="Note (if submitting anyway)">
+                  <input
+                    placeholder="e.g. Counted wrong, sorry"
+                    value={overrideNote}
+                    onChange={(e) => setOverrideNote(e.target.value)}
+                  />
+                </Field>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setMismatches(null);
+                      setVerifyStage('idle');
+                      setActiveTab('r1');
+                    }}
+                  >
+                    Go Back and Fix
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => { setVerifyStage('ready'); handleSave(); }}
+                    disabled={!overrideNote.trim()}
+                  >
+                    Submit Anyway with Note
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -749,7 +1001,11 @@ export default function SalesPage() {
               <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             ))}
             {isOnSummaryTab ? (
-              <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl mt-4">Submit Sales</Button>
+              // Hide primary Submit when in verifying/mismatch state so the
+              // inline actions above are the only way forward.
+              verifyStage === 'idle' || verifyStage === 'ready' ? (
+                <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl mt-4">Submit Sales</Button>
+              ) : null
             ) : (
               <Button onClick={() => setActiveTab(nextTabId)} className="w-full !py-3 !text-sm !rounded-xl mt-4">
                 Next →
@@ -785,12 +1041,19 @@ export default function SalesPage() {
 
   const ownerUsesReg2 = hasRegister2(storeName);
 
+  const resetReceipts = () => {
+    setShiftReportFile(null); setShiftReportPreview(null);
+    setSafeDropFile(null); setSafeDropPreview(null);
+    setVerifyStage('idle'); setMismatches(null); setOverrideNote('');
+  };
+
   const tryOpenAdd = () => {
     if (!hasStore) { setShowStorePicker(true); return; }
     setForm(blankForm());
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
+    resetReceipts();
     setModal('add');
   };
 
@@ -799,6 +1062,7 @@ export default function SalesPage() {
     setEditItem(null);
     setFieldErrors({});
     setModalError('');
+    resetReceipts();
   };
 
   return (
@@ -887,6 +1151,20 @@ export default function SalesPage() {
               if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
               return <span className="text-sw-amber">+{fmt(diff)}</span>;
             } },
+          { key: '_verify', label: '🔎', align: 'center', sortable: false, render: (_, r) => {
+            if (!r.shift_report_url && !r.safe_drop_url) {
+              return <span className="text-sw-dim text-base" title="No receipts uploaded">❌</span>;
+            }
+            if (r.ai_verified) {
+              return <span className="text-sw-green text-base" title="Verified against register receipts">✅</span>;
+            }
+            if (r.ai_mismatches && Array.isArray(r.ai_mismatches) && r.ai_mismatches.length) {
+              const list = r.ai_mismatches.map(m => `${m.label}: entered ${fmt(m.entered)}, receipt ${fmt(m.receipt)}`).join('\n');
+              const note = r.ai_override_note ? `\nNote: ${r.ai_override_note}` : '';
+              return <span className="text-sw-amber text-base" title={`Mismatches:\n${list}${note}`}>⚠️</span>;
+            }
+            return <span className="text-sw-sub text-base" title="Receipts uploaded, not verified">📷</span>;
+          } },
           { key: 'entered_by', label: 'By',
             sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
             render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
@@ -936,7 +1214,11 @@ export default function SalesPage() {
           ))}
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="secondary" onClick={closeModal}>Cancel</Button>
-            <Button onClick={handleSave}>{modal === 'edit' ? 'Update' : 'Save'}</Button>
+            {(verifyStage === 'idle' || verifyStage === 'ready') && (
+              <Button onClick={handleSave} disabled={verifyStage === 'verifying'}>
+                {verifyStage === 'verifying' ? 'Verifying…' : (modal === 'edit' ? 'Update' : 'Save')}
+              </Button>
+            )}
           </div>
         </Modal>
       )}
