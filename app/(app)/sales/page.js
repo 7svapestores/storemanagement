@@ -238,6 +238,27 @@ export default function SalesPage() {
         const aiData = await res.json();
         if (!res.ok) throw new Error(aiData?.error || 'AI read failed');
 
+        // Handle "unclear" responses per upload. Clear that image and stop.
+        const shiftUnclear = aiData.shiftReport?.error === 'unclear';
+        const safeUnclear  = aiData.safeDrop?.error === 'unclear';
+        if (shiftUnclear || safeUnclear) {
+          if (shiftUnclear) {
+            setShiftReportFile(null);
+            setShiftReportPreview(null);
+          }
+          if (safeUnclear) {
+            setSafeDropFile(null);
+            setSafeDropPreview(null);
+          }
+          const which = shiftUnclear && safeUnclear
+            ? 'Both photos are'
+            : shiftUnclear ? 'The Register Shift Report photo is' : 'The Safe Drop photo is';
+          setModalError(`❌ ${which} not clear enough. Please take a new photo with better lighting and make sure the full receipt is visible.`);
+          setVerifyStage('idle');
+          setActiveTab('summary');
+          return;
+        }
+
         // Store the flat shape the DB expects.
         setAiExtracted({
           grossSales:     Number(aiData.shiftReport?.grossSales ?? 0),
@@ -269,13 +290,13 @@ export default function SalesPage() {
         };
         const TOL = 1.00;
         const compare = [
-          { field: 'r1_gross',          label: 'Gross Sales',     e: entered.grossSales,      r: receipt.grossSales },
-          { field: 'r1_net',            label: 'Net Sales',       e: entered.netSales,        r: receipt.netSales },
-          { field: 'cash_sales',        label: 'Cash Sales',      e: entered.cashSales,       r: receipt.cashSales },
-          { field: 'card_sales',        label: 'Card Sales',      e: entered.cardSales,       r: receipt.cardSales },
-          { field: 'r1_sales_tax',      label: 'Sales Tax',       e: entered.salesTax,        r: receipt.salesTax },
-          { field: 'r1_canceled_basket',label: 'Canceled Basket', e: entered.canceledBasket,  r: receipt.canceledBasket },
-          { field: 'r1_safe_drop',      label: 'Safe Drop',       e: entered.safeDrop,        r: receipt.safeDrop },
+          { field: 'r1_gross',           label: 'R1 Gross Sales',     e: entered.grossSales,     r: receipt.grossSales },
+          { field: 'r1_net',             label: 'R1 Net Sales',       e: entered.netSales,       r: receipt.netSales },
+          { field: 'cash_sales',         label: 'R1 Cash Sales',      e: entered.cashSales,      r: receipt.cashSales },
+          { field: 'card_sales',         label: 'R1 Card Sales',      e: entered.cardSales,      r: receipt.cardSales },
+          { field: 'r1_sales_tax',       label: 'R1 Sales Tax',       e: entered.salesTax,       r: receipt.salesTax },
+          { field: 'r1_canceled_basket', label: 'R1 Canceled Basket', e: entered.canceledBasket, r: receipt.canceledBasket },
+          { field: 'r1_safe_drop',       label: 'Safe Drop',          e: entered.safeDrop,       r: receipt.safeDrop },
         ];
         const diffs = compare
           .filter(c => Math.abs(c.e - c.r) > TOL)

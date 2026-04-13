@@ -68,14 +68,41 @@ export async function POST(request) {
     // Run both reads in parallel to save latency.
     const [shiftReport, safeDrop] = await Promise.all([
       callClaude(apiKey, shiftReportBase64,
-        'Read this cash register shift report receipt carefully. Extract these exact numbers. ' +
-        'Return ONLY valid JSON with no other text, no markdown, no backticks: ' +
-        '{"grossSales": 0, "netSales": 0, "cashSales": 0, "cardSales": 0, "salesTax": 0, "canceledBasket": 0}. ' +
-        'Use the actual dollar amounts as numbers without $ signs. If a field is not found, use 0.'
+`Read this cash register shift report receipt.
+
+If the image is blurry, dark, cut off, or you cannot clearly read the numbers, return ONLY this JSON (no other text, no markdown):
+{"error": "unclear", "message": "Cannot read receipt clearly. Please take a clearer photo."}
+
+If you CAN read it clearly, extract these SPECIFIC fields from the receipt and return ONLY valid JSON:
+{
+  "grossSales": (the number next to "Gross Sales"),
+  "netSales": (the number next to "Net Sales"),
+  "cashSales": (the number next to "Cash" — this is the cash sales amount; NOT "Cash In" which is starting cash, and NOT "Cash on Hand" which is ending cash),
+  "cardSales": (the number next to "Credit/Debit" or "Credit / Debit"),
+  "salesTax": (the number next to "Tax" or "Tax (Tax)"),
+  "canceledBasket": (the DOLLAR amount next to "Cancelled Basket count" or "Voided Items count" — if the receipt shows both a count and a dollar amount, ALWAYS use the dollar amount, never the count),
+  "safeDrop": (the number next to "Safe Drops"),
+  "readable": true
+}
+
+CRITICAL DISTINCTIONS:
+- "Cash" = cash sales amount → USE this
+- "Cash In" = starting cash → DO NOT use
+- "Cash on Hand" = ending cash → DO NOT use
+- "Credit/Debit" = card sales → USE this
+
+Return numbers as numbers without $ signs. If a field is not found on the receipt, use 0. Return ONLY the JSON, no markdown, no backticks, no explanation.`
       ),
       callClaude(apiKey, safeDropBase64,
-        'Read this safe drop receipt. Extract the total safe drop amount. ' +
-        'Return ONLY valid JSON: {"safeDrop": 0}. Use the dollar amount as a number without $ sign.'
+`Read this safe drop receipt.
+
+If the image is blurry, dark, cut off, or you cannot clearly read the total amount, return ONLY:
+{"error": "unclear", "message": "Cannot read safe drop receipt. Please take a clearer photo."}
+
+If clear, extract the total safe drop amount and return ONLY valid JSON:
+{"safeDrop": number, "readable": true}
+
+Use the dollar amount as a number without $ sign. Return ONLY the JSON, no markdown, no backticks.`
       ),
     ]);
 
