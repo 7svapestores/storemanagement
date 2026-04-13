@@ -194,14 +194,15 @@ export default function SalesPage() {
     setFieldErrors({});
     setModalError('');
 
-    // ── Receipt screenshots required ─────────────────────────
-    if (!shiftReportFile || !safeDropFile) {
+    // ── Receipt screenshots — required for employee, optional for owner ──
+    const hasReceipts = !!shiftReportFile && !!safeDropFile;
+    if (isEmployee && !hasReceipts) {
       setModalError('Please upload both the Register Shift Report and Safe Drop receipt screenshots before submitting.');
       setActiveTab('summary');
       return;
     }
 
-    // ── AI verification (skipped when the user chose "Submit Anyway") ──
+    // ── AI verification (skipped for owners with no receipts, or on override) ──
     let receiptShiftUrl = null, receiptShiftPath = null;
     let receiptSafeUrl = null, receiptSafePath = null;
     let aiVerified = false;
@@ -209,7 +210,10 @@ export default function SalesPage() {
 
     const storeForPath = stores.find(s => s.id === storeIdToUse);
 
-    if (verifyStage !== 'ready') {
+    // Owner without receipts skips verification entirely and commits the row.
+    const skipVerify = !hasReceipts;
+
+    if (!skipVerify && verifyStage !== 'ready') {
       setVerifyStage('verifying');
       setModalError('');
       try {
@@ -317,7 +321,7 @@ export default function SalesPage() {
         setMismatches([]);
         return;
       }
-    } else {
+    } else if (!skipVerify) {
       // User pressed "Submit Anyway" — do the upload now (verification was
       // already run on the previous click), mark as overridden.
       try {
@@ -496,6 +500,39 @@ export default function SalesPage() {
     });
     setConfirmDelete(null);
     load();
+  };
+
+  // Open the edit modal with form pre-filled from a sales row.
+  const openEditRow = (r) => {
+    const nm = (r.r1_house_account_name || '').trim();
+    let choice = '';
+    let customName = '';
+    if (nm.toLowerCase() === 'billy') choice = 'billy';
+    else if (nm.toLowerCase() === 'elias') choice = 'elias';
+    else if (nm) { choice = 'other'; customName = nm; }
+    setForm({
+      date: r.date,
+      r1_gross: r.r1_gross ?? r.gross_sales ?? '',
+      r1_net: r.r1_net ?? r.net_sales ?? '',
+      cash_sales: r.cash_sales ?? '',
+      card_sales: r.card_sales ?? '',
+      r1_canceled_basket: r.r1_canceled_basket ?? '',
+      r1_safe_drop: r.r1_safe_drop ?? '',
+      r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
+      r1_house_account_choice: choice,
+      r1_house_account_custom: customName,
+      r1_house_account_amount: r.r1_house_account_amount ?? r.credits ?? '',
+      r2_net: r.r2_net ?? '',
+      register2_cash: r.register2_cash ?? '',
+      r2_safe_drop: r.r2_safe_drop ?? '',
+      notes: r.notes || '',
+    });
+    setEditItem(r);
+    setActiveTab('r1');
+    setFieldErrors({});
+    setModalError('');
+    resetReceipts();
+    setModal('edit');
   };
 
   // Persist an owner review note on a mismatched row.
@@ -849,13 +886,20 @@ export default function SalesPage() {
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
 
-            {/* Receipt uploads — required before submit */}
+            {/* Receipt uploads — required for employee, optional for owner */}
             <div className="bg-sw-card2 border border-sw-border rounded-lg p-3 space-y-3">
-              <div className="text-sw-sub text-[10px] font-bold uppercase">Receipt Verification</div>
+              <div className="text-sw-sub text-[10px] font-bold uppercase flex items-center gap-2">
+                <span>Receipt Verification</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
+                  {isEmployee ? 'Required' : 'Optional'}
+                </span>
+              </div>
 
               {/* Shift report upload */}
               <div>
-                <label className="block text-sw-sub text-[11px] font-semibold mb-1">Register Shift Report {reqMark}</label>
+                <label className="block text-sw-sub text-[11px] font-semibold mb-1">
+                  Register Shift Report {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
+                </label>
                 {!shiftReportPreview ? (
                   <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
                     <span className="text-lg">📷</span>
@@ -873,7 +917,9 @@ export default function SalesPage() {
 
               {/* Safe drop upload */}
               <div>
-                <label className="block text-sw-sub text-[11px] font-semibold mb-1">Safe Drop Receipt {reqMark}</label>
+                <label className="block text-sw-sub text-[11px] font-semibold mb-1">
+                  Safe Drop Receipt {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
+                </label>
                 {!safeDropPreview ? (
                   <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold cursor-pointer min-h-[48px]">
                     <span className="text-lg">📷</span>
@@ -1303,9 +1349,8 @@ export default function SalesPage() {
               return <span className="text-sw-amber">+{fmt(diff)}</span>;
             } },
           { key: '_verify', label: '🔎', align: 'center', sortable: false, render: (_, r) => {
-            if (!r.shift_report_url && !r.safe_drop_url) {
-              return <span className="text-sw-dim text-base" title="No receipts uploaded">📷</span>;
-            }
+            const hasReceipts = !!(r.shift_report_url || r.safe_drop_url);
+            if (!hasReceipts) return <span className="text-sw-dim">—</span>;
             if (r.ai_verified) {
               return <span className="text-sw-green text-base" title="Verified against register receipts">✅</span>;
             }
@@ -1316,40 +1361,32 @@ export default function SalesPage() {
               }
               return <span className="text-sw-red text-base" title={`UNREVIEWED — ${r.ai_mismatches.length} mismatch(es):\n${list}`}>🔴</span>;
             }
-            return <span className="text-sw-sub text-base" title="Receipts uploaded, not verified">📷</span>;
+            return <span className="text-sw-blue text-base" title="Receipts uploaded">📷</span>;
           } },
           { key: 'entered_by', label: 'By',
             sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
             render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
-        ]} rows={sales} isOwner={hasStore}
-          onEdit={hasStore ? r => {
-            // Reverse-map house account name back into the dropdown + custom fields.
-            const nm = (r.r1_house_account_name || '').trim();
-            let choice = '';
-            let customName = '';
-            if (nm.toLowerCase() === 'billy') choice = 'billy';
-            else if (nm.toLowerCase() === 'elias') choice = 'elias';
-            else if (nm) { choice = 'other'; customName = nm; }
-            setForm({
-              date: r.date,
-              r1_gross: r.r1_gross ?? r.gross_sales ?? '',
-              r1_net: r.r1_net ?? r.net_sales ?? '',
-              cash_sales: r.cash_sales ?? '',
-              card_sales: r.card_sales ?? '',
-              r1_canceled_basket: r.r1_canceled_basket ?? '',
-              r1_safe_drop: r.r1_safe_drop ?? '',
-              r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
-              r1_house_account_choice: choice,
-              r1_house_account_custom: customName,
-              r1_house_account_amount: r.r1_house_account_amount ?? r.credits ?? '',
-              r2_net: r.r2_net ?? '',
-              register2_cash: r.register2_cash ?? '',
-              r2_safe_drop: r.r2_safe_drop ?? '',
-              notes: r.notes || '',
-            });
-            setEditItem(r); setActiveTab('r1'); setModal('edit');
-          } : undefined}
-          onDelete={hasStore ? handleDelete : undefined} />
+          ...(hasStore ? [{
+            key: '_actions', label: '', align: 'right', sortable: false, render: (_, r) => (
+              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                <button
+                  onClick={() => openEditRow(r)}
+                  title="Edit"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-sm"
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(r)}
+                  title="Delete"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-sm"
+                >
+                  🗑️
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]} rows={sales} isOwner={false} />
       </div>
 
       {modal && (
