@@ -158,9 +158,12 @@ export default function SalesPage() {
 
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
-    // Owner's save target: sidebar selection takes precedence, then a
-    // form-local store the owner picked via the "Select a Store" modal.
-    const storeIdToUse = isEmployee ? profile.store_id : (effectiveStoreId || formStoreId);
+    // When editing, the target is always the row's own store so an owner
+    // can edit any row regardless of current sidebar selection. For new
+    // entries, the sidebar or a form-local picked store is used.
+    const storeIdToUse = isEmployee
+      ? profile.store_id
+      : (editItem?.store_id || effectiveStoreId || formStoreId);
     if (!storeIdToUse) {
       setMsg('Please select a store from the sidebar first.');
       return;
@@ -420,6 +423,7 @@ export default function SalesPage() {
       r1_net: r.r1_net ?? r.net_sales ?? '',
       cash_sales: r.cash_sales ?? '',
       card_sales: r.card_sales ?? '',
+      cashapp_check: r.cashapp_check ?? '',
       r1_canceled_basket: r.r1_canceled_basket ?? '',
       r1_safe_drop: r.r1_safe_drop ?? '',
       r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
@@ -472,8 +476,15 @@ export default function SalesPage() {
   const r2Cash         = num(form.register2_cash);
   const r2SafeDrop     = num(form.r2_safe_drop);
 
-  // Determine register 2 applicability first — short/over total depends on it.
-  const currentStoreObj = stores.find(s => s.id === (isEmployee ? profile?.store_id : effectiveStoreId));
+  // Determine the currently-targeted store for form logic (R2 visibility,
+  // banner label, save destination). Order of precedence:
+  //   - employees: always their own assigned store
+  //   - when editing a row: the row's store_id
+  //   - otherwise: sidebar-selected store, then the form-local picked store
+  const currentStoreId = isEmployee
+    ? profile?.store_id
+    : (editItem?.store_id || effectiveStoreId || formStoreId);
+  const currentStoreObj = stores.find(s => s.id === currentStoreId);
   const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
 
   // Short/over — positive = SHORT (red), negative = OVER (green).
@@ -630,6 +641,13 @@ export default function SalesPage() {
                   {isEmployee ? 'Required' : 'Optional'}
                 </span>
               </div>
+              {/* Show existing stored receipt when editing and no new file picked */}
+              {!shiftReportPreview && editItem?.shift_report_url && (
+                <div className="mb-2">
+                  <div className="text-sw-dim text-[10px] mb-1">Currently stored:</div>
+                  <img src={editItem.shift_report_url} alt="Stored R1 receipt" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                </div>
+              )}
               {!shiftReportPreview ? (
                 <div className="flex gap-2 flex-col sm:flex-row">
                   <button
@@ -698,6 +716,12 @@ export default function SalesPage() {
                   {isEmployee ? 'Required' : 'Optional'}
                 </span>
               </div>
+              {!r2ReportPreview && editItem?.safe_drop_url && (
+                <div className="mb-2">
+                  <div className="text-sw-dim text-[10px] mb-1">Currently stored:</div>
+                  <img src={editItem.safe_drop_url} alt="Stored R2 receipt" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                </div>
+              )}
               {!r2ReportPreview ? (
                 <div className="flex gap-2 flex-col sm:flex-row">
                   <button
@@ -982,8 +1006,9 @@ export default function SalesPage() {
   if (loading) return <Loading />;
 
   const hasStore = !!effectiveStoreId;
-  // Display name in the modal prefers the sidebar-selected store, then the form-local store.
-  const storeName = stores.find(s => s.id === (effectiveStoreId || formStoreId))?.name;
+  // Display name in the modal: when editing, prefer the row's store; otherwise
+  // the sidebar-selected store, then the form-local picked store.
+  const storeName = stores.find(s => s.id === (editItem?.store_id || effectiveStoreId || formStoreId))?.name;
 
   const ownerUsesReg2 = hasRegister2(storeName);
 
