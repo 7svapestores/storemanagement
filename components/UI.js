@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { fmt, fK, weekLabel, getDateRange } from '@/lib/utils';
 
 // ── Stat Card ───────────────────────────────────────────────
@@ -163,6 +163,91 @@ export function Modal({ title, onClose, children, wide }) {
           <button onClick={onClose} className="text-sw-dim hover:text-sw-text text-xl w-10 h-10 flex items-center justify-center -mr-2">✕</button>
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Image Viewer ────────────────────────────────────────────
+// Full-screen image modal with a prominent close button. Handles the mobile
+// back button via pushState so "back" closes the viewer instead of leaving
+// the page.
+export function ImageViewer({ src, caption, onClose, downloadName }) {
+  useEffect(() => {
+    if (!src) return;
+    // Push a history entry so the phone's back button just closes the modal.
+    try {
+      window.history.pushState({ __imageViewer: true }, '');
+    } catch {}
+    const onPop = () => onClose?.();
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('popstate', onPop);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('keydown', onKey);
+      // Undo our pushed history entry on close. If we're closing via popstate
+      // the entry is already gone, so guard with a try.
+      try { if (window.history.state?.__imageViewer) window.history.back(); } catch {}
+    };
+  }, [src]);
+
+  if (!src) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90 backdrop-blur-sm" onClick={onClose}>
+      {/* Top bar with close button */}
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)', paddingBottom: 8 }}
+      >
+        <div className="text-white text-[13px] font-semibold truncate mr-3">{caption || 'Invoice'}</div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          className="w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 text-white text-2xl font-bold flex items-center justify-center flex-shrink-0"
+          aria-label="Close"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Image — fills remaining space, centered, pinch-to-zoom on iOS via touch-action */}
+      <div
+        className="flex-1 flex items-center justify-center px-2 overflow-auto"
+        style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img src={src} alt={caption || ''} className="max-w-full max-h-full object-contain" />
+      </div>
+
+      {/* Bottom action bar */}
+      <div
+        className="flex items-center justify-center gap-3 px-4 flex-wrap"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)', paddingTop: 12 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="text-white text-[12px] font-semibold underline underline-offset-2"
+        >
+          Open original
+        </a>
+        <a
+          href={src}
+          download={downloadName || 'invoice.jpg'}
+          className="text-white text-[12px] font-semibold underline underline-offset-2"
+        >
+          Download
+        </a>
+        <button
+          onClick={onClose}
+          className="px-5 py-2 rounded-lg bg-white text-black text-[13px] font-bold min-h-[44px]"
+        >
+          Close
+        </button>
       </div>
     </div>
   );

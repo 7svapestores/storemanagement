@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, DateBar, useDateRange, Loading, Alert, Modal } from '@/components/UI';
+import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer } from '@/components/UI';
 import { dayLabel } from '@/lib/utils';
 
 const utilDate = (d) => {
@@ -161,39 +161,12 @@ export default function InvoicesPage() {
       )}
 
       {viewInvoice && (
-        <Modal title="Invoice" onClose={() => setViewInvoice(null)} wide>
-          <div className="text-sw-sub text-[11px] mb-2 flex flex-wrap gap-x-3">
-            <span><b className="text-sw-text">{viewInvoice.vendor_name}</b></span>
-            <span>{utilDate(viewInvoice.date)}</span>
-            <span>{viewInvoice.stores?.name}</span>
-            <span className="text-sw-amber font-mono font-bold">{fmtMoney(viewInvoice.amount)}</span>
-          </div>
-          {viewInvoice.notes && (
-            <div className="text-sw-sub text-[12px] mb-2">{viewInvoice.notes}</div>
-          )}
-          <img
-            src={viewInvoice.image_url}
-            alt="Invoice"
-            className="w-full max-h-[70vh] object-contain rounded-lg border border-sw-border bg-black/30"
-          />
-          <div className="flex justify-end mt-3 gap-2">
-            <a
-              href={viewInvoice.image_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sw-blue text-[11px] underline"
-            >
-              Open original
-            </a>
-            <a
-              href={viewInvoice.image_url}
-              download
-              className="text-sw-blue text-[11px] underline"
-            >
-              Download
-            </a>
-          </div>
-        </Modal>
+        <ImageViewer
+          src={viewInvoice.image_url}
+          caption={`${viewInvoice.vendor_name} · ${utilDate(viewInvoice.date)} · ${viewInvoice.stores?.name || ''} · ${fmtMoney(viewInvoice.amount)}`}
+          onClose={() => setViewInvoice(null)}
+          downloadName={`invoice-${viewInvoice.vendor_name || 'purchase'}-${viewInvoice.date || ''}.jpg`}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadInvoice, compressImage } from '@/lib/storage';
@@ -18,7 +18,9 @@ export default function PurchasesPage() {
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [invoiceByPurchase, setInvoiceByPurchase] = useState({});
   const [viewInvoice, setViewInvoice] = useState(null);
-  const [form, setForm] = useState({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: '' });
+  const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
+
+  const blankForm = () => ({ week_of: today(), amount: '', vendor_id: vendors[0]?.id || '', notes: '' });
   const [newVendorName, setNewVendorName] = useState('');
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
@@ -81,16 +83,12 @@ export default function PurchasesPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
-    const quantity = parseInt(form.quantity) || 0;
-    const unit_cost = parseFloat(form.unit_cost) || 0;
-    const total = quantity * unit_cost;
+    const amount = parseFloat(form.amount) || 0;
     const vendor = vendors.find(v => v.id === form.vendor_id);
 
     if (!effectiveStoreId) { alert('Select a store from the sidebar first.'); return; }
-    if (!(form.item || '').trim()) { alert('Item name is required'); return; }
-    if (quantity <= 0) { alert('Quantity must be greater than 0'); return; }
-    if (unit_cost <= 0) { alert('Unit cost must be greater than 0'); return; }
     if (!form.vendor_id) { alert('Select a vendor'); return; }
+    if (amount <= 0) { alert('Total amount must be greater than 0'); return; }
 
     // "Other" → create a new vendor row, then use its id for this purchase.
     let effectiveVendor = vendor;
@@ -110,14 +108,17 @@ export default function PurchasesPage() {
       setNewVendorName('');
     }
 
+    // Simplified form: item = vendor name, quantity = 1, unit_cost = amount
+    // (kept this shape for backward compat with the purchases table schema).
     const payload = {
       store_id: effectiveStoreId,
       week_of: form.week_of,
-      item: form.item.trim(),
-      quantity,
-      unit_cost,
+      item: effectiveVendor?.name || 'Purchase',
+      quantity: 1,
+      unit_cost: amount,
       vendor_id: effectiveVendorId,
       supplier: effectiveVendor?.name || '',
+      notes: (form.notes || '').trim() || null,
     };
 
     setUploading(true);
@@ -142,8 +143,8 @@ export default function PurchasesPage() {
           image_url: url,
           image_path: path,
           date: form.week_of,
-          amount: total,
-          notes: payload.item,
+          amount,
+          notes: payload.notes,
           uploaded_by: profile?.id,
         });
         if (invErr) console.error('[purchases] invoice insert failed:', invErr);
@@ -157,7 +158,7 @@ export default function PurchasesPage() {
       action: 'create',
       entityType: 'purchase',
       entityId: inserted?.id,
-      description: `${profile?.name} added purchase "${payload.item}" (${quantity} × ${fmtMoney(unit_cost)} = ${fmtMoney(total)}) for ${storeName} week of ${shortDate(form.week_of)} from ${effectiveVendor?.name || 'unknown vendor'}`,
+      description: `${profile?.name} added purchase of ${fmtMoney(amount)} from ${effectiveVendor?.name || 'unknown vendor'} for ${storeName} on ${shortDate(form.week_of)}`,
       storeName,
     });
     setModal(false);
@@ -200,7 +201,7 @@ export default function PurchasesPage() {
 
   const tryOpenAdd = () => {
     if (!hasStore) { setShowStorePicker(true); return; }
-    setForm({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: vendors[0]?.id || '' });
+    setForm(blankForm());
     setModal(true);
   };
 
@@ -212,34 +213,33 @@ export default function PurchasesPage() {
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
       <DataTable
-        emptyMessage="No purchases yet. Start tracking what you buy for each store."
+        emptyMessage="No purchases yet. Tap + Add to log an invoice."
         columns={[
-          { key: 'week_of', label: 'Week', render: v => weekLabel(v) },
-          { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
-          { key: 'item', label: 'Item' },
-          { key: 'quantity', label: 'Qty', align: 'right', mono: true },
-          { key: 'unit_cost', label: 'Cost', align: 'right', mono: true, render: v => fmt(v) },
-          { key: 'total_cost', label: 'Total', align: 'right', mono: true, render: v => <span className="text-sw-amber font-semibold">{fmt(v)}</span> },
-          { key: 'supplier', label: 'Vendor' },
+          { key: 'week_of', label: 'Date', render: v => weekLabel(v) },
+          ...(!effectiveStoreId ? [{ key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
+          { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
+          { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span> },
           { key: '_invoice', label: '🧾', align: 'center', render: (_, r) => {
             const inv = invoiceByPurchase[r.id];
             if (!inv) return <span className="text-sw-dim">—</span>;
             return (
-              <button onClick={() => setViewInvoice(inv)} title="View invoice" className="text-sw-blue text-base">🧾</button>
+              <button onClick={() => setViewInvoice(inv)} title="View invoice" className="text-sw-blue text-lg">🧾</button>
             );
           } },
-        ]} rows={items} isOwner={hasStore} onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined} />
+          { key: 'notes', label: 'Notes', render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
+        ]}
+        rows={items}
+        isOwner={hasStore}
+        onDelete={hasStore ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
+      />
     </div>
-    {modal && <Modal title="Add Purchase" onClose={() => setModal(false)}>
+    {modal && <Modal title="Log Purchase" onClose={() => setModal(false)}>
       <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
         Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
       </div>
-      <Field label="Week Of"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
-      <Field label="Item"><input value={form.item} onChange={e => setForm({...form, item: e.target.value})} placeholder="e.g. Elf Bar 5000" /></Field>
-      <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Qty"><input type="number" min="1" step="1" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value.replace(/^-/, '')})} /></Field>
-        <Field label="Unit Cost"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.unit_cost} onChange={e => setForm({...form, unit_cost: e.target.value.replace(/^-/, '')})} /></Field>
-      </div>
+
+      <Field label="Date"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
+
       <Field label="Vendor">
         <select value={form.vendor_id} onChange={e => setForm({...form, vendor_id: e.target.value})}>
           <option value="">Select vendor…</option>
@@ -255,10 +255,25 @@ export default function PurchasesPage() {
           />
         )}
       </Field>
+
+      <Field label="Total Amount">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          placeholder="0.00"
+          value={form.amount}
+          onChange={e => setForm({...form, amount: e.target.value.replace(/^-/, '')})}
+          className="!text-[22px] !font-mono !font-extrabold !py-3 !text-sw-green"
+        />
+      </Field>
+
       <Field label="Invoice Image (optional)">
         {!invoicePreview ? (
-          <label className="flex items-center justify-center gap-2 py-3 px-3 rounded-lg border border-dashed border-sw-border bg-sw-card2 text-sw-sub text-[12px] cursor-pointer min-h-[44px]">
-            <span>📷</span><span>Take photo or choose file</span>
+          <label className="flex items-center justify-center gap-2 py-4 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold cursor-pointer min-h-[56px]">
+            <span className="text-xl">📷</span>
+            <span>Take photo or upload invoice</span>
             <input
               type="file"
               accept="image/*"
@@ -269,19 +284,33 @@ export default function PurchasesPage() {
           </label>
         ) : (
           <div className="space-y-2">
-            <img src={invoicePreview} alt="Invoice preview" className="max-h-48 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-            <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setViewInvoice({ image_url: invoicePreview, vendor_name: 'Preview', date: form.week_of, amount: parseFloat(form.amount) || 0 })}
+              className="block w-full"
+            >
+              <img src={invoicePreview} alt="Invoice preview" className="max-h-[200px] w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+            </button>
+            <div className="flex gap-2 items-center">
               <button
                 type="button"
                 onClick={() => { setInvoiceFile(null); setInvoicePreview(null); }}
-                className="text-sw-red text-[11px] font-semibold border border-sw-red/30 rounded px-2 py-1 bg-sw-redD"
+                className="text-sw-red text-[11px] font-semibold border border-sw-red/30 rounded px-3 py-1.5 bg-sw-redD min-h-[32px]"
               >
-                Remove
+                ✕ Remove
               </button>
-              <span className="text-sw-dim text-[10px] self-center">{invoiceFile?.name}</span>
+              <span className="text-sw-dim text-[10px] truncate flex-1">{invoiceFile?.name}</span>
             </div>
           </div>
         )}
+      </Field>
+
+      <Field label="Notes (optional)">
+        <input
+          placeholder="e.g. Invoice #52964, Paid cash"
+          value={form.notes}
+          onChange={e => setForm({...form, notes: e.target.value})}
+        />
       </Field>
 
       <div className="flex gap-2 justify-end">
@@ -290,15 +319,12 @@ export default function PurchasesPage() {
       </div>
     </Modal>}
     {viewInvoice && (
-      <Modal title="Invoice" onClose={() => setViewInvoice(null)} wide>
-        <div className="text-sw-sub text-[11px] mb-2">
-          {viewInvoice.vendor_name} · {viewInvoice.date} · {fmtMoney(viewInvoice.amount)}
-        </div>
-        <img src={viewInvoice.image_url} alt="Invoice" className="w-full max-h-[70vh] object-contain rounded-lg border border-sw-border bg-black/30" />
-        <div className="flex justify-end mt-3">
-          <a href={viewInvoice.image_url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open original</a>
-        </div>
-      </Modal>
+      <ImageViewer
+        src={viewInvoice.image_url}
+        caption={`${viewInvoice.vendor_name} · ${viewInvoice.date} · ${fmtMoney(viewInvoice.amount)}`}
+        onClose={() => setViewInvoice(null)}
+        downloadName={`invoice-${viewInvoice.vendor_name || 'purchase'}-${viewInvoice.date || ''}.jpg`}
+      />
     )}
     {showStorePicker && (
       <StoreRequiredModal
@@ -307,7 +333,7 @@ export default function PurchasesPage() {
         onSelectStore={(s) => {
           setSelectedStore(s.id);
           setShowStorePicker(false);
-          setForm({ week_of: today(), item: '', quantity: '', unit_cost: '', vendor_id: vendors[0]?.id || '' });
+          setForm(blankForm());
           setModal(true);
         }}
       />
@@ -315,7 +341,7 @@ export default function PurchasesPage() {
     {confirmDelete && (
       <ConfirmModal
         title="Delete this purchase?"
-        message={`Are you sure? This will be logged in the activity trail. Deleting "${confirmDelete.item}" of ${fmtMoney(confirmDelete.total_cost)} for ${confirmDelete.stores?.name || 'store'}.`}
+        message={`Are you sure? This will be logged in the activity trail. Deleting ${fmtMoney(confirmDelete.total_cost)} from ${confirmDelete.supplier || 'vendor'} for ${confirmDelete.stores?.name || 'store'}.`}
         onCancel={() => setConfirmDelete(null)}
         onConfirm={doDelete}
       />
