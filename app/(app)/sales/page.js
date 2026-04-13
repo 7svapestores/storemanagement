@@ -24,19 +24,15 @@ export default function SalesPage() {
   const [formStoreId, setFormStoreId] = useState(null);
   const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
   const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
-  // Receipt verification state
+  // Receipt verification state — single shift report image only.
   const [shiftReportFile, setShiftReportFile] = useState(null);
   const [shiftReportPreview, setShiftReportPreview] = useState(null);
-  const [safeDropFile, setSafeDropFile] = useState(null);
-  const [safeDropPreview, setSafeDropPreview] = useState(null);
   const [verifyStage, setVerifyStage] = useState('idle'); // 'idle' | 'verifying' | 'mismatch' | 'ready'
   const [mismatches, setMismatches] = useState(null); // array of {field, label, entered, receipt, diff} or null
   const [aiExtracted, setAiExtracted] = useState(null); // raw AI numbers to save alongside
-  // Refs for hidden file inputs — one for camera, one for library per receipt.
+  // Refs for hidden file inputs — camera + library.
   const shiftCameraRef = useRef(null);
   const shiftLibraryRef = useRef(null);
-  const safeCameraRef = useRef(null);
-  const safeLibraryRef = useRef(null);
   // Owner review state — per-row text input for the mismatch review card list.
   const [reviewNotes, setReviewNotes] = useState({}); // { [saleId]: noteText }
   const [reviewBusy, setReviewBusy] = useState(null); // id of row currently saving
@@ -156,7 +152,6 @@ export default function SalesPage() {
   };
 
   const handleShiftPick = pickFile(setShiftReportFile, setShiftReportPreview);
-  const handleSafeDropPick = pickFile(setSafeDropFile, setSafeDropPreview);
 
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
@@ -205,72 +200,49 @@ export default function SalesPage() {
     setFieldErrors({});
     setModalError('');
 
-    // ── Receipt screenshots — required for employee, optional for owner ──
-    const hasReceipts = !!shiftReportFile && !!safeDropFile;
-    if (isEmployee && !hasReceipts) {
-      setModalError('Please upload both the Register Shift Report and Safe Drop receipt screenshots before submitting.');
-      setActiveTab('summary');
+    // ── Receipt screenshot — required for employee, optional for owner ──
+    const hasReceipt = !!shiftReportFile;
+    if (isEmployee && !hasReceipt) {
+      setModalError('Please upload the Register Shift Report screenshot before submitting.');
+      setActiveTab('r1');
       return;
     }
 
-    // ── AI verification (skipped for owners with no receipts, or on override) ──
+    // ── AI verification (skipped for owners with no receipt, or on override) ──
     let receiptShiftUrl = null, receiptShiftPath = null;
-    let receiptSafeUrl = null, receiptSafePath = null;
     let aiVerified = false;
     let verifiedMismatches = null;
 
     const storeForPath = stores.find(s => s.id === storeIdToUse);
-
-    // Owner without receipts skips verification entirely and commits the row.
-    const skipVerify = !hasReceipts;
+    const skipVerify = !hasReceipt;
 
     if (!skipVerify && verifyStage !== 'ready') {
       setVerifyStage('verifying');
       setModalError('');
       try {
-        // Upload + compress both images in parallel.
-        const [shiftCompressed, safeCompressed] = await Promise.all([
-          compressImage(shiftReportFile),
-          compressImage(safeDropFile),
-        ]);
-        const [shiftUp, safeUp] = await Promise.all([
-          uploadReceipt(supabase, shiftCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'shift' }),
-          uploadReceipt(supabase, safeCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'safe' }),
-        ]);
-        receiptShiftUrl = shiftUp.url; receiptShiftPath = shiftUp.path;
-        receiptSafeUrl = safeUp.url;  receiptSafePath = safeUp.path;
+        const shiftCompressed = await compressImage(shiftReportFile);
+        const shiftUp = await uploadReceipt(supabase, shiftCompressed, {
+          storeName: storeForPath?.name, date: form.date || today(), kind: 'shift',
+        });
+        receiptShiftUrl = shiftUp.url;
+        receiptShiftPath = shiftUp.path;
 
-        // Convert to base64 + call the read-receipt API.
-        const [shiftB64, safeB64] = await Promise.all([
-          fileToBase64(shiftCompressed),
-          fileToBase64(safeCompressed),
-        ]);
+        const shiftB64 = await fileToBase64(shiftCompressed);
         const res = await fetch('/api/read-receipt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shiftReportBase64: shiftB64, safeDropBase64: safeB64 }),
+          body: JSON.stringify({ shiftReportBase64: shiftB64 }),
         });
         const aiData = await res.json();
         if (!res.ok) throw new Error(aiData?.error || 'AI read failed');
 
-        // Handle "unclear" responses per upload. Clear that image and stop.
-        const shiftUnclear = aiData.shiftReport?.error === 'unclear';
-        const safeUnclear  = aiData.safeDrop?.error === 'unclear';
-        if (shiftUnclear || safeUnclear) {
-          if (shiftUnclear) {
-            setShiftReportFile(null);
-            setShiftReportPreview(null);
-          }
-          if (safeUnclear) {
-            setSafeDropFile(null);
-            setSafeDropPreview(null);
-          }
-          const which = shiftUnclear && safeUnclear
-            ? 'Both photos are'
-            : shiftUnclear ? 'The Register Shift Report photo is' : 'The Safe Drop photo is';
-          setModalError(`❌ ${which} not clear enough. Please take a new photo with better lighting and make sure the full receipt is visible.`);
+        // Handle "unclear" response — clear the image and prompt a retake.
+        if (aiData.shiftReport?.error === 'unclear') {
+          setShiftReportFile(null);
+          setShiftReportPreview(null);
+          setModalError('❌ The Register Shift Report photo is not clear enough. Please take a new photo with better lighting and make sure the full receipt is visible.');
           setVerifyStage('idle');
-          setActiveTab('summary');
+          setActiveTab('r1');
           return;
         }
 
@@ -282,7 +254,7 @@ export default function SalesPage() {
           cardSales:      Number(aiData.shiftReport?.cardSales ?? 0),
           salesTax:       Number(aiData.shiftReport?.salesTax ?? 0),
           canceledBasket: Number(aiData.shiftReport?.canceledBasket ?? 0),
-          safeDrop:       Number(aiData.safeDrop?.safeDrop ?? 0),
+          safeDrop:       Number(aiData.shiftReport?.safeDrop ?? 0),
         });
 
         const entered = {
@@ -301,7 +273,7 @@ export default function SalesPage() {
           cardSales:       Number(aiData.shiftReport?.cardSales ?? 0),
           salesTax:        Number(aiData.shiftReport?.salesTax ?? 0),
           canceledBasket:  Number(aiData.shiftReport?.canceledBasket ?? 0),
-          safeDrop:        Number(aiData.safeDrop?.safeDrop ?? 0),
+          safeDrop:        Number(aiData.shiftReport?.safeDrop ?? 0),
         };
         const TOL = 1.00;
         const compare = [
@@ -333,19 +305,15 @@ export default function SalesPage() {
         return;
       }
     } else if (!skipVerify) {
-      // User pressed "Submit Anyway" — do the upload now (verification was
-      // already run on the previous click), mark as overridden.
+      // User pressed "Submit Anyway" — upload the shift report now
+      // (verification already ran on the previous click), mark as overridden.
       try {
-        const [shiftCompressed, safeCompressed] = await Promise.all([
-          compressImage(shiftReportFile),
-          compressImage(safeDropFile),
-        ]);
-        const [shiftUp, safeUp] = await Promise.all([
-          uploadReceipt(supabase, shiftCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'shift' }),
-          uploadReceipt(supabase, safeCompressed, { storeName: storeForPath?.name, date: form.date || today(), kind: 'safe' }),
-        ]);
-        receiptShiftUrl = shiftUp.url; receiptShiftPath = shiftUp.path;
-        receiptSafeUrl = safeUp.url;  receiptSafePath = safeUp.path;
+        const shiftCompressed = await compressImage(shiftReportFile);
+        const shiftUp = await uploadReceipt(supabase, shiftCompressed, {
+          storeName: storeForPath?.name, date: form.date || today(), kind: 'shift',
+        });
+        receiptShiftUrl = shiftUp.url;
+        receiptShiftPath = shiftUp.path;
       } catch (e) {
         setModalError(`Failed to upload receipt: ${e.message || e}`);
         return;
@@ -381,8 +349,6 @@ export default function SalesPage() {
       // Receipt verification
       shift_report_url: receiptShiftUrl,
       shift_report_path: receiptShiftPath,
-      safe_drop_url: receiptSafeUrl,
-      safe_drop_path: receiptSafePath,
       ai_verified: aiVerified,
       ai_mismatches: verifiedMismatches && verifiedMismatches.length ? verifiedMismatches : null,
       ai_extracted_data: aiExtracted,
@@ -485,7 +451,6 @@ export default function SalesPage() {
     setModalError('');
     setFormStoreId(null);
     setShiftReportFile(null); setShiftReportPreview(null);
-    setSafeDropFile(null); setSafeDropPreview(null);
     setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
     load();
   };
@@ -749,6 +714,42 @@ export default function SalesPage() {
                 })()}
               </div>
             )}
+
+            {/* Single receipt upload — Register 1 tab only */}
+            <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
+              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5 flex items-center gap-2">
+                <span>📷 Register Shift Report Screenshot</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
+                  {isEmployee ? 'Required' : 'Optional'}
+                </span>
+              </div>
+              {!shiftReportPreview ? (
+                <div className="flex gap-2 flex-col sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => shiftCameraRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                  >
+                    <span className="text-lg">📷</span><span>Take Photo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shiftLibraryRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                  >
+                    <span className="text-lg">📁</span><span>From Library</span>
+                  </button>
+                  <input ref={shiftCameraRef} type="file" accept="image/*" capture="environment" onChange={handleShiftPick} className="hidden" />
+                  <input ref={shiftLibraryRef} type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <img src={shiftReportPreview} alt="Shift report preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+                  <button type="button" onClick={() => { setShiftReportFile(null); setShiftReportPreview(null); setVerifyStage('idle'); }}
+                    className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -897,82 +898,6 @@ export default function SalesPage() {
             )}
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
-
-            {/* Receipt uploads — required for employee, optional for owner */}
-            <div className="bg-sw-card2 border border-sw-border rounded-lg p-3 space-y-3">
-              <div className="text-sw-sub text-[10px] font-bold uppercase flex items-center gap-2">
-                <span>Receipt Verification</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
-                  {isEmployee ? 'Required' : 'Optional'}
-                </span>
-              </div>
-
-              {/* Shift report upload */}
-              <div>
-                <label className="block text-sw-sub text-[11px] font-semibold mb-1">
-                  Register Shift Report {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
-                </label>
-                {!shiftReportPreview ? (
-                  <div className="flex gap-2 flex-col sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => shiftCameraRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                    >
-                      <span className="text-lg">📷</span><span>Take Photo</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => shiftLibraryRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                    >
-                      <span className="text-lg">📁</span><span>From Library</span>
-                    </button>
-                    <input ref={shiftCameraRef} type="file" accept="image/*" capture="environment" onChange={handleShiftPick} className="hidden" />
-                    <input ref={shiftLibraryRef} type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <img src={shiftReportPreview} alt="Shift report preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-                    <button type="button" onClick={() => { setShiftReportFile(null); setShiftReportPreview(null); setVerifyStage('idle'); }}
-                      className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Safe drop upload */}
-              <div>
-                <label className="block text-sw-sub text-[11px] font-semibold mb-1">
-                  Safe Drop Receipt {isEmployee ? reqMark : <span className="text-sw-dim">(optional)</span>}
-                </label>
-                {!safeDropPreview ? (
-                  <div className="flex gap-2 flex-col sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => safeCameraRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                    >
-                      <span className="text-lg">📷</span><span>Take Photo</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => safeLibraryRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                    >
-                      <span className="text-lg">📁</span><span>From Library</span>
-                    </button>
-                    <input ref={safeCameraRef} type="file" accept="image/*" capture="environment" onChange={handleSafeDropPick} className="hidden" />
-                    <input ref={safeLibraryRef} type="file" accept="image/*" onChange={handleSafeDropPick} className="hidden" />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <img src={safeDropPreview} alt="Safe drop preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-                    <button type="button" onClick={() => { setSafeDropFile(null); setSafeDropPreview(null); setVerifyStage('idle'); }}
-                      className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
-                  </div>
-                )}
-              </div>
-            </div>
 
             {/* Verifying spinner */}
             {verifyStage === 'verifying' && (
@@ -1181,7 +1106,6 @@ export default function SalesPage() {
 
   const resetReceipts = () => {
     setShiftReportFile(null); setShiftReportPreview(null);
-    setSafeDropFile(null); setSafeDropPreview(null);
     setVerifyStage('idle'); setMismatches(null); setAiExtracted(null);
   };
 
