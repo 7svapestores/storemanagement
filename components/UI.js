@@ -349,22 +349,76 @@ export function EmptyState({ icon = '📭', title = 'Nothing here yet', message,
 }
 
 // ── Data Table ──────────────────────────────────────────────
-// Per-column prop `hideOnMobile: true` makes that column disappear below
-// 768px via an extra className. Used for table-column hiding on phones
-// without hand-rolling media queries on every caller.
-export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data' }) {
-  const visible = rows?.slice(0, 100) || [];
-  const total = rows?.length || 0;
+// Per-column flags:
+//   hideOnMobile: true   — hide below 768px
+//   sortable: false      — opt out of sort (default is sortable=true)
+//   sortValue: (row) => … — custom accessor used when sorting
+//
+// DataTable props:
+//   defaultSort={{ key, dir }} — initial sort state
+export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data', defaultSort }) {
+  const [sort, setSort] = useState(defaultSort || null);
   const colClass = (c) => c.hideOnMobile ? 'hidden md:table-cell' : '';
+
+  // Sortable when: explicitly opted in via `sortable: true`, OR the key isn't
+  // a synthetic `_foo` and the caller hasn't set `sortable: false`.
+  const isSortable = (c) => {
+    if (c.sortable === true) return true;
+    if (c.sortable === false) return false;
+    return !c.key?.startsWith('_');
+  };
+
+  const sortedRows = (() => {
+    if (!sort || !rows) return rows || [];
+    const col = columns.find(c => c.key === sort.key);
+    if (!col) return rows;
+    const accessor = col.sortValue || ((r) => r[sort.key]);
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  })();
+
+  const handleSort = (c) => {
+    if (!isSortable(c)) return;
+    setSort(prev => {
+      if (prev?.key === c.key) {
+        return { key: c.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key: c.key, dir: 'asc' };
+    });
+  };
+
+  const visible = sortedRows.slice(0, 100);
+  const total = sortedRows.length;
+
   return (
     <div>
       <div className="overflow-x-auto relative">
         <table>
           <thead>
             <tr>
-              {columns.map(c => (
-                <th key={c.key} className={colClass(c)} style={{ textAlign: c.align || 'left' }}>{c.label}</th>
-              ))}
+              {columns.map(c => {
+                const active = sort?.key === c.key;
+                const arrow = active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+                const sortable = isSortable(c);
+                return (
+                  <th
+                    key={c.key}
+                    className={`${colClass(c)} ${sortable ? 'cursor-pointer select-none' : ''} ${active ? '!text-sw-blue' : ''}`}
+                    style={{ textAlign: c.align || 'left' }}
+                    onClick={() => handleSort(c)}
+                  >
+                    {c.label}{arrow}
+                  </th>
+                );
+              })}
               {(onEdit || onDelete) && isOwner && <th style={{ width: 60 }} />}
             </tr>
           </thead>

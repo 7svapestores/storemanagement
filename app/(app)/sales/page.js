@@ -309,12 +309,11 @@ export default function SalesPage() {
   // Short/over — positive = SHORT (red), negative = OVER (green).
   //   r1 = cash_sales - r1_safe_drop
   //   r2 = r2_net - r2_safe_drop
-  //   basketR2Diff = r2_net - r1_canceled_basket   (negative = money missing)
-  //   total_short = r1 + r2 - basketR2Diff         (subtracting so missing money adds to short)
+  //   Basket diff is tracked separately and NOT rolled into total_short.
   const r1ShortOverCalc = r1Cash - r1SafeDrop;
   const r2ShortOverCalc = r2Net - r2SafeDrop;
   const basketR2Diff = r2Net - r1CancelBasket;
-  const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc - basketR2Diff : 0);
+  const totalShortOverCalc = r1ShortOverCalc + (currentUsesReg2 ? r2ShortOverCalc : 0);
 
   const totalGross = r1Gross + r2Net; // R2 has no gross, use net
   const totalNet   = r1Net + r2Net;
@@ -484,22 +483,15 @@ export default function SalesPage() {
               </div>
             </div>
 
-            {/* Short/Over roll-up: R1 + R2 + Basket diff = Total */}
+            {/* Short/Over breakdown — Basket diff is displayed separately, NOT in the total. */}
             <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
               <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Short / Over Breakdown</div>
               <div className="space-y-1 text-[12px]">
                 {(() => {
-                  // Short/over lines: positive = short (red -), negative = over (green +).
                   const fmtSO = (v) => {
                     if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono">{fmt(0)}</span>;
                     if (v > 0) return <span className="text-sw-red font-mono font-bold">-{fmt(v)}</span>;
                     return <span className="text-sw-green font-mono font-bold">+{fmt(Math.abs(v))}</span>;
-                  };
-                  // Basket diff: negative = money missing (red -), positive = extra (green +), zero = matched.
-                  const fmtDiff = (v) => {
-                    if (Math.abs(v) < 0.01) return <span className="text-sw-green font-mono font-bold">{fmt(0)} ✅</span>;
-                    if (v < 0) return <span className="text-sw-red font-mono font-bold">-{fmt(Math.abs(v))}</span>;
-                    return <span className="text-sw-green font-mono font-bold">+{fmt(v)}</span>;
                   };
                   return (
                     <>
@@ -508,21 +500,13 @@ export default function SalesPage() {
                         {fmtSO(r1ShortOverCalc)}
                       </div>
                       {usesReg2 && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-sw-sub">R2 Short/Over <span className="text-sw-dim text-[10px]">(Net − Safe Drop)</span></span>
-                            {fmtSO(r2ShortOverCalc)}
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sw-sub">
-                              Basket vs R2 <span className="text-sw-dim text-[10px]">(R2 Net {fmt(r2Net)} − Basket {fmt(r1CancelBasket)})</span>
-                            </span>
-                            {fmtDiff(basketR2Diff)}
-                          </div>
-                        </>
+                        <div className="flex justify-between">
+                          <span className="text-sw-sub">R2 Short/Over <span className="text-sw-dim text-[10px]">(Net − Safe Drop)</span></span>
+                          {fmtSO(r2ShortOverCalc)}
+                        </div>
                       )}
                       <div className="flex justify-between border-t border-sw-border pt-1.5 mt-1 text-[13px]">
-                        <span className="text-sw-text font-bold uppercase tracking-wide">Total Short/Over</span>
+                        <span className="text-sw-text font-bold uppercase tracking-wide">Total Short/Over {usesReg2 ? '(R1 + R2)' : ''}</span>
                         {(() => {
                           if (Math.abs(totalShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-extrabold">Matched {fmt(0)}</span>;
                           if (totalShortOverCalc > 0) return <span className="text-sw-red font-mono font-extrabold">Short -{fmt(totalShortOverCalc)}</span>;
@@ -534,6 +518,24 @@ export default function SalesPage() {
                 })()}
               </div>
             </div>
+
+            {/* Basket vs R2 — displayed separately, NOT part of Total Short/Over. */}
+            {usesReg2 && (
+              <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
+                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Basket vs R2 Difference</div>
+                <div className="flex justify-between items-center text-[12px]">
+                  <span className="text-sw-sub">
+                    R2 Net {fmt(r2Net)} − Canceled Basket {fmt(r1CancelBasket)}
+                  </span>
+                  {(() => {
+                    if (Math.abs(basketR2Diff) < 0.01) return <span className="text-sw-green font-mono font-bold">{fmt(0)} ✅</span>;
+                    if (basketR2Diff < 0) return <span className="text-sw-red font-mono font-bold">-{fmt(Math.abs(basketR2Diff))}</span>;
+                    return <span className="text-sw-green font-mono font-bold">+{fmt(basketR2Diff)}</span>;
+                  })()}
+                </div>
+                <p className="text-sw-dim text-[10px] mt-1 italic">Tracked separately — not included in Total Short/Over.</p>
+              </div>
+            )}
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
           </div>
@@ -688,7 +690,9 @@ export default function SalesPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
-        <DataTable columns={[
+        <DataTable
+          defaultSort={{ key: 'date', dir: 'desc' }}
+          columns={[
           {
             key: '_status', label: '', align: 'center', render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
@@ -711,34 +715,45 @@ export default function SalesPage() {
             },
           },
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
-          { key: 'store_id', label: 'Store', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
-          { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
-          { key: 'net_sales', label: 'Net', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
-          { key: 'cash_total', label: 'Cash', align: 'right', mono: true, render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
-          { key: 'card_total', label: 'Card', align: 'right', mono: true, render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
-          { key: 'credits', label: 'Credits', align: 'right', mono: true, render: v => fmt(v) },
-          { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
-            // Only missing when truly null/undefined — zero is a valid "matched" state.
-            if (v == null) return <span className="text-sw-dim">—</span>;
-            const n = Number(v);
-            if (Math.abs(n) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
-            // Positive = short (employee owes money) → red. Negative = over → green.
-            if (n > 0) return <span className="text-sw-red font-bold">-{fmt(n)}</span>;
-            return <span className="text-sw-green font-bold">+{fmt(Math.abs(n))}</span>;
-          } },
-          { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, render: (_, r) => {
-            const rowStore = stores.find(s => s.id === r.store_id);
-            const rowUsesR2 = hasRegister2(rowStore?.name);
-            if (!rowUsesR2) return <span className="text-sw-dim">—</span>;
-            // Prefer the stored column; fall back to computing for old rows.
-            const diff = r.basket_r2_diff != null
-              ? Number(r.basket_r2_diff)
-              : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
-            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
-            if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
-            return <span className="text-sw-amber">+{fmt(diff)}</span>;
-          } },
-          { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
+          { key: 'store_id', label: 'Store', sortValue: (r) => r.stores?.name || '', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
+          { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, sortValue: (r) => Number(r.gross_sales ?? r.total_sales ?? 0), render: (v, r) => fmt(v ?? r.total_sales) },
+          { key: 'net_sales', label: 'Net', align: 'right', mono: true, sortValue: (r) => Number(r.net_sales ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0))), render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
+          { key: 'cash_total', label: 'Cash', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.cash_sales || 0) + Number(r.register2_cash || 0)), render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
+          { key: 'card_total', label: 'Card', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.card_sales || 0) + Number(r.register2_card || 0)), render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
+          { key: 'credits', label: 'Credits', align: 'right', mono: true, sortValue: (r) => Number(r.credits || 0), render: v => fmt(v) },
+          { key: 'short_over', label: 'S/O', align: 'right', mono: true,
+            sortValue: (r) => Number(r.short_over ?? 0),
+            render: v => {
+              // Only missing when truly null/undefined — zero is a valid "matched" state.
+              if (v == null) return <span className="text-sw-dim">—</span>;
+              const n = Number(v);
+              if (Math.abs(n) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
+              // Positive = short (employee owes money) → red. Negative = over → green.
+              if (n > 0) return <span className="text-sw-red font-bold">-{fmt(n)}</span>;
+              return <span className="text-sw-green font-bold">+{fmt(Math.abs(n))}</span>;
+            } },
+          { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, sortable: true,
+            sortValue: (r) => {
+              const rowStore = stores.find(s => s.id === r.store_id);
+              if (!hasRegister2(rowStore?.name)) return null;
+              return r.basket_r2_diff != null
+                ? Number(r.basket_r2_diff)
+                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+            },
+            render: (_, r) => {
+              const rowStore = stores.find(s => s.id === r.store_id);
+              const rowUsesR2 = hasRegister2(rowStore?.name);
+              if (!rowUsesR2) return <span className="text-sw-dim">—</span>;
+              const diff = r.basket_r2_diff != null
+                ? Number(r.basket_r2_diff)
+                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
+              if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
+              return <span className="text-sw-amber">+{fmt(diff)}</span>;
+            } },
+          { key: 'entered_by', label: 'By',
+            sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
+            render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
           onEdit={hasStore ? r => { setForm({
             date: r.date,
