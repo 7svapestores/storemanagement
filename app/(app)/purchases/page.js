@@ -277,7 +277,6 @@ export default function PurchasesPage() {
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={handleInvoicePick}
               className="hidden"
             />
