@@ -20,20 +20,27 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
-    // Register 1 — manual entry
-    r1_gross: '', r1_net: '', cash_sales: '', card_sales: '', credits: '',
-    // Register 2 — manual entry
-    r2_gross: '', r2_net: '', register2_cash: '', register2_card: '', register2_credits: '',
-    // Owner-only short/over
-    r1_short_over: '', r2_short_over: '',
+    // Register 1
+    r1_gross: '', r1_net: '',
+    cash_sales: '', card_sales: '',
+    r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
+    credits: '',
+    // Register 2 (Bells/Kerens) — no gross, no card, no credits
+    r2_net: '',
+    register2_cash: '', // cash-to-cash (R2 cash transferred to R1)
+    r2_safe_drop: '',
     notes: '',
   });
 
   const blankForm = () => ({
     date: today(),
-    r1_gross: '', r1_net: '', cash_sales: '', card_sales: '', credits: '',
-    r2_gross: '', r2_net: '', register2_cash: '', register2_card: '', register2_credits: '',
-    r1_short_over: '', r2_short_over: '',
+    r1_gross: '', r1_net: '',
+    cash_sales: '', card_sales: '',
+    r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
+    credits: '',
+    r2_net: '',
+    register2_cash: '',
+    r2_safe_drop: '',
     notes: '',
   });
 
@@ -110,14 +117,15 @@ export default function SalesPage() {
     const storeForRegister = stores.find(s => s.id === storeIdToUse);
     const usesReg2 = hasRegister2(storeForRegister?.name);
 
-    // Required field check for Register 1
-    if (form.r1_gross === '' || form.r1_net === '' || form.cash_sales === '' || form.card_sales === '') {
-      setMsg('Register 1: Gross, Net, Cash, and Card are all required.');
+    // Required Register 1 fields.
+    const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
+    if (r1Required.some(k => form[k] === '')) {
+      setMsg('Register 1: Gross, Net, Cash, Card, Canceled Basket, Safe Drop, and Sales Tax are all required.');
       setActiveTab('r1');
       return;
     }
-    if (usesReg2 && (form.r2_gross === '' || form.r2_net === '' || form.register2_cash === '')) {
-      setMsg('Register 2: Gross, Net, and Cash are all required.');
+    if (usesReg2 && (form.r2_net === '' || form.register2_cash === '' || form.r2_safe_drop === '')) {
+      setMsg('Register 2: Net, Cash, and Safe Drop are all required.');
       setActiveTab('r2');
       return;
     }
@@ -131,17 +139,21 @@ export default function SalesPage() {
       r1_net: num(form.r1_net),
       cash_sales: num(form.cash_sales),
       card_sales: num(form.card_sales),
+      r1_canceled_basket: num(form.r1_canceled_basket),
+      r1_safe_drop: num(form.r1_safe_drop),
+      r1_sales_tax: num(form.r1_sales_tax),
       credits: num(form.credits),
-      // Register 2 (zeros for stores without it). Card is removed from R2 —
-      // all card transactions at Bells/Kerens go through Register 1.
-      r2_gross: usesReg2 ? num(form.r2_gross) : 0,
+      // Register 2 (zeros for single-register stores)
       r2_net: usesReg2 ? num(form.r2_net) : 0,
+      r2_gross: usesReg2 ? num(form.r2_net) : 0, // legacy column kept in sync
       register2_cash: usesReg2 ? num(form.register2_cash) : 0,
+      r2_safe_drop: usesReg2 ? num(form.r2_safe_drop) : 0,
       register2_card: 0,
-      register2_credits: usesReg2 ? num(form.register2_credits) : 0,
-      // Short/over — owner only
-      r1_short_over: isOwner ? num(form.r1_short_over) : 0,
-      r2_short_over: isOwner && usesReg2 ? num(form.r2_short_over) : 0,
+      register2_credits: 0,
+      // Short/over is now derived by the DB trigger from safe_drop - cash_sales.
+      // We still send 0 so existing column-level checks don't break; trigger overwrites.
+      r1_short_over: 0,
+      r2_short_over: 0,
       notes: form.notes,
       entered_by: profile.id,
     };
@@ -277,31 +289,32 @@ export default function SalesPage() {
 
   // Live-derived numbers for the Summary tab.
   const num = (v) => parseFloat(v) || 0;
-  const r1Gross = num(form.r1_gross);
-  const r1Net = num(form.r1_net);
-  const r1Cash = num(form.cash_sales);
-  const r1Card = num(form.card_sales);
-  const r1Credits = num(form.credits);
-  const r2Gross = num(form.r2_gross);
-  const r2Net = num(form.r2_net);
-  const r2Cash = num(form.register2_cash);
-  const r2Card = num(form.register2_card);
-  const r2Credits = num(form.register2_credits);
-  const r1ShortOver = num(form.r1_short_over);
-  const r2ShortOver = num(form.r2_short_over);
+  const r1Gross        = num(form.r1_gross);
+  const r1Net          = num(form.r1_net);
+  const r1Cash         = num(form.cash_sales);
+  const r1Card         = num(form.card_sales);
+  const r1CancelBasket = num(form.r1_canceled_basket);
+  const r1SafeDrop     = num(form.r1_safe_drop);
+  const r1SalesTax     = num(form.r1_sales_tax);
+  const r1Credits      = num(form.credits);
 
-  // Mismatch detection — anti-theft signal.
-  const r1Diff = (r1Cash + r1Card) - r1Gross;
-  const r2Diff = (r2Cash + r2Card) - r2Gross;
-  const r1Mismatch = Math.abs(r1Diff) >= 0.01;
-  const r2Mismatch = Math.abs(r2Diff) >= 0.01;
+  const r2Net          = num(form.r2_net);
+  const r2Cash         = num(form.register2_cash);
+  const r2SafeDrop     = num(form.r2_safe_drop);
 
-  const totalGross = r1Gross + r2Gross;
-  const totalNet = r1Net + r2Net;
-  const totalCash = r1Cash + r2Cash;
-  const totalCard = r1Card + r2Card;
-  const totalCredits = r1Credits + r2Credits;
-  const totalShortOver = r1ShortOver + r2ShortOver;
+  // Short/over = safe drop minus cash sales (positive = over, negative = short).
+  const r1ShortOverCalc = r1SafeDrop - r1Cash;
+  const r2ShortOverCalc = r2SafeDrop - r2Cash;
+  const totalShortOverCalc = r1ShortOverCalc + r2ShortOverCalc;
+
+  // Owner-only mismatch signal: R1 canceled basket should equal R2 cash-to-cash.
+  const cancelMismatch = Math.abs(r1CancelBasket - r2Cash) >= 0.01;
+  const cancelDiff = r1CancelBasket - r2Cash;
+
+  const totalGross = r1Gross + r2Net; // R2 has no gross, use net
+  const totalNet   = r1Net + r2Net;
+  const totalCash  = r1Cash + r2Cash;
+  const totalCard  = r1Card; // R2 has no card
 
   // ── Tabbed register form (shared by employee + owner modal) ──
   const renderTabbedForm = (usesReg2, allowShortOver, dateField) => {
@@ -346,25 +359,59 @@ export default function SalesPage() {
               <Field label={<>Card Sales {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={onNum('card_sales')} />
               </Field>
+              <Field label={<>Canceled Basket {reqMark}</>}>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_canceled_basket} onChange={onNum('r1_canceled_basket')} />
+              </Field>
+              <Field label={<>Safe Drop {reqMark}</>}>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_safe_drop} onChange={onNum('r1_safe_drop')} />
+              </Field>
+              <Field label={<>Sales Tax {reqMark}</>}>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_sales_tax} onChange={onNum('r1_sales_tax')} />
+              </Field>
+              <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={onNum('credits')} /></Field>
             </div>
-            <Field label="Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.credits} onChange={onNum('credits')} /></Field>
+
+            {/* Live R1 short/over preview — Safe Drop minus Cash Sales */}
+            {(form.r1_safe_drop !== '' || form.cash_sales !== '') && (
+              <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
+                <span className="text-sw-sub text-[11px] font-semibold uppercase">R1 Short/Over</span>
+                {(() => {
+                  const diff = (parseFloat(form.r1_safe_drop) || 0) - (parseFloat(form.cash_sales) || 0);
+                  if (Math.abs(diff) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                  if (diff > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(diff)}</span>;
+                  return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(diff))}</span>;
+                })()}
+              </div>
+            )}
           </div>
         )}
 
         {activeTab === 'r2' && usesReg2 && (
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <Field label={<>R2 Gross Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_gross} onChange={onNum('r2_gross')} />
-              </Field>
               <Field label={<>R2 Net Sales {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_net} onChange={onNum('r2_net')} />
               </Field>
-              <Field label={<>R2 Cash Sales {reqMark}</>}>
+              <Field label={<>Cash to Cash {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} />
               </Field>
+              <Field label={<>R2 Safe Drop {reqMark}</>}>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_safe_drop} onChange={onNum('r2_safe_drop')} />
+              </Field>
             </div>
-            <Field label="R2 Credits"><input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_credits} onChange={onNum('register2_credits')} /></Field>
+
+            {/* Live R2 short/over preview */}
+            {(form.r2_safe_drop !== '' || form.register2_cash !== '') && (
+              <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
+                <span className="text-sw-sub text-[11px] font-semibold uppercase">R2 Short/Over</span>
+                {(() => {
+                  const diff = (parseFloat(form.r2_safe_drop) || 0) - (parseFloat(form.register2_cash) || 0);
+                  if (Math.abs(diff) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                  if (diff > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(diff)}</span>;
+                  return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(diff))}</span>;
+                })()}
+              </div>
+            )}
           </div>
         )}
 
@@ -377,54 +424,55 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Net</div><div className="text-right font-mono text-sw-text">{fmt(r1Net)}</div>
                 <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(r1Cash)}</div>
                 <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(r1Card)}</div>
+                <div className="text-sw-sub">Canceled Basket</div><div className="text-right font-mono">{fmt(r1CancelBasket)}</div>
+                <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(r1SafeDrop)}</div>
+                <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(r1SalesTax)}</div>
                 <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r1Credits)}</div>
-              </div>
-              {allowShortOver && r1Mismatch && (r1Cash || r1Card || r1Gross) > 0 && (
-                <div className="mt-2 rounded border border-sw-red/30 bg-sw-redD text-sw-red text-[10px] p-1.5">
-                  ⚠️ Cash + Card ({fmt(r1Cash + r1Card)}) ≠ Gross ({fmt(r1Gross)}) — mismatch {fmt(Math.abs(r1Diff))}
+                <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
+                  <span>Short/Over</span>
+                  {(() => {
+                    if (Math.abs(r1ShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                    if (r1ShortOverCalc > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(r1ShortOverCalc)}</span>;
+                    return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(r1ShortOverCalc))}</span>;
+                  })()}
                 </div>
-              )}
+              </div>
             </div>
 
             {usesReg2 && (
               <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
                 <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Register 2</div>
                 <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[11px]">
-                  <div className="text-sw-sub">Gross</div><div className="text-right font-mono text-sw-text">{fmt(r2Gross)}</div>
                   <div className="text-sw-sub">Net</div><div className="text-right font-mono text-sw-text">{fmt(r2Net)}</div>
-                  <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(r2Cash)}</div>
-                  <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(r2Card)}</div>
-                  <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(r2Credits)}</div>
-                </div>
-                {allowShortOver && r2Mismatch && (r2Cash || r2Card || r2Gross) > 0 && (
-                  <div className="mt-2 rounded border border-sw-red/30 bg-sw-redD text-sw-red text-[10px] p-1.5">
-                    ⚠️ Cash + Card ({fmt(r2Cash + r2Card)}) ≠ Gross ({fmt(r2Gross)}) — mismatch {fmt(Math.abs(r2Diff))}
+                  <div className="text-sw-sub">Cash to Cash</div><div className="text-right font-mono">{fmt(r2Cash)}</div>
+                  <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(r2SafeDrop)}</div>
+                  <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
+                    <span>Short/Over</span>
+                    {(() => {
+                      if (Math.abs(r2ShortOverCalc) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
+                      if (r2ShortOverCalc > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(r2ShortOverCalc)}</span>;
+                      return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(r2ShortOverCalc))}</span>;
+                    })()}
                   </div>
-                )}
+                </div>
               </div>
             )}
 
             <div className="bg-sw-blueD border border-sw-blue/30 rounded-lg p-3">
               <div className="text-sw-blue text-[10px] font-bold uppercase mb-1.5">Combined Totals</div>
               <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[12px]">
-                <div className="text-sw-sub">Gross</div><div className="text-right font-mono font-bold">{fmt(totalGross)}</div>
-                <div className="text-sw-sub">Net</div><div className="text-right font-mono font-bold text-sw-green">{fmt(totalNet)}</div>
-                <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(totalCash)}</div>
-                <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(totalCard)}</div>
-                <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(totalCredits)}</div>
+                <div className="text-sw-sub">Total Gross</div><div className="text-right font-mono font-bold">{fmt(totalGross)}</div>
+                <div className="text-sw-sub">Total Net</div><div className="text-right font-mono font-bold text-sw-green">{fmt(totalNet)}</div>
+                <div className="text-sw-sub">Total Cash</div><div className="text-right font-mono">{fmt(totalCash)}</div>
+                <div className="text-sw-sub">Total Card</div><div className="text-right font-mono">{fmt(totalCard)}</div>
+                <div className="text-sw-sub col-span-2 border-t border-sw-blue/30 pt-1 mt-1 flex justify-between">
+                  <span>Total Short/Over</span>
+                  <span className={totalShortOverCalc === 0 ? 'text-sw-dim font-mono font-bold' : totalShortOverCalc < 0 ? 'text-sw-red font-mono font-bold' : 'text-sw-green font-mono font-bold'}>
+                    {totalShortOverCalc > 0 ? '+' : ''}{fmt(totalShortOverCalc)}
+                  </span>
+                </div>
               </div>
             </div>
-
-            {allowShortOver && (
-              <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
-                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Short / Over (owner only)</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Field label="R1 Short / Over"><input type="number" step="0.01" placeholder="0.00" value={form.r1_short_over} onChange={(e) => setForm({ ...form, r1_short_over: e.target.value })} /></Field>
-                  {usesReg2 && <Field label="R2 Short / Over"><input type="number" step="0.01" placeholder="0.00" value={form.r2_short_over} onChange={(e) => setForm({ ...form, r2_short_over: e.target.value })} /></Field>}
-                </div>
-                <div className="text-[11px] text-sw-sub mt-1">Total S/O: <span className={totalShortOver === 0 ? 'text-sw-dim' : totalShortOver < 0 ? 'text-sw-red font-bold' : 'text-sw-green font-bold'}>{totalShortOver >= 0 ? '+' : ''}{fmt(totalShortOver)}</span></div>
-              </div>
-            )}
 
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
           </div>
@@ -535,13 +583,20 @@ export default function SalesPage() {
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable columns={[
           { key: '_mismatch', label: '', align: 'center', render: (_, r) => {
-            const declared = Number(r.gross_sales || 0);
-            const actual = (Number(r.cash_sales || 0) + Number(r.card_sales || 0))
-                         + (Number(r.register2_cash || 0) + Number(r.register2_card || 0));
-            const diff = actual - declared;
-            if (declared === 0 || Math.abs(diff) < 0.01) return null;
+            // Owner-only signal: R1 canceled basket should equal R2 cash-to-cash
+            // (that's the money moved from R2 to R1 to cover voided baskets).
+            const cb = Number(r.r1_canceled_basket || 0);
+            const r2c = Number(r.register2_cash || 0);
+            if (cb === 0 && r2c === 0) return null;
+            const diff = cb - r2c;
+            if (Math.abs(diff) < 0.01) return null;
             return (
-              <span title={`Cash+Card (${fmt(actual)}) ≠ Gross (${fmt(declared)}) — diff ${fmt(Math.abs(diff))}`} className="text-sw-red text-base">⚠️</span>
+              <span
+                title={`R1 Canceled Basket (${fmt(cb)}) vs R2 Cash to Cash (${fmt(r2c)}) — mismatch ${fmt(Math.abs(diff))}`}
+                className="text-sw-red text-base"
+              >
+                ⚠️
+              </span>
             );
           } },
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
@@ -560,13 +615,17 @@ export default function SalesPage() {
         ]} rows={sales} isOwner={hasStore}
           onEdit={hasStore ? r => { setForm({
             date: r.date,
-            r1_gross: r.r1_gross ?? r.gross_sales ?? '', r1_net: r.r1_net ?? r.net_sales ?? '',
-            cash_sales: r.cash_sales ?? '', card_sales: r.card_sales ?? '',
+            r1_gross: r.r1_gross ?? r.gross_sales ?? '',
+            r1_net: r.r1_net ?? r.net_sales ?? '',
+            cash_sales: r.cash_sales ?? '',
+            card_sales: r.card_sales ?? '',
+            r1_canceled_basket: r.r1_canceled_basket ?? '',
+            r1_safe_drop: r.r1_safe_drop ?? '',
+            r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
             credits: r.credits ?? '',
-            r2_gross: r.r2_gross ?? '', r2_net: r.r2_net ?? '',
-            register2_cash: r.register2_cash ?? '', register2_card: r.register2_card ?? '',
-            register2_credits: r.register2_credits ?? '',
-            r1_short_over: r.r1_short_over ?? '', r2_short_over: r.r2_short_over ?? '',
+            r2_net: r.r2_net ?? '',
+            register2_cash: r.register2_cash ?? '',
+            r2_safe_drop: r.r2_safe_drop ?? '',
             notes: r.notes || '',
           }); setEditItem(r); setActiveTab('r1'); setModal('edit'); } : undefined}
           onDelete={hasStore ? handleDelete : undefined} />
