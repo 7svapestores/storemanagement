@@ -110,7 +110,10 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
       </div>
 
       {/* ── Mobile top bar (logo + store selector) ─────────── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sw-card border-b border-sw-border flex items-center gap-2 px-3 h-12">
+      <div
+        className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sw-card border-b border-sw-border flex items-center gap-2 px-3"
+        style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(48px + env(safe-area-inset-top))' }}
+      >
         <span className="text-lg">🏪</span>
         <span className="text-[15px] font-extrabold text-sw-text">7S <span className="text-sw-blue">Stores</span></span>
         <div className="flex-1" />
