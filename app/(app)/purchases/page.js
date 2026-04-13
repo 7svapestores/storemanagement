@@ -179,15 +179,36 @@ export default function PurchasesPage() {
   const doDelete = async () => {
     const row = confirmDelete;
     if (!row) return;
+
+    // 1. Find any linked invoices so we can clean up their storage files too.
+    const { data: linkedInvoices } = await supabase
+      .from('invoices')
+      .select('id, image_path')
+      .eq('purchase_id', row.id);
+
+    // 2. Delete image files from the storage bucket.
+    if (linkedInvoices?.length) {
+      const paths = linkedInvoices.map(i => i.image_path).filter(Boolean);
+      if (paths.length) {
+        const { error: rmErr } = await supabase.storage.from('invoices').remove(paths);
+        if (rmErr) console.warn('[purchases] storage cleanup failed (non-fatal):', rmErr);
+      }
+      // 3. Delete the invoice rows.
+      const { error: invErr } = await supabase.from('invoices').delete().eq('purchase_id', row.id);
+      if (invErr) { alert(`Failed to delete linked invoice: ${invErr.message}`); setConfirmDelete(null); return; }
+    }
+
+    // 4. Finally delete the purchase row itself.
     const { error } = await supabase.from('purchases').delete().eq('id', row.id);
     if (error) { alert(error.message); setConfirmDelete(null); return; }
+
     await logActivity(supabase, profile, {
       action: 'delete',
       entityType: 'purchase',
       entityId: row.id,
-      description: `${profile?.name} deleted purchase "${row.item}" of ${fmtMoney(row.total_cost)} for ${row.stores?.name} week of ${shortDate(row.week_of)}`,
+      description: `${profile?.name} deleted purchase of ${fmtMoney(row.total_cost)} from ${row.supplier || 'vendor'} for ${row.stores?.name} on ${shortDate(row.week_of)}${linkedInvoices?.length ? ` (${linkedInvoices.length} invoice removed)` : ''}`,
       storeName: row.stores?.name,
-      metadata: { deleted: row },
+      metadata: { deleted: row, invoices_removed: linkedInvoices?.length || 0 },
     });
     setConfirmDelete(null);
     load();
