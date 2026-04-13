@@ -24,20 +24,20 @@ export default function SalesPage() {
   const [formStoreId, setFormStoreId] = useState(null);
   const [modalError, setModalError] = useState('');              // banner text shown inside the modal/form
   const [fieldErrors, setFieldErrors] = useState({});           // { fieldName: true }
-  // Receipt upload state — simple image storage for record keeping, no AI.
-  // R1 = Register 1 shift report (saved to shift_report_url)
-  // R2 = Register 2 shift report (saved to safe_drop_url for back-compat)
-  const [shiftReportFile, setShiftReportFile] = useState(null);
-  const [shiftReportPreview, setShiftReportPreview] = useState(null);
-  const [r2ReportFile, setR2ReportFile] = useState(null);
-  const [r2ReportPreview, setR2ReportPreview] = useState(null);
+  // Receipt upload state — arrays of images per register.
+  // Each entry: { url: string, file?: File, existing?: boolean }
+  //   existing === true  → already stored in DB (came from editItem)
+  //   file present       → new upload pending at save time
+  //   url is the preview URL (data: for new files, public URL for existing)
+  const [r1Images, setR1Images] = useState([]);
+  const [r2Images, setR2Images] = useState([]);
   const [saving, setSaving] = useState(false);
-  const shiftCameraRef = useRef(null);
-  const shiftLibraryRef = useRef(null);
+  const r1CameraRef = useRef(null);
+  const r1LibraryRef = useRef(null);
   const r2CameraRef = useRef(null);
   const r2LibraryRef = useRef(null);
-  // Receipt view modal (click 📷 in the owner table).
-  const [viewReceipts, setViewReceipts] = useState(null); // { r1Url, r2Url, storeName, date }
+  // Receipt gallery modal (click 📷 in the owner table).
+  const [viewReceipts, setViewReceipts] = useState(null); // { images: [urls], idx, storeName, date }
   const [viewReceipt, setViewReceipt] = useState(null); // { url, caption } for full-screen viewer
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
@@ -144,17 +144,25 @@ export default function SalesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const pickFile = (setter, previewSetter) => async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setter(f);
-    const reader = new FileReader();
-    reader.onload = (ev) => previewSetter(ev.target.result);
-    reader.readAsDataURL(f);
+  // Append picked files to the register's image list. Reads each file as a
+  // data URL so the preview shows immediately; actual storage upload happens
+  // on save.
+  const appendPickedFiles = async (e, setter) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    // Reset the input so the same file can be picked again if removed.
+    e.target.value = '';
+    const reads = await Promise.all(files.map(f => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve({ url: ev.target.result, file: f });
+      reader.readAsDataURL(f);
+    })));
+    setter(prev => [...prev, ...reads]);
   };
+  const handleR1Pick = (e) => appendPickedFiles(e, setR1Images);
+  const handleR2Pick = (e) => appendPickedFiles(e, setR2Images);
 
-  const handleShiftPick = pickFile(setShiftReportFile, setShiftReportPreview);
-  const handleR2Pick = pickFile(setR2ReportFile, setR2ReportPreview);
+  const removeImage = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
@@ -206,44 +214,45 @@ export default function SalesPage() {
     setFieldErrors({});
     setModalError('');
 
-    // ── Receipt screenshot — required for employee, optional for owner ──
-    const hasReceipt = !!shiftReportFile;
-    if (isEmployee && !hasReceipt) {
-      setModalError('Please upload the Register Shift Report screenshot before submitting.');
+    // ── At least one receipt required for employees per register ──
+    if (isEmployee && r1Images.length === 0) {
+      setModalError('Please upload at least one Register 1 receipt before submitting.');
       setActiveTab('r1');
       return;
     }
 
-    // ── Employee must also upload R2 receipt if their store has R2 ──
-    if (isEmployee && usesReg2 && !r2ReportFile) {
-      setModalError('Please upload the Register 2 receipt screenshot before submitting.');
+    if (isEmployee && usesReg2 && r2Images.length === 0) {
+      setModalError('Please upload at least one Register 2 receipt before submitting.');
       setActiveTab('r2');
       return;
     }
 
-    // ── Upload receipts to storage (simple, no AI) ──
-    let receiptShiftUrl = null, receiptShiftPath = null;
-    let receiptR2Url = null, receiptR2Path = null;
+    // ── Upload any NEW images (pending files); existing URLs pass through ──
     const storeForPath = stores.find(s => s.id === storeIdToUse);
-
     setSaving(true);
+    let r1Urls = [];
+    let r2Urls = [];
     try {
-      if (shiftReportFile) {
-        const shiftCompressed = await compressImage(shiftReportFile);
-        const shiftUp = await uploadReceipt(supabase, shiftCompressed, {
-          storeName: storeForPath?.name, date: form.date || today(), kind: 'shift',
-        });
-        receiptShiftUrl = shiftUp.url;
-        receiptShiftPath = shiftUp.path;
-      }
-      if (r2ReportFile) {
-        const r2Compressed = await compressImage(r2ReportFile);
-        const r2Up = await uploadReceipt(supabase, r2Compressed, {
-          storeName: storeForPath?.name, date: form.date || today(), kind: 'r2',
-        });
-        receiptR2Url = r2Up.url;
-        receiptR2Path = r2Up.path;
-      }
+      const uploadList = async (images, kind) => {
+        const out = [];
+        for (const img of images) {
+          if (img.file) {
+            const compressed = await compressImage(img.file);
+            const up = await uploadReceipt(supabase, compressed, {
+              storeName: storeForPath?.name,
+              date: form.date || today(),
+              kind, // 'r1' or 'r2'
+            });
+            out.push(up.url);
+          } else if (img.url) {
+            // Already-stored URL — just pass through.
+            out.push(img.url);
+          }
+        }
+        return out;
+      };
+      r1Urls = await uploadList(r1Images, 'r1');
+      r2Urls = await uploadList(r2Images, 'r2');
     } catch (e) {
       setSaving(false);
       setModalError(`Failed to upload receipt: ${e.message || e}`);
@@ -275,12 +284,13 @@ export default function SalesPage() {
       r2_safe_drop: usesReg2 ? num(form.r2_safe_drop) : 0,
       register2_card: 0,
       register2_credits: 0,
-      // Receipts — plain image storage, no AI. On edit without a new file
-      // uploaded, preserve the existing URLs on the row.
-      shift_report_url: receiptShiftUrl ?? editItem?.shift_report_url ?? null,
-      shift_report_path: receiptShiftPath ?? editItem?.shift_report_path ?? null,
-      safe_drop_url: receiptR2Url ?? editItem?.safe_drop_url ?? null,   // reused for R2 receipt
-      safe_drop_path: receiptR2Path ?? editItem?.safe_drop_path ?? null,
+      // Multi-image arrays
+      r1_receipt_urls: r1Urls,
+      r2_receipt_urls: r2Urls,
+      // Legacy single-URL columns kept in sync with the first image so old
+      // code that reads them still works.
+      shift_report_url: r1Urls[0] || null,
+      safe_drop_url: r2Urls[0] || null,
       // Short/over is now derived by the DB trigger from safe_drop - cash_sales.
       // We still send 0 so existing column-level checks don't break; trigger overwrites.
       r1_short_over: 0,
@@ -380,8 +390,7 @@ export default function SalesPage() {
     setFieldErrors({});
     setModalError('');
     setFormStoreId(null);
-    setShiftReportFile(null); setShiftReportPreview(null);
-    setR2ReportFile(null); setR2ReportPreview(null);
+    setR1Images([]); setR2Images([]);
     load();
   };
 
@@ -439,7 +448,18 @@ export default function SalesPage() {
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
-    resetReceipts();
+
+    // Populate image arrays from the row. Prefer the new jsonb arrays,
+    // fall back to legacy single-URL columns if arrays are missing.
+    const r1 = Array.isArray(r.r1_receipt_urls) && r.r1_receipt_urls.length
+      ? r.r1_receipt_urls
+      : (r.shift_report_url ? [r.shift_report_url] : []);
+    const r2 = Array.isArray(r.r2_receipt_urls) && r.r2_receipt_urls.length
+      ? r.r2_receipt_urls
+      : (r.safe_drop_url ? [r.safe_drop_url] : []);
+    setR1Images(r1.map(url => ({ url, existing: true })));
+    setR2Images(r2.map(url => ({ url, existing: true })));
+
     setModal('edit');
   };
 
@@ -633,47 +653,60 @@ export default function SalesPage() {
               </div>
             )}
 
-            {/* R1 receipt upload */}
+            {/* R1 receipt upload — multiple images */}
             <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
               <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5 flex items-center gap-2">
-                <span>📷 Register 1 Shift Report</span>
+                <span>📷 Register 1 Receipts</span>
+                {r1Images.length > 0 && (
+                  <span className="text-sw-dim text-[10px]">({r1Images.length})</span>
+                )}
                 <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
                   {isEmployee ? 'Required' : 'Optional'}
                 </span>
               </div>
-              {/* Show existing stored receipt when editing and no new file picked */}
-              {!shiftReportPreview && editItem?.shift_report_url && (
-                <div className="mb-2">
-                  <div className="text-sw-dim text-[10px] mb-1">Currently stored:</div>
-                  <img src={editItem.shift_report_url} alt="Stored R1 receipt" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+
+              {r1Images.length > 0 && (
+                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-3">
+                  {r1Images.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <button
+                        type="button"
+                        onClick={() => setViewReceipts({ images: r1Images.map(i => i.url), idx, storeName: storeName || '', date: form.date })}
+                        className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                      >
+                        <img src={img.url} alt={`R1 ${idx + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeImage(setR1Images, idx)}
+                        className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-sw-red text-white text-[11px] font-bold flex items-center justify-center shadow"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {!shiftReportPreview ? (
-                <div className="flex gap-2 flex-col sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={() => shiftCameraRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                  >
-                    <span className="text-lg">📷</span><span>Take Photo</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => shiftLibraryRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                  >
-                    <span className="text-lg">📁</span><span>From Library</span>
-                  </button>
-                  <input ref={shiftCameraRef} type="file" accept="image/*" capture="environment" onChange={handleShiftPick} className="hidden" />
-                  <input ref={shiftLibraryRef} type="file" accept="image/*" onChange={handleShiftPick} className="hidden" />
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <img src={shiftReportPreview} alt="Shift report preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-                  <button type="button" onClick={() => { setShiftReportFile(null); setShiftReportPreview(null); setVerifyStage('idle'); }}
-                    className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
-                </div>
-              )}
+
+              <div className="flex gap-2 flex-col sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => r1CameraRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                >
+                  <span className="text-lg">📷</span><span>Take Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => r1LibraryRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                >
+                  <span className="text-lg">📁</span><span>From Library</span>
+                </button>
+                <input ref={r1CameraRef} type="file" accept="image/*" capture="environment" multiple onChange={handleR1Pick} className="hidden" />
+                <input ref={r1LibraryRef} type="file" accept="image/*" multiple onChange={handleR1Pick} className="hidden" />
+              </div>
             </div>
           </div>
         )}
@@ -708,46 +741,60 @@ export default function SalesPage() {
               </div>
             )}
 
-            {/* R2 receipt upload */}
+            {/* R2 receipt upload — multiple images */}
             <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
               <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5 flex items-center gap-2">
-                <span>📷 Register 2 Report</span>
+                <span>📷 Register 2 Receipts</span>
+                {r2Images.length > 0 && (
+                  <span className="text-sw-dim text-[10px]">({r2Images.length})</span>
+                )}
                 <span className={`text-[9px] px-1.5 py-0.5 rounded ${isEmployee ? 'bg-sw-red/20 text-sw-red' : 'bg-sw-card text-sw-dim'}`}>
                   {isEmployee ? 'Required' : 'Optional'}
                 </span>
               </div>
-              {!r2ReportPreview && editItem?.safe_drop_url && (
-                <div className="mb-2">
-                  <div className="text-sw-dim text-[10px] mb-1">Currently stored:</div>
-                  <img src={editItem.safe_drop_url} alt="Stored R2 receipt" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
+
+              {r2Images.length > 0 && (
+                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-3">
+                  {r2Images.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <button
+                        type="button"
+                        onClick={() => setViewReceipts({ images: r2Images.map(i => i.url), idx, storeName: storeName || '', date: form.date })}
+                        className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                      >
+                        <img src={img.url} alt={`R2 ${idx + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeImage(setR2Images, idx)}
+                        className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-sw-red text-white text-[11px] font-bold flex items-center justify-center shadow"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {!r2ReportPreview ? (
-                <div className="flex gap-2 flex-col sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={() => r2CameraRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                  >
-                    <span className="text-lg">📷</span><span>Take Photo</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => r2LibraryRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
-                  >
-                    <span className="text-lg">📁</span><span>From Library</span>
-                  </button>
-                  <input ref={r2CameraRef} type="file" accept="image/*" capture="environment" onChange={handleR2Pick} className="hidden" />
-                  <input ref={r2LibraryRef} type="file" accept="image/*" onChange={handleR2Pick} className="hidden" />
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <img src={r2ReportPreview} alt="R2 receipt preview" className="max-h-32 w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-                  <button type="button" onClick={() => { setR2ReportFile(null); setR2ReportPreview(null); }}
-                    className="text-sw-red text-[11px] font-semibold underline min-h-[30px]">Remove</button>
-                </div>
-              )}
+
+              <div className="flex gap-2 flex-col sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => r2CameraRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                >
+                  <span className="text-lg">📷</span><span>Take Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => r2LibraryRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[12px] font-semibold min-h-[44px]"
+                >
+                  <span className="text-lg">📁</span><span>From Library</span>
+                </button>
+                <input ref={r2CameraRef} type="file" accept="image/*" capture="environment" multiple onChange={handleR2Pick} className="hidden" />
+                <input ref={r2LibraryRef} type="file" accept="image/*" multiple onChange={handleR2Pick} className="hidden" />
+              </div>
             </div>
           </div>
         )}
@@ -1013,8 +1060,8 @@ export default function SalesPage() {
   const ownerUsesReg2 = hasRegister2(storeName);
 
   const resetReceipts = () => {
-    setShiftReportFile(null); setShiftReportPreview(null);
-    setR2ReportFile(null); setR2ReportPreview(null);
+    setR1Images([]);
+    setR2Images([]);
   };
 
   const tryOpenAdd = () => {
@@ -1124,20 +1171,18 @@ export default function SalesPage() {
               return <span className="text-sw-amber">+{fmt(diff)}</span>;
             } },
           { key: '_receipt', label: '📷', align: 'center', sortable: false, render: (_, r) => {
-            const hasReceipts = !!(r.shift_report_url || r.safe_drop_url);
-            if (!hasReceipts) return <span className="text-sw-dim">—</span>;
+            const r1 = Array.isArray(r.r1_receipt_urls) ? r.r1_receipt_urls : (r.shift_report_url ? [r.shift_report_url] : []);
+            const r2 = Array.isArray(r.r2_receipt_urls) ? r.r2_receipt_urls : (r.safe_drop_url ? [r.safe_drop_url] : []);
+            const all = [...r1, ...r2];
+            if (all.length === 0) return <span className="text-sw-dim">—</span>;
             return (
               <button
-                onClick={() => setViewReceipts({
-                  r1Url: r.shift_report_url || null,
-                  r2Url: r.safe_drop_url || null,
-                  storeName: r.stores?.name || '',
-                  date: r.date,
-                })}
-                title="View receipts"
-                className="text-sw-blue text-lg"
+                onClick={() => setViewReceipts({ images: all, idx: 0, storeName: r.stores?.name || '', date: r.date })}
+                title={`View ${all.length} receipt${all.length > 1 ? 's' : ''}`}
+                className="inline-flex items-center gap-0.5 text-sw-blue"
               >
-                📷
+                <span className="text-lg">📷</span>
+                <span className="text-[10px] font-bold">{all.length}</span>
               </button>
             );
           } },
@@ -1189,38 +1234,64 @@ export default function SalesPage() {
         </Modal>
       )}
 
-      {viewReceipts && (
-        <Modal title={`Receipts · ${viewReceipts.storeName} · ${shortDate(viewReceipts.date)}`} onClose={() => setViewReceipts(null)} wide>
-          <div className="space-y-4">
-            {viewReceipts.r1Url && (
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1">Register 1 Shift Report</div>
-                <img src={viewReceipts.r1Url} alt="R1 receipt" className="w-full max-h-[60vh] object-contain rounded-lg border border-sw-border bg-black/30" />
-                <div className="flex gap-3 mt-1.5">
-                  <a href={viewReceipts.r1Url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open</a>
-                  <a href={viewReceipts.r1Url} download className="text-sw-blue text-[11px] underline">Download</a>
-                </div>
+      {viewReceipts && viewReceipts.images.length > 0 && (() => {
+        const imgs = viewReceipts.images;
+        const i = Math.min(Math.max(viewReceipts.idx || 0, 0), imgs.length - 1);
+        const url = imgs[i];
+        const prev = () => setViewReceipts(v => ({ ...v, idx: (i - 1 + imgs.length) % imgs.length }));
+        const next = () => setViewReceipts(v => ({ ...v, idx: (i + 1) % imgs.length }));
+        return (
+          <Modal title={`Receipts · ${viewReceipts.storeName} · ${shortDate(viewReceipts.date)}`} onClose={() => setViewReceipts(null)} wide>
+            <div className="relative bg-black/30 rounded-lg border border-sw-border overflow-hidden">
+              <img src={url} alt={`Receipt ${i + 1}`} className="w-full max-h-[60vh] object-contain" />
+              {imgs.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={prev}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 text-white text-xl font-bold flex items-center justify-center"
+                    title="Previous"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={next}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 text-white text-xl font-bold flex items-center justify-center"
+                    title="Next"
+                  >
+                    ›
+                  </button>
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[11px] font-semibold rounded-full px-2 py-0.5">
+                    {i + 1} / {imgs.length}
+                  </div>
+                </>
+              )}
+            </div>
+            {imgs.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto mt-3 pb-1">
+                {imgs.map((u, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setViewReceipts(v => ({ ...v, idx }))}
+                    className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 ${idx === i ? 'border-sw-blue' : 'border-sw-border'}`}
+                  >
+                    <img src={u} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
               </div>
             )}
-            {viewReceipts.r2Url && (
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1">Register 2 Report</div>
-                <img src={viewReceipts.r2Url} alt="R2 receipt" className="w-full max-h-[60vh] object-contain rounded-lg border border-sw-border bg-black/30" />
-                <div className="flex gap-3 mt-1.5">
-                  <a href={viewReceipts.r2Url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open</a>
-                  <a href={viewReceipts.r2Url} download className="text-sw-blue text-[11px] underline">Download</a>
-                </div>
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex gap-3">
+                <a href={url} target="_blank" rel="noreferrer" className="text-sw-blue text-[11px] underline">Open</a>
+                <a href={url} download className="text-sw-blue text-[11px] underline">Download</a>
               </div>
-            )}
-            {!viewReceipts.r1Url && !viewReceipts.r2Url && (
-              <div className="text-sw-dim text-center py-6">No receipts uploaded for this entry.</div>
-            )}
-          </div>
-          <div className="flex justify-end mt-3">
-            <Button variant="secondary" onClick={() => setViewReceipts(null)}>Close</Button>
-          </div>
-        </Modal>
-      )}
+              <Button variant="secondary" onClick={() => setViewReceipts(null)}>Close</Button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {showStorePicker && (
         <StoreRequiredModal
