@@ -689,7 +689,27 @@ export default function SalesPage() {
 
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable columns={[
-          // (legacy mismatch column removed — the Diff column now shows this signal directly)
+          {
+            key: '_status', label: '', align: 'center', render: (_, r) => {
+              const rowStore = stores.find(s => s.id === r.store_id);
+              const rowUsesR2 = hasRegister2(rowStore?.name);
+              if (!rowUsesR2) return <span className="text-sw-green text-base" title="No Register 2">✅</span>;
+              const diff = r.basket_r2_diff != null
+                ? Number(r.basket_r2_diff)
+                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              if (Math.abs(diff) < 0.01) {
+                return <span className="text-sw-green text-base" title="Basket matches R2 Net">✅</span>;
+              }
+              return (
+                <span
+                  title={`R2 Net (${fmt(Number(r.r2_net || 0))}) − Canceled Basket (${fmt(Number(r.r1_canceled_basket || 0))}) = ${fmt(diff)}`}
+                  className="text-sw-amber text-base"
+                >
+                  ⚠️
+                </span>
+              );
+            },
+          },
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_id', label: 'Store', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
           { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
@@ -698,22 +718,25 @@ export default function SalesPage() {
           { key: 'card_total', label: 'Card', align: 'right', mono: true, render: (_, r) => fmt((r.card_sales || 0) + (r.register2_card || 0)) },
           { key: 'credits', label: 'Credits', align: 'right', mono: true, render: v => fmt(v) },
           { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
-            const n = Number(v || 0);
-            if (Math.abs(n) < 0.01) return <span className="text-sw-dim">—</span>;
-            // Positive = short (employee owes money) → red.
-            // Negative = over → green.
+            // Only missing when truly null/undefined — zero is a valid "matched" state.
+            if (v == null) return <span className="text-sw-dim">—</span>;
+            const n = Number(v);
+            if (Math.abs(n) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
+            // Positive = short (employee owes money) → red. Negative = over → green.
             if (n > 0) return <span className="text-sw-red font-bold">-{fmt(n)}</span>;
             return <span className="text-sw-green font-bold">+{fmt(Math.abs(n))}</span>;
           } },
           { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, render: (_, r) => {
-            const cb = Number(r.r1_canceled_basket || 0);
-            const r2n = Number(r.r2_net || 0);
-            if (cb === 0 && r2n === 0) return <span className="text-sw-dim">—</span>;
-            // Prefer the stored column; fall back to computing on the fly for rows saved before the migration.
-            const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (r2n - cb);
-            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)} ✅</span>;
+            const rowStore = stores.find(s => s.id === r.store_id);
+            const rowUsesR2 = hasRegister2(rowStore?.name);
+            if (!rowUsesR2) return <span className="text-sw-dim">—</span>;
+            // Prefer the stored column; fall back to computing for old rows.
+            const diff = r.basket_r2_diff != null
+              ? Number(r.basket_r2_diff)
+              : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
             if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
-            return <span className="text-sw-green">+{fmt(diff)}</span>;
+            return <span className="text-sw-amber">+{fmt(diff)}</span>;
           } },
           { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
