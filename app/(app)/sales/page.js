@@ -311,18 +311,35 @@ export default function SalesPage() {
   const cancelMismatch = Math.abs(r1CancelBasket - r2Cash) >= 0.01;
   const cancelDiff = r1CancelBasket - r2Cash;
 
+  // Difference between R1 canceled basket and R2 net sales (displayed in form + table).
+  const basketVsR2NetDiff = r1CancelBasket - r2Net;
+
   const totalGross = r1Gross + r2Net; // R2 has no gross, use net
   const totalNet   = r1Net + r2Net;
   const totalCash  = r1Cash + r2Cash;
   const totalCard  = r1Card; // R2 has no card
 
+  // Compute next/last tab for the employee "Next →" flow. Needs to know
+  // the current store to decide whether R2 is in the flow at all.
+  const currentStoreObj = stores.find(s => s.id === (isEmployee ? profile?.store_id : effectiveStoreId));
+  const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
+  const flowTabs = ['r1', ...(currentUsesReg2 ? ['r2'] : []), 'summary'];
+  const curIdx = flowTabs.indexOf(activeTab);
+  const nextTabId = curIdx >= 0 && curIdx < flowTabs.length - 1 ? flowTabs[curIdx + 1] : null;
+  const isOnSummaryTab = activeTab === 'summary';
+
   // ── Tabbed register form (shared by employee + owner modal) ──
   const renderTabbedForm = (usesReg2, allowShortOver, dateField) => {
+    // For single-register stores (Reno/Denison/Troup), hide R2 completely.
     const tabs = [
       { id: 'r1', label: 'Register 1' },
       ...(usesReg2 ? [{ id: 'r2', label: 'Register 2' }] : []),
       { id: 'summary', label: 'Summary' },
     ];
+    const tabIds = tabs.map(t => t.id);
+    const currentIdx = tabIds.indexOf(activeTab);
+    const nextTabId = currentIdx >= 0 && currentIdx < tabIds.length - 1 ? tabIds[currentIdx + 1] : null;
+    const isLastTab = activeTab === 'summary';
 
     const onNum = (key) => (e) => setForm({ ...form, [key]: e.target.value.replace(/^-/, '') });
     const reqMark = <span className="text-sw-red">*</span>;
@@ -392,7 +409,7 @@ export default function SalesPage() {
               <Field label={<>R2 Net Sales {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_net} onChange={onNum('r2_net')} />
               </Field>
-              <Field label={<>Cash to Cash {reqMark}</>}>
+              <Field label={<>Cash {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} />
               </Field>
               <Field label={<>R2 Safe Drop {reqMark}</>}>
@@ -474,6 +491,25 @@ export default function SalesPage() {
               </div>
             </div>
 
+            {/* Basket vs R2 Net difference — visible to everyone, no validation/warning. */}
+            {usesReg2 && (
+              <div className="bg-sw-card2 border border-sw-border rounded-lg p-3">
+                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Basket vs R2 Difference</div>
+                <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[11px]">
+                  <div className="text-sw-sub">R1 Canceled Basket</div><div className="text-right font-mono">{fmt(r1CancelBasket)}</div>
+                  <div className="text-sw-sub">R2 Net Sales</div><div className="text-right font-mono">{fmt(r2Net)}</div>
+                  <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
+                    <span>Difference</span>
+                    {(() => {
+                      if (Math.abs(basketVsR2NetDiff) < 0.01) return <span className="text-sw-green font-mono font-bold">✅ Matched</span>;
+                      if (basketVsR2NetDiff > 0) return <span className="text-sw-amber font-mono font-bold">+{fmt(basketVsR2NetDiff)}</span>;
+                      return <span className="text-sw-red font-mono font-bold">-{fmt(Math.abs(basketVsR2NetDiff))}</span>;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Field label="Notes"><input placeholder="Optional" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
           </div>
         )}
@@ -503,24 +539,63 @@ export default function SalesPage() {
                 <div className="text-sw-sub text-[11px]">{dayLabel(todayEntry.date)} · {storeName}</div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 bg-sw-card2 rounded-lg p-3 border border-sw-border">
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase">Cash</div>
-                <div className="text-sw-text font-mono font-bold">{fmt(todayEntry.cash_sales)}</div>
-              </div>
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase">Card</div>
-                <div className="text-sw-text font-mono font-bold">{fmt(todayEntry.card_sales)}</div>
-              </div>
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase">Credits</div>
-                <div className="text-sw-text font-mono">{fmt(todayEntry.credits || 0)}</div>
-              </div>
-              <div>
-                <div className="text-sw-sub text-[10px] font-bold uppercase">Total</div>
-                <div className="text-sw-green font-mono font-extrabold">{fmt(todayEntry.total_sales)}</div>
+
+            {/* R1 detail */}
+            <div className="bg-sw-card2 rounded-lg p-3 border border-sw-border mb-2">
+              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Register 1</div>
+              <div className="grid grid-cols-2 gap-y-0.5 gap-x-2 text-[11px]">
+                <div className="text-sw-sub">Gross</div><div className="text-right font-mono">{fmt(todayEntry.r1_gross ?? todayEntry.gross_sales)}</div>
+                <div className="text-sw-sub">Net</div><div className="text-right font-mono">{fmt(todayEntry.r1_net ?? todayEntry.net_sales)}</div>
+                <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(todayEntry.cash_sales)}</div>
+                <div className="text-sw-sub">Card</div><div className="text-right font-mono">{fmt(todayEntry.card_sales)}</div>
+                <div className="text-sw-sub">Canceled Basket</div><div className="text-right font-mono">{fmt(todayEntry.r1_canceled_basket || 0)}</div>
+                <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(todayEntry.r1_safe_drop || 0)}</div>
+                <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(todayEntry.r1_sales_tax ?? todayEntry.tax_collected ?? 0)}</div>
+                <div className="text-sw-sub">Credits</div><div className="text-right font-mono">{fmt(todayEntry.credits || 0)}</div>
+                <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
+                  <span>R1 Short/Over</span>
+                  {(() => {
+                    const v = Number(todayEntry.r1_short_over || 0);
+                    if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched $0.00</span>;
+                    if (v > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(v)}</span>;
+                    return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(v))}</span>;
+                  })()}
+                </div>
               </div>
             </div>
+
+            {/* R2 detail */}
+            {empUsesReg2 && (
+              <div className="bg-sw-card2 rounded-lg p-3 border border-sw-border mb-2">
+                <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">Register 2</div>
+                <div className="grid grid-cols-2 gap-y-0.5 gap-x-2 text-[11px]">
+                  <div className="text-sw-sub">Net</div><div className="text-right font-mono">{fmt(todayEntry.r2_net || 0)}</div>
+                  <div className="text-sw-sub">Cash</div><div className="text-right font-mono">{fmt(todayEntry.register2_cash || 0)}</div>
+                  <div className="text-sw-sub">Safe Drop</div><div className="text-right font-mono">{fmt(todayEntry.r2_safe_drop || 0)}</div>
+                  <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
+                    <span>R2 Short/Over</span>
+                    {(() => {
+                      const v = Number(todayEntry.r2_short_over || 0);
+                      if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched $0.00</span>;
+                      if (v > 0) return <span className="text-sw-green font-mono font-bold">Over +{fmt(v)}</span>;
+                      return <span className="text-sw-red font-mono font-bold">Short -{fmt(Math.abs(v))}</span>;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Total S/O */}
+            <div className="bg-sw-blueD border border-sw-blue/30 rounded-lg p-2.5 flex justify-between items-center">
+              <span className="text-sw-blue text-[11px] font-bold uppercase">Total Short/Over</span>
+              {(() => {
+                const v = Number(todayEntry.short_over || 0);
+                if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-extrabold">$0.00</span>;
+                if (v > 0) return <span className="text-sw-green font-mono font-extrabold">+{fmt(v)}</span>;
+                return <span className="text-sw-red font-mono font-extrabold">-{fmt(Math.abs(v))}</span>;
+              })()}
+            </div>
+
             <p className="text-sw-sub text-[11px] mt-3">
               🔒 Only the owner can edit today's entry. Contact the owner if you need to make a correction.
             </p>
@@ -530,7 +605,13 @@ export default function SalesPage() {
             {renderTabbedForm(empUsesReg2, /*allowShortOver*/ false, (
               <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             ))}
-            <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl mt-4">Submit Sales</Button>
+            {isOnSummaryTab ? (
+              <Button onClick={handleSave} className="w-full !py-3 !text-sm !rounded-xl mt-4">Submit Sales</Button>
+            ) : (
+              <Button onClick={() => setActiveTab(nextTabId)} className="w-full !py-3 !text-sm !rounded-xl mt-4">
+                Next →
+              </Button>
+            )}
           </div>
         )}
 
@@ -610,6 +691,15 @@ export default function SalesPage() {
             const n = Number(v || 0);
             if (n === 0) return <span className="text-sw-dim">—</span>;
             return <span className={n < 0 ? 'text-sw-red font-bold' : 'text-sw-green font-bold'}>{n > 0 ? '+' : ''}{fmt(n)}</span>;
+          } },
+          { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, render: (_, r) => {
+            const cb = Number(r.r1_canceled_basket || 0);
+            const r2n = Number(r.r2_net || 0);
+            if (cb === 0 && r2n === 0) return <span className="text-sw-dim">—</span>;
+            const diff = cb - r2n;
+            if (Math.abs(diff) < 0.01) return <span className="text-sw-green">✅</span>;
+            if (diff > 0) return <span className="text-sw-amber">+{fmt(diff)}</span>;
+            return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
           } },
           { key: 'entered_by', label: 'By', render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
         ]} rows={sales} isOwner={hasStore}
