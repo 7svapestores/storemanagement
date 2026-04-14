@@ -261,7 +261,7 @@ export default function InventoryPage() {
 
       {isEmployee && (
         <div className="flex gap-2.5 flex-wrap mb-3.5">
-          <StatCard label="Products" value={items.length} icon="📦" color="#60A5FA" />
+          <StatCard label="Products" value={items.length} icon="📦" color="#39FF14" />
           <StatCard label="Low Stock" value={lowCount} icon="⚠️" color={lowCount > 5 ? '#F87171' : '#FBBF24'} />
         </div>
       )}

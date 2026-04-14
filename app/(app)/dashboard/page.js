@@ -175,7 +175,7 @@ export default function DashboardPage() {
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
           <StatCard label="Gross Sales" value={fK(stats.totalGross)} icon="💰" color="#34D399" sub={`Cash ${fK(stats.totalCash)} · Card ${fK(stats.totalCard)}`} />
-          <StatCard label="Net Sales" value={fK(stats.totalNet)} icon="📈" color="#60A5FA" sub={`Credits ${fK(stats.totalCredits)}`} />
+          <StatCard label="Net Sales" value={fK(stats.totalNet)} icon="📈" color="#39FF14" sub={`Credits ${fK(stats.totalCredits)}`} />
           <StatCard label="Expenses" value={fK(stats.totalExp)} icon="📋" color="#F87171" />
           <StatCard
             label="Short / Over"

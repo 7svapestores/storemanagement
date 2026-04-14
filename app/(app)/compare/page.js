@@ -133,7 +133,7 @@ export default function ComparePage() {
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
                       <span className="text-sw-text text-[11px] font-semibold truncate">{r.name}</span>
                     </div>
-                    <div className="flex-1"><Bar value={r.net} max={maxNet} color="#60A5FAaa" negative={r.net < 0} /></div>
+                    <div className="flex-1"><Bar value={r.net} max={maxNet} color="#39FF14aa" negative={r.net < 0} /></div>
                     <span className={`w-20 text-right font-mono text-[11px] font-bold ${r.net >= 0 ? 'text-sw-green' : 'text-sw-red'}`}>
                       {r.net >= 0 ? '' : '-'}{fK(Math.abs(r.net))}
                     </span>

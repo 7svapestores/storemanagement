@@ -57,7 +57,13 @@ input[type="email"], input[type="password"], input[type="search"], select, texta
   outline: none;
   min-height: 44px;
 }
-input:focus, select:focus, textarea:focus { border-color: #60A5FA; }
+input:focus, select:focus, textarea:focus { border-color: #39FF14; box-shadow: 0 0 0 3px rgba(57,255,20,0.12); }
+
+/* Neon glow utilities for brand accents */
+.neon-green { color: #39FF14; text-shadow: 0 0 8px rgba(57,255,20,0.55), 0 0 18px rgba(57,255,20,0.25); }
+.neon-pink  { color: #FF1493; text-shadow: 0 0 8px rgba(255,20,147,0.55), 0 0 18px rgba(255,20,147,0.25); }
+.neon-ring-green { box-shadow: 0 0 0 1px rgba(57,255,20,0.35), 0 0 16px rgba(57,255,20,0.20); }
+.neon-ring-pink  { box-shadow: 0 0 0 1px rgba(255,20,147,0.35), 0 0 16px rgba(255,20,147,0.20); }
 
 /* iOS safari zooms on focus if input font-size < 16px — keep it 16 on small screens */
 @media (max-width: 767px) {

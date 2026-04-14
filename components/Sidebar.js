@@ -51,8 +51,12 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
       <div className="hidden md:flex fixed left-0 top-0 w-[210px] h-screen z-40 bg-sw-card border-r border-sw-border flex-col overflow-y-auto">
         {/* Logo */}
         <div className="p-3.5 border-b border-sw-border flex items-center gap-2">
-          <span className="text-lg">🏪</span>
-          <span className="text-[17px] font-extrabold text-sw-text">7S <span className="text-sw-blue">Stores</span></span>
+          <span className="text-lg">💨</span>
+          <span className="text-[16px] font-extrabold tracking-tight">
+            <span className="neon-green">7&apos;s</span>{' '}
+            <span className="text-sw-text">VAPE</span>{' '}
+            <span className="neon-pink">L♥VE</span>
+          </span>
         </div>
 
         {/* Store selector (owner only) */}
@@ -115,8 +119,12 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
         className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sw-card border-b border-sw-border flex items-center gap-2 px-3"
         style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(48px + env(safe-area-inset-top))' }}
       >
-        <span className="text-lg">🏪</span>
-        <span className="text-[15px] font-extrabold text-sw-text">7S <span className="text-sw-blue">Stores</span></span>
+        <span className="text-lg">💨</span>
+        <span className="text-[14px] font-extrabold tracking-tight">
+          <span className="neon-green">7&apos;s</span>{' '}
+          <span className="text-sw-text">VAPE</span>{' '}
+          <span className="neon-pink">L♥VE</span>
+        </span>
         <div className="flex-1" />
         {isOwner && stores.length > 0 && (
           <select value={selectedStore || ''} onChange={e => onStoreChange(e.target.value || null)}

@@ -340,7 +340,7 @@ export function Button({ children, variant = 'primary', className = '', ...props
   return (
     <button {...props}
       className={`px-4 py-2.5 md:py-2 rounded-lg text-[13px] cursor-pointer transition-colors min-h-[44px] md:min-h-0 ${styles[variant]} ${className}`}
-      style={variant === 'primary' ? { background: 'linear-gradient(135deg, #60A5FA, #93C5FD)' } : {}}>
+      style={variant === 'primary' ? { background: 'linear-gradient(135deg, #39FF14, #FF1493)', color: '#0A0A0A', boxShadow: '0 0 18px rgba(57,255,20,0.35)' } : {}}>
       {children}
     </button>
   );

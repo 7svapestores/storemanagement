@@ -41,12 +41,16 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-5" style={{ background: 'radial-gradient(ellipse at 20% 30%, #0D1B2A, #060A10 65%)' }}>
+    <div className="min-h-screen flex items-center justify-center p-5" style={{ background: 'radial-gradient(ellipse at 20% 30%, #12221A, #060A10 55%), radial-gradient(ellipse at 80% 80%, #22101A, #060A10 60%)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🏪</div>
-          <h1 className="text-3xl font-black text-sw-text">7S <span className="text-sw-blue">Stores</span></h1>
-          <p className="text-sw-sub text-sm mt-1">Store Management System</p>
+          <div className="text-5xl mb-3">💨</div>
+          <h1 className="text-3xl font-black tracking-tight">
+            <span className="neon-green">7&apos;s</span>{' '}
+            <span className="text-sw-text">VAPE</span>{' '}
+            <span className="neon-pink">L♥VE</span>
+          </h1>
+          <p className="text-sw-sub text-sm mt-1">Vapor • CBD • Kratom</p>
         </div>
 
         <form onSubmit={handleLogin} className="bg-sw-card rounded-2xl p-7 border border-sw-border">
@@ -64,7 +68,7 @@ export default function LoginPage() {
 
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 text-black"
-            style={{ background: 'linear-gradient(135deg, #60A5FA, #93C5FD)' }}>
+            style={{ background: 'linear-gradient(135deg, #39FF14, #FF1493)', boxShadow: '0 0 22px rgba(57,255,20,0.35)' }}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
