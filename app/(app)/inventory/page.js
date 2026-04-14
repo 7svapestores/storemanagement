@@ -1,55 +1,18 @@
 'use client';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, Loading, Alert, Modal, Button, Field, ConfirmModal, EmptyState } from '@/components/UI';
-import { today } from '@/lib/utils';
+import { PageHeader, Loading, Alert, Button, Field, ConfirmModal, EmptyState, StoreBadge } from '@/components/UI';
+import { today, downloadCSV } from '@/lib/utils';
 
 const DEPT_ICONS = {
   Vapes: '💨', 'Pre Rolls': '🚬', Hydroxy: '🧪', 'E-Liquids': '💧',
   Devices: '🔋', Gummies: '🍬', Kratom: '🌿', Novelty: '🎁', THCA: '🌱',
 };
 
-const productLabel = (p) => {
-  const bits = [p.brand, p.name].filter(Boolean).join(' ');
-  const extras = [p.flavor, p.size].filter(Boolean).join(' · ');
-  return extras ? `${bits} — ${extras}` : bits;
-};
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function downloadCsv(filename, rows) {
-  const csv = rows.map(r => r.map(cell => {
-    const s = String(cell ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-function statusLabel(s) {
-  return {
-    draft: '📝 In progress',
-    submitted: '✅ Submitted',
-    ordered: '📦 Ordered',
-    received: '✔️ Received',
-  }[s] || s || '—';
-}
-function statusPillClass(s) {
-  return {
-    draft: 'bg-sw-amberD text-sw-amber',
-    submitted: 'bg-sw-greenD text-sw-green',
-    ordered: 'bg-sw-blueD text-sw-blue',
-    received: 'bg-sw-greenD text-sw-green',
-  }[s] || 'bg-sw-card2 text-sw-sub';
-}
+const inputClass = 'w-full px-3 py-3 bg-sw-card2 border border-sw-border rounded-lg text-sw-text text-[15px] focus:outline-none focus:border-sw-blue min-h-[48px]';
 
 export default function InventoryPage() {
   const { supabase, isOwner, isEmployee, profile, effectiveStoreId } = useAuth();
@@ -57,26 +20,21 @@ export default function InventoryPage() {
   const [loadError, setLoadError] = useState('');
   const [stores, setStores] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [catalog, setCatalog] = useState([]);
 
   const loadBase = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
+    setLoading(true); setLoadError('');
     try {
-      const [{ data: storeRows }, { data: deptRows }, { data: prodRows }] = await Promise.all([
+      const [{ data: storeRows }, { data: deptRows, error: deptErr }] = await Promise.all([
         supabase.from('stores').select('*').eq('is_active', true).order('name'),
         supabase.from('inventory_departments').select('*').order('sort_order', { ascending: true }),
-        supabase.from('product_catalog').select('*').eq('is_active', true).order('brand'),
       ]);
+      if (deptErr) throw deptErr;
       setStores(storeRows || []);
       setDepartments(deptRows || []);
-      setCatalog(prodRows || []);
     } catch (e) {
-      console.error('[inventory] base load failed:', e);
-      setLoadError(e?.message || 'Failed to load inventory base data');
-    } finally {
-      setLoading(false);
-    }
+      console.error('[inventory] load failed:', e);
+      setLoadError(e?.message || 'Failed to load inventory');
+    } finally { setLoading(false); }
   }, [supabase]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
@@ -85,502 +43,459 @@ export default function InventoryPage() {
   if (loadError) return <Alert type="error">{loadError}</Alert>;
 
   if (isEmployee) {
-    return <EmployeeCountView
-      supabase={supabase}
-      profile={profile}
-      storeId={effectiveStoreId}
-      stores={stores}
-      departments={departments}
-      catalog={catalog}
-    />;
+    return <EmployeeView supabase={supabase} profile={profile} storeId={effectiveStoreId} stores={stores} departments={departments} />;
   }
-
-  return <OwnerView
-    supabase={supabase}
-    profile={profile}
-    stores={stores}
-    departments={departments}
-    catalog={catalog}
-    reloadCatalog={loadBase}
-  />;
+  return <OwnerView supabase={supabase} stores={stores} departments={departments} />;
 }
 
-// ═════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // EMPLOYEE VIEW
-// ═════════════════════════════════════════════════════════════
-function EmployeeCountView({ supabase, profile, storeId, stores, departments, catalog }) {
-  const [activeCount, setActiveCount] = useState(null);
-  const [items, setItems] = useState({});
-  const [history, setHistory] = useState([]);
-  const [activeDept, setActiveDept] = useState(null);
-  const [search, setSearch] = useState('');
-  const [showCustom, setShowCustom] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [busyMsg, setBusyMsg] = useState('');
+// ═══════════════════════════════════════════════════════════════
+function EmployeeView({ supabase, profile, storeId, stores, departments }) {
+  const store = stores.find(s => s.id === storeId);
+  const [count, setCount] = useState(null);
+  const [items, setItems] = useState([]);
+  const [activeDeptId, setActiveDeptId] = useState(departments[0]?.id || null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const [pastCounts, setPastCounts] = useState([]);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
-  const [viewSubmitted, setViewSubmitted] = useState(null);
+  const [viewingPast, setViewingPast] = useState(null);
 
-  const storeName = stores.find(s => s.id === storeId)?.name || 'Your store';
+  const todayStr = today();
 
-  const hydrateCount = async (count) => {
-    const { data: rows } = await supabase
-      .from('inventory_count_items')
-      .select('*')
-      .eq('count_id', count.id);
-    const map = {};
-    (rows || []).forEach(r => {
-      const key = r.product_id || `custom:${r.id}`;
-      map[key] = { ...r, _key: key, _dirty: false };
-    });
-    setActiveCount(count);
-    setItems(map);
-  };
-
-  useEffect(() => {
-    if (!storeId) return;
-    (async () => {
-      const { data: open } = await supabase
+  const loadTodayCount = useCallback(async () => {
+    if (!storeId) { setLoading(false); return; }
+    setLoading(true); setErr('');
+    try {
+      const { data: existing } = await supabase
         .from('inventory_counts')
         .select('*')
         .eq('store_id', storeId)
-        .eq('status', 'draft')
-        .order('count_date', { ascending: false })
-        .limit(1);
-      if (open?.[0]) await hydrateCount(open[0]);
-      const { data: hist } = await supabase
+        .eq('count_date', todayStr)
+        .maybeSingle();
+      setCount(existing || null);
+
+      if (existing) {
+        const { data: itemRows } = await supabase
+          .from('inventory_count_items')
+          .select('*')
+          .eq('count_id', existing.id)
+          .order('created_at', { ascending: true });
+        setItems(itemRows || []);
+      } else {
+        setItems([]);
+      }
+
+      const { data: past } = await supabase
         .from('inventory_counts')
         .select('*')
         .eq('store_id', storeId)
-        .neq('status', 'draft')
+        .neq('count_date', todayStr)
         .order('count_date', { ascending: false })
         .limit(10);
-      setHistory(hist || []);
-    })();
-  }, [storeId]);
+      setPastCounts(past || []);
+    } catch (e) {
+      console.error(e); setErr(e?.message || 'Failed to load count');
+    } finally { setLoading(false); }
+  }, [supabase, storeId, todayStr]);
 
-  useEffect(() => {
-    if (!activeDept && departments.length) setActiveDept(departments[0].id);
-  }, [departments, activeDept]);
+  useEffect(() => { loadTodayCount(); }, [loadTodayCount]);
 
-  const startCount = async () => {
-    if (!storeId) return alert('No store assigned');
-    setBusyMsg('Starting count…');
+  const ensureCount = async () => {
+    if (count) return count;
     const { data, error } = await supabase
       .from('inventory_counts')
-      .insert({ store_id: storeId, count_date: today(), status: 'draft', created_by: profile?.id })
-      .select().single();
-    setBusyMsg('');
-    if (error) return alert('Could not start count: ' + error.message);
-    setActiveCount(data);
-    setItems({});
+      .insert({ store_id: storeId, count_date: todayStr, status: 'draft', created_by: profile?.id })
+      .select()
+      .single();
+    if (error) throw error;
+    setCount(data);
+    return data;
   };
 
-  const saveTimer = useRef(null);
-  const itemsRef = useRef(items);
-  useEffect(() => { itemsRef.current = items; }, [items]);
+  const startCount = async () => {
+    setBusy(true); setErr('');
+    try { await ensureCount(); } catch (e) { setErr(e?.message || 'Failed to start'); }
+    setBusy(false);
+  };
 
-  const flushSave = async () => {
-    if (!activeCount) return;
-    const dirty = Object.values(itemsRef.current).filter(r => r._dirty);
-    if (!dirty.length) return;
-    setSaving(true);
+  const addItem = async (dept, form) => {
+    setBusy(true); setErr('');
     try {
-      for (const row of dirty) {
-        const payload = {
-          count_id: activeCount.id,
-          product_id: row.product_id || null,
-          department_id: row.department_id,
-          brand: row.brand || null,
-          name: row.name || null,
-          flavor: row.flavor || null,
-          size: row.size || null,
-          in_stock: num(row.in_stock),
-          need_to_order: num(row.need_to_order),
-          notes: row.notes || null,
-          is_custom: !!row.is_custom,
-        };
-        if (row.id) {
-          await supabase.from('inventory_count_items').update(payload).eq('id', row.id);
-          setItems(prev => ({ ...prev, [row._key]: { ...prev[row._key], _dirty: false } }));
-        } else {
-          const { data } = await supabase.from('inventory_count_items').insert(payload).select().single();
-          if (data) {
-            setItems(prev => {
-              const oldKey = row._key;
-              const newKey = payload.product_id || `custom:${data.id}`;
-              const next = { ...prev };
-              delete next[oldKey];
-              next[newKey] = { ...data, _key: newKey, _dirty: false };
-              return next;
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[inventory] autosave failed:', e);
-    } finally {
-      setSaving(false);
-    }
+      const c = await ensureCount();
+      const { data, error } = await supabase
+        .from('inventory_count_items')
+        .insert({
+          count_id: c.id,
+          department_id: dept.id,
+          brand: form.brand.trim(),
+          flavor: form.flavor.trim(),
+          in_stock: num(form.in_stock),
+          need_to_order: num(form.need_to_order),
+          notes: form.notes?.trim() || null,
+          is_custom: true,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setItems(prev => [...prev, data]);
+    } catch (e) { setErr(e?.message || 'Failed to add'); }
+    setBusy(false);
   };
 
-  const markDirty = (key, patch) => {
-    setItems(prev => {
-      const cur = prev[key] || {};
-      return { ...prev, [key]: { ...cur, ...patch, _key: key, _dirty: true } };
-    });
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(flushSave, 700);
+  const updateItem = async (id, patch) => {
+    setBusy(true); setErr('');
+    try {
+      const { data, error } = await supabase
+        .from('inventory_count_items')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      setItems(prev => prev.map(it => it.id === id ? data : it));
+    } catch (e) { setErr(e?.message || 'Failed to update'); }
+    setBusy(false);
   };
 
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
-
-  const getRow = (product) => items[product.id] || {
-    product_id: product.id,
-    department_id: product.department_id,
-    brand: product.brand, name: product.name, flavor: product.flavor, size: product.size,
-    in_stock: '', need_to_order: '', notes: '', is_custom: false,
+  const deleteItem = async (id) => {
+    setBusy(true); setErr('');
+    try {
+      const { error } = await supabase.from('inventory_count_items').delete().eq('id', id);
+      if (error) throw error;
+      setItems(prev => prev.filter(it => it.id !== id));
+    } catch (e) { setErr(e?.message || 'Failed to delete'); }
+    setBusy(false);
   };
 
-  const submit = async () => {
+  const submitCount = async () => {
     setConfirmSubmit(false);
-    setBusyMsg('Submitting…');
-    await flushSave();
-    const { error } = await supabase
-      .from('inventory_counts')
-      .update({ status: 'submitted', submitted_at: new Date().toISOString(), submitted_by: profile?.id })
-      .eq('id', activeCount.id);
-    setBusyMsg('');
-    if (error) return alert('Submit failed: ' + error.message);
-    const submitted = { ...activeCount, status: 'submitted', submitted_at: new Date().toISOString() };
-    setHistory(prev => [submitted, ...prev]);
-    setActiveCount(null);
-    setItems({});
+    setBusy(true); setErr('');
+    try {
+      if (!count) throw new Error('No count to submit');
+      const { data, error } = await supabase
+        .from('inventory_counts')
+        .update({ status: 'submitted', submitted_at: new Date().toISOString(), submitted_by: profile?.id })
+        .eq('id', count.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setCount(data);
+      setMsg('Count submitted! Owner has been notified.');
+      setTimeout(() => setMsg(''), 4000);
+    } catch (e) { setErr(e?.message || 'Failed to submit'); }
+    setBusy(false);
   };
 
-  const filteredCatalog = useMemo(() => {
-    let list = catalog;
-    if (activeDept) list = list.filter(p => p.department_id === activeDept);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(p => productLabel(p).toLowerCase().includes(q));
-    }
-    return list;
-  }, [catalog, activeDept, search]);
+  if (!storeId) return <Alert type="warning">No store assigned to your account.</Alert>;
+  if (loading) return <Loading />;
 
-  const customItemsForDept = useMemo(
-    () => Object.values(items).filter(r => r.is_custom && r.department_id === activeDept),
-    [items, activeDept]
-  );
-
-  if (!storeId) {
-    return <Alert type="warning">No store assigned to your account. Ask the owner to assign one.</Alert>;
+  if (viewingPast) {
+    return <PastCountView supabase={supabase} count={viewingPast} departments={departments} onBack={() => setViewingPast(null)} />;
   }
 
-  if (viewSubmitted) {
-    return <SubmittedCountDetail
-      supabase={supabase}
-      count={viewSubmitted}
-      departments={departments}
-      onBack={() => setViewSubmitted(null)}
-    />;
-  }
-
-  if (!activeCount) {
-    return (
-      <div>
-        <PageHeader title="📦 Inventory Count" subtitle={storeName} />
-        <div className="bg-sw-card border border-sw-border rounded-xl p-6 text-center">
-          <div className="text-4xl mb-2">🧾</div>
-          <div className="text-sw-text text-sm font-bold mb-1">No count in progress</div>
-          <p className="text-sw-sub text-xs mb-4">Walk the store and tap start when you're ready.</p>
-          <Button onClick={startCount}>Start Inventory Count</Button>
-        </div>
-        {busyMsg && <Alert type="info">{busyMsg}</Alert>}
-        {history.length > 0 && (
-          <div className="mt-5">
-            <h3 className="text-sw-text text-[13px] font-bold mb-2">Previous Counts</h3>
-            <div className="space-y-1.5">
-              {history.map(h => (
-                <button key={h.id} onClick={() => setViewSubmitted(h)}
-                  className="w-full flex items-center justify-between bg-sw-card border border-sw-border rounded-lg px-3 py-2.5 hover:border-sw-blue/40 transition-colors text-left">
-                  <div>
-                    <div className="text-sw-text text-[13px] font-bold">{h.count_date}</div>
-                    <div className="text-sw-sub text-[11px]">{statusLabel(h.status)}</div>
-                  </div>
-                  <span className="text-sw-sub">›</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const submitted = count?.status === 'submitted';
+  const activeDept = departments.find(d => d.id === activeDeptId);
+  const itemsByDept = (deptId) => items.filter(it => it.department_id === deptId);
 
   return (
     <div>
-      <PageHeader title="📦 Inventory Count" subtitle={`${storeName} · ${activeCount.count_date}`}>
-        <span className="text-[11px] text-sw-sub self-center">{saving ? '💾 Saving…' : 'Auto-saved'}</span>
-        <Button variant="success" onClick={() => setConfirmSubmit(true)}>Submit</Button>
-      </PageHeader>
+      <PageHeader
+        title="Inventory Count"
+        subtitle={<span className="flex items-center gap-2">{store && <StoreBadge name={store.name} color={store.color} />}<span>· {fmtDate(todayStr)}</span></span>}
+      />
 
-      <div className="bg-sw-card border border-sw-border rounded-xl p-2 mb-3 overflow-x-auto">
-        <div className="flex gap-1.5" style={{ minWidth: 'max-content' }}>
-          {departments.map(d => (
-            <button key={d.id} onClick={() => setActiveDept(d.id)}
-              className={`px-3 py-2 rounded-lg text-[12px] font-bold whitespace-nowrap transition-colors ${
-                activeDept === d.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/30' : 'bg-sw-card2 text-sw-sub border border-sw-border'
-              }`}>
-              {DEPT_ICONS[d.name] || '📦'} {d.name}
-            </button>
-          ))}
+      {err && <Alert type="error">{err}</Alert>}
+      {msg && <Alert type="success">{msg}</Alert>}
+
+      {!count && (
+        <div className="bg-sw-card border border-sw-border rounded-xl p-6 text-center mb-4">
+          <div className="text-4xl mb-3">📋</div>
+          <div className="text-sw-text font-bold mb-1">Ready to count inventory?</div>
+          <div className="text-sw-sub text-sm mb-4">Walk through the store, pick a department, and add what you see.</div>
+          <Button onClick={startCount} disabled={busy}>{busy ? 'Starting…' : 'Start Count'}</Button>
         </div>
-      </div>
+      )}
 
-      <div className="mb-3">
-        <input type="search" placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} className="w-full" />
-      </div>
+      {count && (
+        <>
+          {submitted && (
+            <Alert type="success">This count has been submitted and is now read-only.</Alert>
+          )}
 
-      <div className="space-y-2">
-        {filteredCatalog.length === 0 && customItemsForDept.length === 0 && (
-          <div className="bg-sw-card border border-sw-border rounded-xl p-6 text-center text-sw-sub text-[12px]">
-            No products in this department yet.
+          {/* Department tabs */}
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
+            {departments.map(d => {
+              const n = itemsByDept(d.id).length;
+              const active = d.id === activeDeptId;
+              return (
+                <button
+                  key={d.id}
+                  onClick={() => setActiveDeptId(d.id)}
+                  className={`flex-shrink-0 px-4 py-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors min-h-[48px] ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue' : 'bg-sw-card text-sw-sub border-sw-border'}`}
+                >
+                  <span className="mr-1">{DEPT_ICONS[d.name] || '📦'}</span>
+                  {d.name}
+                  {n > 0 && <span className="ml-2 text-[11px] opacity-80">({n})</span>}
+                </button>
+              );
+            })}
           </div>
-        )}
 
-        {filteredCatalog.map(p => {
-          const row = getRow(p);
-          return (
-            <ProductRow key={p.id} label={productLabel(p)} row={row}
-              onChange={(patch) => markDirty(p.id, { ...row, ...patch })} />
-          );
-        })}
+          {activeDept && (
+            <DeptPanel
+              dept={activeDept}
+              items={itemsByDept(activeDept.id)}
+              onAdd={(form) => addItem(activeDept, form)}
+              onUpdate={updateItem}
+              onDelete={deleteItem}
+              busy={busy}
+              readonly={submitted}
+            />
+          )}
 
-        {customItemsForDept.map(row => (
-          <ProductRow key={row._key} label={`${productLabel(row)} (custom)`} row={row}
-            onChange={(patch) => markDirty(row._key, { ...row, ...patch })}
-            onRemove={async () => {
-              if (row.id) await supabase.from('inventory_count_items').delete().eq('id', row.id);
-              setItems(prev => { const n = { ...prev }; delete n[row._key]; return n; });
-            }} />
-        ))}
-      </div>
+          {!submitted && items.length > 0 && (
+            <div className="mt-6 sticky bottom-3">
+              <Button onClick={() => setConfirmSubmit(true)} disabled={busy} className="w-full text-base py-4">
+                Submit Inventory Count ({items.length} items)
+              </Button>
+            </div>
+          )}
+        </>
+      )}
 
-      <div className="mt-3">
-        <Button variant="secondary" onClick={() => setShowCustom(true)}>+ Add Custom Product</Button>
-      </div>
-
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="success" onClick={() => setConfirmSubmit(true)}>Submit Inventory Count</Button>
-      </div>
-
-      {showCustom && (
-        <CustomProductModal
-          departments={departments} defaultDept={activeDept}
-          onClose={() => setShowCustom(false)}
-          onAdd={(data) => {
-            const tempKey = `custom:new:${Date.now()}`;
-            markDirty(tempKey, { ...data, is_custom: true, product_id: null });
-            setShowCustom(false);
-            setActiveDept(data.department_id);
-          }} />
+      {pastCounts.length > 0 && (
+        <div className="mt-8">
+          <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mb-2">Previous Counts</div>
+          <div className="space-y-2">
+            {pastCounts.map(pc => (
+              <button
+                key={pc.id}
+                onClick={() => setViewingPast(pc)}
+                className="w-full text-left bg-sw-card border border-sw-border rounded-lg p-3 flex justify-between items-center hover:border-sw-blue transition-colors"
+              >
+                <span className="text-sw-text text-sm">{fmtDate(pc.count_date)}</span>
+                <span className="text-xs text-sw-sub">
+                  {pc.status === 'submitted' ? '✅ Submitted' : pc.status === 'draft' ? '📝 Draft' : pc.status}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {confirmSubmit && (
         <ConfirmModal
-          title="Submit Inventory Count?"
-          message={`Submit inventory count for ${storeName}? This will notify the owner and lock the sheet — you won't be able to edit afterward.`}
+          title="Submit Count?"
+          message={`Submit count for ${store?.name || 'this store'}? Owner will be notified and you won't be able to edit afterwards.`}
           confirmLabel="Submit"
           confirmVariant="success"
           onCancel={() => setConfirmSubmit(false)}
-          onConfirm={submit} />
+          onConfirm={submitCount}
+        />
       )}
-
-      {busyMsg && <Alert type="info">{busyMsg}</Alert>}
     </div>
   );
 }
 
-function ProductRow({ label, row, onChange, onRemove }) {
-  return (
-    <div className="bg-sw-card border border-sw-border rounded-xl p-3">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="text-sw-text text-[13px] font-semibold flex-1">{label}</div>
-        {onRemove && <button onClick={onRemove} className="text-sw-red text-[11px] font-semibold px-2">✕</button>}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-sw-sub text-[9px] font-bold uppercase mb-1">In Stock</label>
-          <input type="number" inputMode="numeric" pattern="[0-9]*"
-            value={row.in_stock ?? ''} onChange={e => onChange({ in_stock: e.target.value })}
-            className="w-full text-center font-mono text-base" style={{ height: 48 }} />
-        </div>
-        <div>
-          <label className="block text-sw-sub text-[9px] font-bold uppercase mb-1">Need to Order</label>
-          <input type="number" inputMode="numeric" pattern="[0-9]*"
-            value={row.need_to_order ?? ''} onChange={e => onChange({ need_to_order: e.target.value })}
-            className="w-full text-center font-mono text-base" style={{ height: 48 }} />
-        </div>
-      </div>
-      <input type="text" placeholder="Notes (optional)" value={row.notes || ''}
-        onChange={e => onChange({ notes: e.target.value })} className="w-full mt-2 text-[12px]" />
-    </div>
-  );
-}
+// ═══════════════════════════════════════════════════════════════
+// DEPARTMENT PANEL (add + list items)
+// ═══════════════════════════════════════════════════════════════
+function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
-function CustomProductModal({ departments, defaultDept, onClose, onAdd }) {
-  const [dept, setDept] = useState(defaultDept || departments[0]?.id || '');
-  const [brand, setBrand] = useState('');
-  const [name, setName] = useState('');
-  const [flavor, setFlavor] = useState('');
-  const [size, setSize] = useState('');
-  const [inStock, setInStock] = useState('');
-  const [order, setOrder] = useState('');
-
-  const submit = () => {
-    if (!dept || !name.trim()) return alert('Department and product name are required');
-    onAdd({
-      department_id: dept, brand: brand.trim(), name: name.trim(),
-      flavor: flavor.trim(), size: size.trim(),
-      in_stock: num(inStock), need_to_order: num(order), notes: '',
-    });
+  const handleAdd = async (form) => {
+    await onAdd(form);
+    setShowForm(false);
   };
 
   return (
-    <Modal title="Add Custom Product" onClose={onClose}>
-      <Field label="Department">
-        <select value={dept} onChange={e => setDept(e.target.value)} className="w-full">
-          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </Field>
-      <Field label="Brand"><input value={brand} onChange={e => setBrand(e.target.value)} /></Field>
-      <Field label="Product Name *"><input value={name} onChange={e => setName(e.target.value)} /></Field>
-      <Field label="Flavor"><input value={flavor} onChange={e => setFlavor(e.target.value)} /></Field>
-      <Field label="Size"><input value={size} onChange={e => setSize(e.target.value)} /></Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="In Stock"><input type="number" inputMode="numeric" value={inStock} onChange={e => setInStock(e.target.value)} /></Field>
-        <Field label="Need to Order"><input type="number" inputMode="numeric" value={order} onChange={e => setOrder(e.target.value)} /></Field>
-      </div>
-      <div className="flex justify-end gap-2 mt-2">
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit}>Add</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════
-// OWNER VIEW
-// ═════════════════════════════════════════════════════════════
-function OwnerView({ supabase, profile, stores, departments, catalog, reloadCatalog }) {
-  const [tab, setTab] = useState('status');
-  const [counts, setCounts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCount, setSelectedCount] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from('inventory_counts')
-        .select('*')
-        .order('count_date', { ascending: false })
-        .limit(100);
-      setCounts(data || []);
-      setLoading(false);
-    })();
-  }, [supabase]);
-
-  const latestByStore = useMemo(() => {
-    const map = {};
-    for (const c of counts) {
-      if (!map[c.store_id] || c.count_date > map[c.store_id].count_date) map[c.store_id] = c;
-    }
-    return map;
-  }, [counts]);
-
-  if (selectedCount) {
-    return <OwnerOrderSheet
-      supabase={supabase} count={selectedCount}
-      store={stores.find(s => s.id === selectedCount.store_id)}
-      departments={departments}
-      onBack={() => setSelectedCount(null)}
-      onChanged={(updated) => {
-        setCounts(prev => prev.map(c => c.id === updated.id ? updated : c));
-        setSelectedCount(updated);
-      }} />;
-  }
-
-  return (
-    <div>
-      <PageHeader title="📦 Inventory & Orders" />
-      <div className="flex gap-1.5 mb-3 overflow-x-auto">
-        <TabBtn active={tab === 'status'} onClick={() => setTab('status')}>Store Status</TabBtn>
-        <TabBtn active={tab === 'combined'} onClick={() => setTab('combined')}>Combined Order</TabBtn>
-        <TabBtn active={tab === 'catalog'} onClick={() => setTab('catalog')}>Manage Products</TabBtn>
+    <div className="bg-sw-card border border-sw-border rounded-xl p-4">
+      <div className="flex justify-between items-center mb-3">
+        <div className="text-sw-text font-bold text-sm uppercase tracking-wide">
+          {DEPT_ICONS[dept.name] || '📦'} {dept.name}
+        </div>
+        {!readonly && !showForm && !editingId && (
+          <Button onClick={() => setShowForm(true)}>+ Add Item</Button>
+        )}
       </div>
 
-      {loading && <Loading />}
-
-      {!loading && tab === 'status' && (
-        <StoreStatusList stores={stores} latestByStore={latestByStore} counts={counts} onOpen={setSelectedCount} />
+      {items.length === 0 && !showForm && (
+        <EmptyState icon="📝" title="No items yet" message={readonly ? 'Nothing was counted in this department.' : 'Tap Add Item to start entering products.'} />
       )}
 
-      {!loading && tab === 'combined' && (
-        <CombinedOrderSheet
-          supabase={supabase} stores={stores} departments={departments}
-          counts={counts.filter(c => c.status === 'submitted' || c.status === 'ordered')} />
-      )}
+      <div className="space-y-2">
+        {items.map((it, idx) => (
+          editingId === it.id ? (
+            <ItemForm
+              key={it.id}
+              initial={it}
+              onSave={async (form) => { await onUpdate(it.id, form); setEditingId(null); }}
+              onCancel={() => setEditingId(null)}
+              busy={busy}
+            />
+          ) : (
+            <div
+              key={it.id}
+              className="bg-sw-card2 border border-sw-border rounded-lg p-3 flex justify-between items-start gap-3"
+            >
+              <button
+                className="flex-1 text-left"
+                disabled={readonly}
+                onClick={() => !readonly && setEditingId(it.id)}
+              >
+                <div className="text-sw-text text-sm">
+                  <span className="text-sw-sub">{idx + 1}.</span> <span className="font-semibold">{it.brand}</span>
+                  {it.flavor && <span className="text-sw-sub"> · {it.flavor}</span>}
+                </div>
+                <div className="text-xs text-sw-sub mt-0.5">
+                  Qty: <span className="text-sw-text font-semibold">{it.in_stock}</span>
+                  {it.need_to_order > 0 && (
+                    <span className="ml-3">→ Need to order: <span className="text-sw-amber font-semibold">{it.need_to_order}</span></span>
+                  )}
+                </div>
+                {it.notes && <div className="text-[11px] text-sw-sub mt-1 italic">{it.notes}</div>}
+              </button>
+              {!readonly && (
+                <button
+                  onClick={() => onDelete(it.id)}
+                  className="text-sw-red text-lg px-2 min-h-[40px]"
+                  aria-label="Delete"
+                >✕</button>
+              )}
+            </div>
+          )
+        ))}
 
-      {tab === 'catalog' && (
-        <CatalogManager supabase={supabase} departments={departments}
-          catalog={catalog} profile={profile} onChanged={reloadCatalog} />
+        {showForm && (
+          <ItemForm
+            onSave={handleAdd}
+            onCancel={() => setShowForm(false)}
+            busy={busy}
+          />
+        )}
+      </div>
+
+      {!readonly && !showForm && !editingId && items.length > 0 && (
+        <div className="mt-3">
+          <Button variant="secondary" onClick={() => setShowForm(true)} className="w-full">+ Add Another Item</Button>
+        </div>
       )}
     </div>
   );
 }
 
-function TabBtn({ active, onClick, children }) {
+function ItemForm({ initial, onSave, onCancel, busy }) {
+  const [form, setForm] = useState({
+    brand: initial?.brand || '',
+    flavor: initial?.flavor || '',
+    in_stock: initial?.in_stock ?? '',
+    need_to_order: initial?.need_to_order ?? '',
+    notes: initial?.notes || '',
+  });
+  const canSave = form.brand.trim().length > 0;
+
   return (
-    <button onClick={onClick}
-      className={`px-3 py-2 rounded-lg text-[12px] font-bold whitespace-nowrap transition-colors ${
-        active ? 'bg-sw-blueD text-sw-blue border border-sw-blue/30' : 'bg-sw-card2 text-sw-sub border border-sw-border'
-      }`}>
-      {children}
-    </button>
+    <div className="bg-sw-card2 border border-sw-blue rounded-lg p-3">
+      <Field label="Brand">
+        <input
+          className={inputClass}
+          autoCapitalize="words"
+          autoFocus
+          value={form.brand}
+          onChange={e => setForm({ ...form, brand: e.target.value })}
+          placeholder="e.g. Geekbar 15K"
+        />
+      </Field>
+      <Field label="Flavor / Name">
+        <input
+          className={inputClass}
+          autoCapitalize="words"
+          value={form.flavor}
+          onChange={e => setForm({ ...form, flavor: e.target.value })}
+          placeholder="e.g. Coffee"
+        />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Qty in Stock">
+          <input
+            className={inputClass}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={form.in_stock}
+            onChange={e => setForm({ ...form, in_stock: e.target.value.replace(/[^0-9]/g, '') })}
+            placeholder="0"
+          />
+        </Field>
+        <Field label="Need to Order">
+          <input
+            className={inputClass}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={form.need_to_order}
+            onChange={e => setForm({ ...form, need_to_order: e.target.value.replace(/[^0-9]/g, '') })}
+            placeholder="0"
+          />
+        </Field>
+      </div>
+      <Field label="Notes (optional)">
+        <input
+          className={inputClass}
+          value={form.notes}
+          onChange={e => setForm({ ...form, notes: e.target.value })}
+          placeholder=""
+        />
+      </Field>
+      <div className="flex gap-2">
+        <Button onClick={() => canSave && onSave(form)} disabled={!canSave || busy} className="flex-1">
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+        <Button variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>
+      </div>
+    </div>
   );
 }
 
-function StoreStatusList({ stores, latestByStore, counts, onOpen }) {
+// ═══════════════════════════════════════════════════════════════
+// PAST COUNT VIEWER (employee view of old count)
+// ═══════════════════════════════════════════════════════════════
+function PastCountView({ supabase, count, departments, onBack }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('inventory_count_items').select('*').eq('count_id', count.id).order('created_at');
+      setItems(data || []);
+      setLoading(false);
+    })();
+  }, [supabase, count.id]);
+
+  if (loading) return <Loading />;
+  const byDept = (id) => items.filter(i => i.department_id === id);
+
   return (
-    <div className="space-y-2">
-      {stores.map(st => {
-        const latest = latestByStore[st.id];
-        const storeCounts = counts.filter(c => c.store_id === st.id);
+    <div>
+      <PageHeader title={fmtDate(count.count_date)} subtitle={count.status === 'submitted' ? '✅ Submitted' : count.status}>
+        <Button variant="secondary" onClick={onBack}>← Back</Button>
+      </PageHeader>
+      {departments.map(d => {
+        const di = byDept(d.id);
+        if (di.length === 0) return null;
         return (
-          <div key={st.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-sm" style={{ background: st.color }} />
-                <span className="text-sw-text text-sm font-bold">{st.name}</span>
+          <div key={d.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-3">
+            <div className="text-sw-text font-bold text-sm mb-2">{DEPT_ICONS[d.name] || '📦'} {d.name}</div>
+            {di.map((it, idx) => (
+              <div key={it.id} className="text-sm text-sw-text py-1">
+                <span className="text-sw-sub">{idx + 1}.</span> {it.brand}
+                {it.flavor && <span className="text-sw-sub"> · {it.flavor}</span>}
+                <span className="text-sw-sub"> · Qty: {it.in_stock}</span>
+                {it.need_to_order > 0 && <span className="text-sw-amber"> · Order: {it.need_to_order}</span>}
               </div>
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${statusPillClass(latest?.status)}`}>
-                {latest ? statusLabel(latest.status) : 'No count yet'}
-              </span>
-            </div>
-            <div className="text-sw-sub text-[11px] mb-3">
-              {latest ? `Last count: ${latest.count_date}` : '—'}
-            </div>
-            {storeCounts.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {storeCounts.slice(0, 6).map(c => (
-                  <button key={c.id} onClick={() => onOpen(c)}
-                    className="text-[11px] px-2.5 py-1.5 rounded-md bg-sw-card2 border border-sw-border hover:border-sw-blue/40 text-sw-text font-semibold">
-                    {c.count_date} · {statusLabel(c.status)}
-                  </button>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         );
       })}
@@ -588,277 +503,99 @@ function StoreStatusList({ stores, latestByStore, counts, onOpen }) {
   );
 }
 
-function OwnerOrderSheet({ supabase, count, store, departments, onBack, onChanged }) {
-  const [items, setItems] = useState([]);
+// ═══════════════════════════════════════════════════════════════
+// OWNER VIEW
+// ═══════════════════════════════════════════════════════════════
+function OwnerView({ supabase, stores, departments }) {
+  const [latestByStore, setLatestByStore] = useState({}); // storeId -> { count, itemCount }
   const [loading, setLoading] = useState(true);
-  const [submittedBy, setSubmittedBy] = useState('');
+  const [err, setErr] = useState('');
+  const [viewing, setViewing] = useState(null); // count
+  const [showCombined, setShowCombined] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from('inventory_count_items').select('*').eq('count_id', count.id);
-      setItems(data || []);
-      if (count.submitted_by) {
-        const { data: p } = await supabase.from('profiles').select('name').eq('id', count.submitted_by).maybeSingle();
-        setSubmittedBy(p?.name || '');
+  const loadStatus = useCallback(async () => {
+    setLoading(true); setErr('');
+    try {
+      const { data: counts } = await supabase
+        .from('inventory_counts')
+        .select('*')
+        .order('count_date', { ascending: false });
+
+      const map = {};
+      for (const c of counts || []) {
+        if (!map[c.store_id]) map[c.store_id] = c;
       }
-      setLoading(false);
-    })();
-  }, [count.id]);
 
-  const byDept = useMemo(() => {
-    const orderItems = items.filter(i => num(i.need_to_order) > 0);
-    const groups = {};
-    for (const d of departments) groups[d.id] = [];
-    for (const it of orderItems) {
-      if (!groups[it.department_id]) groups[it.department_id] = [];
-      groups[it.department_id].push(it);
-    }
-    return groups;
-  }, [items, departments]);
-
-  const exportCsv = () => {
-    const lines = [['Department', 'Brand', 'Product', 'Flavor', 'Size', 'In Stock', 'Need to Order', 'Notes']];
-    for (const d of departments) {
-      for (const it of byDept[d.id] || []) {
-        lines.push([d.name, it.brand || '', it.name || '', it.flavor || '', it.size || '', num(it.in_stock), num(it.need_to_order), it.notes || '']);
+      const ids = Object.values(map).map(c => c.id);
+      let counts2 = {};
+      if (ids.length > 0) {
+        const { data: itemRows } = await supabase
+          .from('inventory_count_items')
+          .select('count_id')
+          .in('count_id', ids);
+        (itemRows || []).forEach(r => { counts2[r.count_id] = (counts2[r.count_id] || 0) + 1; });
       }
-    }
-    downloadCsv(`order-${store?.name || 'store'}-${count.count_date}.csv`, lines);
-  };
 
-  const exportXlsx = async () => {
-    const XLSX = await import('xlsx');
-    const rows = [['Department', 'Brand', 'Product', 'Flavor', 'Size', 'In Stock', 'Need to Order', 'Notes']];
-    for (const d of departments) {
-      for (const it of byDept[d.id] || []) {
-        rows.push([d.name, it.brand || '', it.name || '', it.flavor || '', it.size || '', num(it.in_stock), num(it.need_to_order), it.notes || '']);
-      }
-    }
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Order Sheet');
-    XLSX.writeFile(wb, `order-${store?.name || 'store'}-${count.count_date}.xlsx`);
-  };
+      const out = {};
+      Object.entries(map).forEach(([sid, c]) => {
+        out[sid] = { count: c, itemCount: counts2[c.id] || 0 };
+      });
+      setLatestByStore(out);
+    } catch (e) {
+      console.error(e); setErr(e?.message || 'Failed to load');
+    } finally { setLoading(false); }
+  }, [supabase]);
 
-  const setStatus = async (status) => {
-    const patch = { status };
-    if (status === 'ordered') patch.ordered_at = new Date().toISOString();
-    if (status === 'received') patch.received_at = new Date().toISOString();
-    const { data, error } = await supabase.from('inventory_counts').update(patch).eq('id', count.id).select().single();
-    if (error) return alert('Update failed: ' + error.message);
-    onChanged(data);
-  };
-
-  const totalItems = Object.values(byDept).reduce((s, arr) => s + arr.length, 0);
-
-  return (
-    <div>
-      <button onClick={onBack} className="text-sw-sub text-[12px] mb-2">‹ Back</button>
-      <PageHeader
-        title={`Order Sheet — ${store?.name || ''}`}
-        subtitle={`${count.count_date} · ${submittedBy ? `Submitted by ${submittedBy} · ` : ''}${statusLabel(count.status)}`}>
-        <Button variant="secondary" onClick={exportCsv}>CSV</Button>
-        <Button variant="secondary" onClick={exportXlsx}>Excel</Button>
-        {count.status === 'submitted' && <Button onClick={() => setStatus('ordered')}>Mark Ordered</Button>}
-        {count.status === 'ordered' && <Button variant="success" onClick={() => setStatus('received')}>Mark Received</Button>}
-      </PageHeader>
-
-      {loading ? <Loading /> : totalItems === 0 ? (
-        <EmptyState icon="✅" title="Nothing to order" message="Every product is stocked. Nice." />
-      ) : (
-        <div className="space-y-3">
-          {departments.map(d => {
-            const list = byDept[d.id];
-            if (!list?.length) return null;
-            return (
-              <div key={d.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
-                <h3 className="text-sw-text text-sm font-bold mb-3">
-                  {DEPT_ICONS[d.name] || '📦'} {d.name}
-                  <span className="text-sw-sub text-[11px] font-semibold ml-2">({list.length} items)</span>
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left' }}>Product</th>
-                        <th style={{ textAlign: 'right' }}>Stock</th>
-                        <th style={{ textAlign: 'right' }}>Order</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map(it => (
-                        <tr key={it.id}>
-                          <td>
-                            <div className="text-sw-text text-[12px] font-semibold">{productLabel(it)}</div>
-                            {it.notes && <div className="text-sw-dim text-[10px]">{it.notes}</div>}
-                          </td>
-                          <td style={{ textAlign: 'right' }} className="font-mono text-[12px]">{num(it.in_stock)}</td>
-                          <td style={{ textAlign: 'right' }} className="font-mono text-sw-green font-bold text-[12px]">{num(it.need_to_order)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SubmittedCountDetail({ supabase, count, departments, onBack }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('inventory_count_items').select('*').eq('count_id', count.id);
-      setItems(data || []);
-      setLoading(false);
-    })();
-  }, [count.id]);
-
-  const byDept = useMemo(() => {
-    const m = {};
-    for (const d of departments) m[d.id] = [];
-    for (const it of items) {
-      if (!m[it.department_id]) m[it.department_id] = [];
-      m[it.department_id].push(it);
-    }
-    return m;
-  }, [items, departments]);
-
-  return (
-    <div>
-      <button onClick={onBack} className="text-sw-sub text-[12px] mb-2">‹ Back</button>
-      <PageHeader title={`Count · ${count.count_date}`} subtitle={statusLabel(count.status)} />
-      {loading ? <Loading /> : (
-        <div className="space-y-3">
-          {departments.map(d => {
-            const list = byDept[d.id];
-            if (!list?.length) return null;
-            return (
-              <div key={d.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
-                <h3 className="text-sw-text text-sm font-bold mb-2">{DEPT_ICONS[d.name] || '📦'} {d.name}</h3>
-                {list.map(it => (
-                  <div key={it.id} className="flex justify-between text-[12px] border-t border-sw-border py-1.5">
-                    <span className="text-sw-text">{productLabel(it)}</span>
-                    <span className="text-sw-sub font-mono">
-                      {num(it.in_stock)} in · <span className="text-sw-green font-bold">{num(it.need_to_order)} order</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CombinedOrderSheet({ supabase, stores, departments, counts }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const key = counts.map(c => c.id).join(',');
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      if (!counts.length) { setItems([]); setLoading(false); return; }
-      const latestByStore = {};
-      for (const c of counts) {
-        if (!latestByStore[c.store_id] || c.count_date > latestByStore[c.store_id].count_date) {
-          latestByStore[c.store_id] = c;
-        }
-      }
-      const ids = Object.values(latestByStore).map(c => c.id);
-      const { data } = await supabase
-        .from('inventory_count_items')
-        .select('*, inventory_counts!inner(store_id)')
-        .in('count_id', ids);
-      const withStore = (data || []).map(r => ({ ...r, store_id: r.inventory_counts?.store_id }));
-      setItems(withStore);
-      setLoading(false);
-    })();
-  }, [key]);
-
-  const combined = useMemo(() => {
-    const groups = {};
-    for (const it of items) {
-      if (num(it.need_to_order) <= 0) continue;
-      const k = it.product_id || `${it.brand}|${it.name}|${it.flavor}|${it.size}`;
-      if (!groups[k]) {
-        groups[k] = {
-          key: k, department_id: it.department_id,
-          brand: it.brand, name: it.name, flavor: it.flavor, size: it.size,
-          total: 0, breakdown: [],
-        };
-      }
-      groups[k].total += num(it.need_to_order);
-      groups[k].breakdown.push({ store_id: it.store_id, qty: num(it.need_to_order) });
-    }
-    return Object.values(groups);
-  }, [items]);
-
-  const byDept = useMemo(() => {
-    const g = {};
-    for (const d of departments) g[d.id] = [];
-    for (const c of combined) {
-      if (!g[c.department_id]) g[c.department_id] = [];
-      g[c.department_id].push(c);
-    }
-    return g;
-  }, [combined, departments]);
-
-  const exportCsv = () => {
-    const lines = [['Department', 'Brand', 'Product', 'Flavor', 'Size', 'Total Order Qty']];
-    for (const d of departments) {
-      for (const it of byDept[d.id] || []) {
-        lines.push([d.name, it.brand || '', it.name || '', it.flavor || '', it.size || '', it.total]);
-      }
-    }
-    downloadCsv(`combined-order-${today()}.csv`, lines);
-  };
+  useEffect(() => { loadStatus(); }, [loadStatus]);
 
   if (loading) return <Loading />;
-  if (!combined.length) return <EmptyState icon="📭" title="No items to combine" message="No submitted counts with outstanding orders." />;
+
+  if (viewing) {
+    return <OwnerCountView
+      supabase={supabase}
+      count={viewing}
+      store={stores.find(s => s.id === viewing.store_id)}
+      departments={departments}
+      onBack={() => { setViewing(null); loadStatus(); }}
+    />;
+  }
+
+  if (showCombined) {
+    return <CombinedOrderView
+      supabase={supabase}
+      stores={stores}
+      departments={departments}
+      onBack={() => setShowCombined(false)}
+    />;
+  }
 
   return (
     <div>
-      <div className="flex justify-end mb-3">
-        <Button variant="secondary" onClick={exportCsv}>Download CSV</Button>
-      </div>
-      <div className="space-y-3">
-        {departments.map(d => {
-          const list = byDept[d.id];
-          if (!list?.length) return null;
+      <PageHeader title="Inventory" subtitle="Store count status & order sheets">
+        <Button onClick={() => setShowCombined(true)}>📋 Combined Order Sheet</Button>
+      </PageHeader>
+
+      {err && <Alert type="error">{err}</Alert>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {stores.map(s => {
+          const entry = latestByStore[s.id];
+          const c = entry?.count;
+          const statusIcon = !c ? '⚠️' : c.status === 'draft' ? '📝' : '✅';
+          const statusText = !c ? 'No count yet' : c.status === 'draft' ? 'Draft in progress' : `Submitted ${fmtDate(c.count_date)}`;
           return (
-            <div key={d.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
-              <h3 className="text-sw-text text-sm font-bold mb-3">
-                {DEPT_ICONS[d.name] || '📦'} {d.name}
-                <span className="text-sw-sub text-[11px] font-semibold ml-2">({list.length} items)</span>
-              </h3>
-              {list.map(it => (
-                <div key={it.key} className="border-t border-sw-border py-2 text-[12px]">
-                  <div className="flex justify-between">
-                    <span className="text-sw-text font-semibold">{productLabel(it)}</span>
-                    <span className="font-mono font-bold text-sw-green">Order {it.total}</span>
-                  </div>
-                  <div className="text-sw-dim text-[10px] mt-0.5">
-                    {it.breakdown.map((b, i) => {
-                      const st = stores.find(s => s.id === b.store_id);
-                      return (
-                        <span key={i}>{i > 0 && ' + '}{(st?.name || 'Store')}: {b.qty}</span>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div key={s.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-3 h-3 rounded-full" style={{ background: s.color || '#39FF14' }} />
+                <span className="text-sw-text font-bold">{s.name}</span>
+              </div>
+              <div className="text-sw-sub text-xs mb-1">{statusIcon} {statusText}</div>
+              {entry && <div className="text-sw-sub text-xs mb-3">{entry.itemCount} items counted</div>}
+              {c ? (
+                <Button variant="secondary" onClick={() => setViewing(c)} className="w-full">View</Button>
+              ) : (
+                <div className="text-sw-sub text-xs italic">Waiting on employee</div>
+              )}
             </div>
           );
         })}
@@ -867,165 +604,233 @@ function CombinedOrderSheet({ supabase, stores, departments, counts }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Catalog manager (owner)
-// ─────────────────────────────────────────────────────────────
-function CatalogManager({ supabase, departments, catalog, profile, onChanged }) {
-  const [activeDept, setActiveDept] = useState(departments[0]?.id || null);
-  const [editItem, setEditItem] = useState(null);
-  const [search, setSearch] = useState('');
-  const [pendingCustoms, setPendingCustoms] = useState([]);
+// ═══════════════════════════════════════════════════════════════
+// OWNER: single-count viewer (smart order sheet)
+// ═══════════════════════════════════════════════════════════════
+function OwnerCountView({ supabase, count, store, departments, onBack }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState('order'); // 'order' | 'full'
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('inventory_count_items')
-        .select('*')
-        .eq('is_custom', true)
-        .is('product_id', null)
-        .limit(200);
-      setPendingCustoms(data || []);
+      const { data } = await supabase.from('inventory_count_items').select('*').eq('count_id', count.id).order('created_at');
+      setItems(data || []);
+      setLoading(false);
     })();
-  }, [catalog]);
+  }, [supabase, count.id]);
 
-  const list = useMemo(() => {
-    let l = catalog;
-    if (activeDept) l = l.filter(p => p.department_id === activeDept);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      l = l.filter(p => productLabel(p).toLowerCase().includes(q));
-    }
-    return l;
-  }, [catalog, activeDept, search]);
+  const orderItems = items.filter(i => num(i.need_to_order) > 0);
 
-  const save = async (data) => {
-    const payload = {
-      department_id: data.department_id,
-      brand: data.brand?.trim() || null,
-      name: data.name?.trim(),
-      flavor: data.flavor?.trim() || null,
-      size: data.size?.trim() || null,
-      is_active: data.is_active ?? true,
-    };
-    if (data.id) {
-      await supabase.from('product_catalog').update(payload).eq('id', data.id);
-    } else {
-      await supabase.from('product_catalog').insert({ ...payload, created_by: profile?.id });
-    }
-    setEditItem(null);
-    onChanged();
+  const grouped = useMemo(() => {
+    const src = mode === 'order' ? orderItems : items;
+    const g = {};
+    for (const d of departments) g[d.id] = { dept: d, rows: [] };
+    src.forEach(it => { if (g[it.department_id]) g[it.department_id].rows.push(it); });
+    return Object.values(g).filter(x => x.rows.length > 0);
+  }, [items, orderItems, departments, mode]);
+
+  const exportCSV = () => {
+    const rows = [['Department', 'Brand', 'Flavor', 'Stock', 'Order', 'Notes']];
+    grouped.forEach(({ dept, rows: rs }) => {
+      rs.forEach(it => rows.push([dept.name, it.brand, it.flavor || '', it.in_stock, it.need_to_order, it.notes || '']));
+    });
+    const fname = `order-${store?.name || 'store'}-${count.count_date}.csv`;
+    downloadCSV(fname, rows[0], rows.slice(1));
   };
 
-  const deactivate = async (id) => {
-    await supabase.from('product_catalog').update({ is_active: false }).eq('id', id);
-    onChanged();
+  const markOrdered = async () => {
+    setBusy(true);
+    try {
+      await supabase.from('inventory_counts').update({ status: 'ordered' }).eq('id', count.id);
+      onBack();
+    } finally { setBusy(false); }
   };
 
-  const approvePending = async (row) => {
-    const payload = {
-      department_id: row.department_id,
-      brand: row.brand || null,
-      name: row.name,
-      flavor: row.flavor || null,
-      size: row.size || null,
-      is_active: true,
-      created_by: profile?.id,
-    };
-    const { data } = await supabase.from('product_catalog').insert(payload).select().single();
-    if (data) {
-      await supabase.from('inventory_count_items')
-        .update({ product_id: data.id, is_custom: false }).eq('id', row.id);
-    }
-    setPendingCustoms(prev => prev.filter(p => p.id !== row.id));
-    onChanged();
-  };
-
-  const rejectPending = (row) => {
-    setPendingCustoms(prev => prev.filter(p => p.id !== row.id));
-  };
+  if (loading) return <Loading />;
 
   return (
     <div>
-      {pendingCustoms.length > 0 && (
-        <div className="bg-sw-amberD border border-sw-amber/30 rounded-xl p-3 mb-3">
-          <div className="text-sw-amber text-[11px] font-bold uppercase mb-2">
-            {pendingCustoms.length} custom product{pendingCustoms.length > 1 ? 's' : ''} awaiting review
-          </div>
-          <div className="space-y-1.5">
-            {pendingCustoms.map(row => (
-              <div key={row.id} className="flex items-center justify-between gap-2 bg-sw-card2 rounded-md p-2">
-                <div className="text-sw-text text-[12px] font-semibold flex-1">{productLabel(row)}</div>
-                <button onClick={() => approvePending(row)} className="text-sw-green text-[11px] font-bold px-2">Approve</button>
-                <button onClick={() => rejectPending(row)} className="text-sw-red text-[11px] font-bold px-2">Dismiss</button>
-              </div>
-            ))}
-          </div>
-        </div>
+      <PageHeader
+        title={`${mode === 'order' ? 'Order Sheet' : 'Full Count'} — ${store?.name || ''}`}
+        subtitle={`${fmtDate(count.count_date)} · ${count.status}`}
+      >
+        <Button variant="secondary" onClick={onBack}>← Back</Button>
+      </PageHeader>
+
+      <div className="flex gap-2 mb-4">
+        <Button variant={mode === 'order' ? 'primary' : 'secondary'} onClick={() => setMode('order')}>
+          Order Sheet ({orderItems.length})
+        </Button>
+        <Button variant={mode === 'full' ? 'primary' : 'secondary'} onClick={() => setMode('full')}>
+          Full Count ({items.length})
+        </Button>
+      </div>
+
+      {grouped.length === 0 && (
+        <EmptyState icon="📭" title={mode === 'order' ? 'Nothing to order' : 'No items'} message={mode === 'order' ? 'All stock levels look good.' : undefined} />
       )}
 
-      <div className="flex gap-1.5 mb-3 overflow-x-auto">
-        {departments.map(d => (
-          <button key={d.id} onClick={() => setActiveDept(d.id)}
-            className={`px-3 py-2 rounded-lg text-[12px] font-bold whitespace-nowrap ${
-              activeDept === d.id ? 'bg-sw-blueD text-sw-blue border border-sw-blue/30' : 'bg-sw-card2 text-sw-sub border border-sw-border'
-            }`}>
-            {DEPT_ICONS[d.name] || '📦'} {d.name}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex gap-2 mb-3">
-        <input type="search" placeholder="Search catalog…" value={search}
-          onChange={e => setSearch(e.target.value)} className="flex-1" />
-        <Button onClick={() => setEditItem({ department_id: activeDept, is_active: true })}>+ Add</Button>
-      </div>
-
-      <div className="bg-sw-card border border-sw-border rounded-xl divide-y divide-sw-border">
-        {list.length === 0 && <div className="p-6 text-center text-sw-sub text-[12px]">No products</div>}
-        {list.map(p => (
-          <div key={p.id} className="flex items-center justify-between gap-2 p-3">
-            <div className="text-sw-text text-[12px] font-semibold flex-1">{productLabel(p)}</div>
-            <button onClick={() => setEditItem(p)} className="text-sw-blue text-[11px] font-bold px-2">Edit</button>
-            <button onClick={() => deactivate(p.id)} className="text-sw-red text-[11px] font-bold px-2">Deactivate</button>
+      {grouped.map(({ dept, rows }) => (
+        <div key={dept.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-4">
+          <div className="text-sw-text font-bold text-sm mb-3">
+            {DEPT_ICONS[dept.name] || '📦'} {dept.name.toUpperCase()} ({rows.length} {mode === 'order' ? 'to order' : 'items'})
           </div>
-        ))}
-      </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-sw-sub text-[10px] uppercase tracking-wider text-left border-b border-sw-border">
+                  <th className="py-2 pr-2">Brand</th>
+                  <th className="py-2 pr-2">Flavor</th>
+                  <th className="py-2 pr-2 text-right">Stock</th>
+                  <th className="py-2 pr-2 text-right">Order</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(it => (
+                  <tr key={it.id} className="border-b border-sw-border/50">
+                    <td className="py-2 pr-2 text-sw-text font-semibold">{it.brand}</td>
+                    <td className="py-2 pr-2 text-sw-sub">{it.flavor}</td>
+                    <td className="py-2 pr-2 text-right text-sw-text">{it.in_stock}</td>
+                    <td className="py-2 pr-2 text-right text-sw-amber font-bold">{it.need_to_order || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
 
-      {editItem && (
-        <ProductEditModal departments={departments} item={editItem}
-          onClose={() => setEditItem(null)} onSave={save} />
+      {grouped.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Button onClick={exportCSV}>⬇ Download CSV</Button>
+          {mode === 'order' && count.status !== 'ordered' && (
+            <Button variant="success" onClick={markOrdered} disabled={busy}>Mark as Ordered</Button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function ProductEditModal({ departments, item, onClose, onSave }) {
-  const [form, setForm] = useState({
-    id: item.id,
-    department_id: item.department_id || departments[0]?.id,
-    brand: item.brand || '',
-    name: item.name || '',
-    flavor: item.flavor || '',
-    size: item.size || '',
-    is_active: item.is_active ?? true,
-  });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+// ═══════════════════════════════════════════════════════════════
+// COMBINED ORDER SHEET (across all stores)
+// ═══════════════════════════════════════════════════════════════
+function CombinedOrderView({ supabase, stores, departments, onBack }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      // latest submitted count per store
+      const { data: counts } = await supabase
+        .from('inventory_counts')
+        .select('*')
+        .eq('status', 'submitted')
+        .order('count_date', { ascending: false });
+
+      const latest = {};
+      for (const c of counts || []) if (!latest[c.store_id]) latest[c.store_id] = c;
+      const ids = Object.values(latest).map(c => c.id);
+
+      if (ids.length === 0) { setRows([]); setLoading(false); return; }
+
+      const { data: items } = await supabase
+        .from('inventory_count_items')
+        .select('*')
+        .in('count_id', ids)
+        .gt('need_to_order', 0);
+
+      // group by dept|brand|flavor
+      const key = (it) => `${it.department_id}||${(it.brand || '').trim().toLowerCase()}||${(it.flavor || '').trim().toLowerCase()}`;
+      const map = {};
+      const storeById = {};
+      Object.entries(latest).forEach(([sid, c]) => { storeById[c.id] = stores.find(s => s.id === sid); });
+
+      (items || []).forEach(it => {
+        const k = key(it);
+        if (!map[k]) {
+          map[k] = {
+            department_id: it.department_id,
+            brand: it.brand,
+            flavor: it.flavor || '',
+            byStore: {},
+            total: 0,
+          };
+        }
+        const storeName = storeById[it.count_id]?.name || '?';
+        map[k].byStore[storeName] = (map[k].byStore[storeName] || 0) + num(it.need_to_order);
+        map[k].total += num(it.need_to_order);
+      });
+
+      setRows(Object.values(map));
+      setLoading(false);
+    })();
+  }, [supabase, stores]);
+
+  const grouped = useMemo(() => {
+    const g = {};
+    for (const d of departments) g[d.id] = { dept: d, rows: [] };
+    rows.forEach(r => { if (g[r.department_id]) g[r.department_id].rows.push(r); });
+    return Object.values(g).filter(x => x.rows.length > 0);
+  }, [rows, departments]);
+
+  const exportCSV = () => {
+    const header = ['Department', 'Brand', 'Flavor', 'Total', ...stores.map(s => s.name)];
+    const out = [];
+    grouped.forEach(({ dept, rows: rs }) => {
+      rs.forEach(r => {
+        out.push([dept.name, r.brand, r.flavor, r.total, ...stores.map(s => r.byStore[s.name] || 0)]);
+      });
+    });
+    downloadCSV(`combined-order-${today()}.csv`, header, out);
+  };
+
+  if (loading) return <Loading />;
 
   return (
-    <Modal title={item.id ? 'Edit Product' : 'Add Product'} onClose={onClose}>
-      <Field label="Department">
-        <select value={form.department_id || ''} onChange={e => set('department_id', e.target.value)} className="w-full">
-          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </Field>
-      <Field label="Brand"><input value={form.brand} onChange={e => set('brand', e.target.value)} /></Field>
-      <Field label="Product Name *"><input value={form.name} onChange={e => set('name', e.target.value)} /></Field>
-      <Field label="Flavor"><input value={form.flavor} onChange={e => set('flavor', e.target.value)} /></Field>
-      <Field label="Size"><input value={form.size} onChange={e => set('size', e.target.value)} /></Field>
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => form.name?.trim() && onSave(form)}>Save</Button>
-      </div>
-    </Modal>
+    <div>
+      <PageHeader title="Combined Order Sheet" subtitle="All submitted counts totaled across stores">
+        <Button variant="secondary" onClick={onBack}>← Back</Button>
+      </PageHeader>
+
+      {grouped.length === 0 ? (
+        <EmptyState icon="📭" title="No pending orders" message="No stores have items marked to order." />
+      ) : (
+        <>
+          {grouped.map(({ dept, rows: rs }) => (
+            <div key={dept.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-4">
+              <div className="text-sw-text font-bold text-sm mb-3">{DEPT_ICONS[dept.name] || '📦'} {dept.name.toUpperCase()}</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-sw-sub text-[10px] uppercase tracking-wider text-left border-b border-sw-border">
+                      <th className="py-2 pr-2">Brand</th>
+                      <th className="py-2 pr-2">Flavor</th>
+                      {stores.map(s => <th key={s.id} className="py-2 pr-2 text-right">{s.name}</th>)}
+                      <th className="py-2 pr-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rs.map((r, i) => (
+                      <tr key={i} className="border-b border-sw-border/50">
+                        <td className="py-2 pr-2 text-sw-text font-semibold">{r.brand}</td>
+                        <td className="py-2 pr-2 text-sw-sub">{r.flavor}</td>
+                        {stores.map(s => (
+                          <td key={s.id} className="py-2 pr-2 text-right text-sw-text">{r.byStore[s.name] || '—'}</td>
+                        ))}
+                        <td className="py-2 pr-2 text-right text-sw-blue font-bold">{r.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          <Button onClick={exportCSV}>⬇ Download Combined CSV</Button>
+        </>
+      )}
+    </div>
   );
 }
