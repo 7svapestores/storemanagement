@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '@/components/AuthProvider';
 import { PageHeader, Loading, Alert, Button, Field, ConfirmModal, EmptyState, StoreBadge } from '@/components/UI';
 import { today, downloadCSV } from '@/lib/utils';
@@ -42,19 +43,29 @@ export default function InventoryPage() {
   if (loading) return <Loading />;
   if (loadError) return <Alert type="error">{loadError}</Alert>;
 
-  if (isEmployee) {
-    return <EmployeeView supabase={supabase} profile={profile} storeId={effectiveStoreId} stores={stores} departments={departments} />;
+  // Both owner and employee see the count form when a specific store is active.
+  // Owner with "All Stores" (effectiveStoreId = null) sees the summary view.
+  if (effectiveStoreId) {
+    return <CountView
+      supabase={supabase}
+      profile={profile}
+      isOwner={isOwner}
+      storeId={effectiveStoreId}
+      stores={stores}
+      departments={departments}
+    />;
   }
   return <OwnerView supabase={supabase} stores={stores} departments={departments} />;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EMPLOYEE VIEW
+// COUNT VIEW (used by both owner and employee when a store is active)
 // ═══════════════════════════════════════════════════════════════
-function EmployeeView({ supabase, profile, storeId, stores, departments }) {
+function CountView({ supabase, profile, isOwner, storeId, stores, departments }) {
   const store = stores.find(s => s.id === storeId);
   const [count, setCount] = useState(null);
   const [items, setItems] = useState([]);
+  const [profileMap, setProfileMap] = useState({}); // id -> { name, role }
   const [activeDeptId, setActiveDeptId] = useState(departments[0]?.id || null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -78,15 +89,34 @@ function EmployeeView({ supabase, profile, storeId, stores, departments }) {
         .maybeSingle();
       setCount(existing || null);
 
+      let itemRows = [];
       if (existing) {
-        const { data: itemRows } = await supabase
+        const res = await supabase
           .from('inventory_count_items')
           .select('*')
           .eq('count_id', existing.id)
           .order('created_at', { ascending: true });
-        setItems(itemRows || []);
+        itemRows = res.data || [];
+        setItems(itemRows);
       } else {
         setItems([]);
+      }
+
+      // Fetch profiles referenced by this count + items for "added by" labels.
+      const ids = new Set();
+      if (existing?.created_by) ids.add(existing.created_by);
+      if (existing?.submitted_by) ids.add(existing.submitted_by);
+      itemRows.forEach(r => { if (r.created_by) ids.add(r.created_by); });
+      if (ids.size > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, name, role')
+          .in('id', Array.from(ids));
+        const map = {};
+        (profs || []).forEach(p => { map[p.id] = p; });
+        setProfileMap(map);
+      } else {
+        setProfileMap({});
       }
 
       const { data: past } = await supabase
@@ -137,11 +167,15 @@ function EmployeeView({ supabase, profile, storeId, stores, departments }) {
           need_to_order: num(form.need_to_order),
           notes: form.notes?.trim() || null,
           is_custom: true,
+          created_by: profile?.id,
         })
         .select()
         .single();
       if (error) throw error;
       setItems(prev => [...prev, data]);
+      if (profile?.id && !profileMap[profile.id]) {
+        setProfileMap(m => ({ ...m, [profile.id]: { id: profile.id, name: profile.name, role: profile.role } }));
+      }
     } catch (e) { setErr(e?.message || 'Failed to add'); }
     setBusy(false);
   };
@@ -201,12 +235,24 @@ function EmployeeView({ supabase, profile, storeId, stores, departments }) {
   const activeDept = departments.find(d => d.id === activeDeptId);
   const itemsByDept = (deptId) => items.filter(it => it.department_id === deptId);
 
+  const lastItem = items.length > 0 ? items[items.length - 1] : null;
+  const lastTs = count?.submitted_at || lastItem?.created_at || count?.created_at;
+
   return (
     <div>
       <PageHeader
         title="Inventory Count"
         subtitle={<span className="flex items-center gap-2">{store && <StoreBadge name={store.name} color={store.color} />}<span>· {fmtDate(todayStr)}</span></span>}
-      />
+      >
+        <Button variant="secondary" onClick={loadTodayCount} disabled={busy}>↻ Refresh</Button>
+      </PageHeader>
+
+      {count && lastTs && (
+        <div className="text-[11px] text-sw-sub mb-2">
+          Last updated {new Date(lastTs).toLocaleString()}
+          {isOwner && <span className="ml-2 italic">(viewing as owner — edits allowed)</span>}
+        </div>
+      )}
 
       {err && <Alert type="error">{err}</Alert>}
       {msg && <Alert type="success">{msg}</Alert>}
@@ -254,6 +300,7 @@ function EmployeeView({ supabase, profile, storeId, stores, departments }) {
               onDelete={deleteItem}
               busy={busy}
               readonly={submitted}
+              profileMap={profileMap}
             />
           )}
 
@@ -304,7 +351,7 @@ function EmployeeView({ supabase, profile, storeId, stores, departments }) {
 // ═══════════════════════════════════════════════════════════════
 // DEPARTMENT PANEL (add + list items)
 // ═══════════════════════════════════════════════════════════════
-function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly }) {
+function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, profileMap = {} }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -359,6 +406,12 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly }) {
                   )}
                 </div>
                 {it.notes && <div className="text-[11px] text-sw-sub mt-1 italic">{it.notes}</div>}
+                {it.created_by && profileMap[it.created_by] && (
+                  <div className="text-[10px] text-sw-sub mt-1">
+                    added by {profileMap[it.created_by].name || 'Unknown'}
+                    {profileMap[it.created_by].role && <span className="opacity-70"> ({profileMap[it.created_by].role})</span>}
+                  </div>
+                )}
               </button>
               {!readonly && (
                 <button
@@ -640,6 +693,25 @@ function OwnerCountView({ supabase, count, store, departments, onBack }) {
     downloadCSV(fname, rows[0], rows.slice(1));
   };
 
+  const exportXLSX = () => {
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [`Order Sheet — ${store?.name || ''}`],
+      [`Date: ${count.count_date}   Status: ${count.status}`],
+      [],
+    ];
+    grouped.forEach(({ dept, rows: rs }) => {
+      aoa.push([`${dept.name.toUpperCase()} (${rs.length} ${mode === 'order' ? 'to order' : 'items'})`]);
+      aoa.push(['Brand', 'Flavor', 'Stock', 'Order', 'Notes']);
+      rs.forEach(it => aoa.push([it.brand, it.flavor || '', num(it.in_stock), num(it.need_to_order), it.notes || '']));
+      aoa.push([]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 8 }, { wch: 8 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Order Sheet');
+    XLSX.writeFile(wb, `order-${store?.name || 'store'}-${count.count_date}.xlsx`);
+  };
+
   const markOrdered = async () => {
     setBusy(true);
     try {
@@ -704,7 +776,8 @@ function OwnerCountView({ supabase, count, store, departments, onBack }) {
 
       {grouped.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4">
-          <Button onClick={exportCSV}>⬇ Download CSV</Button>
+          <Button onClick={exportXLSX}>⬇ Download Excel</Button>
+          <Button variant="secondary" onClick={exportCSV}>⬇ CSV</Button>
           {mode === 'order' && count.status !== 'ordered' && (
             <Button variant="success" onClick={markOrdered} disabled={busy}>Mark as Ordered</Button>
           )}
@@ -787,6 +860,32 @@ function CombinedOrderView({ supabase, stores, departments, onBack }) {
     downloadCSV(`combined-order-${today()}.csv`, header, out);
   };
 
+  const exportXLSX = () => {
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      ['Combined Order Sheet'],
+      [`Generated: ${today()}`],
+      [],
+    ];
+    grouped.forEach(({ dept, rows: rs }) => {
+      aoa.push([dept.name.toUpperCase()]);
+      aoa.push(['Brand', 'Flavor', ...stores.map(s => s.name), 'TOTAL']);
+      rs.forEach(r => {
+        aoa.push([
+          r.brand,
+          r.flavor,
+          ...stores.map(s => r.byStore[s.name] || 0),
+          r.total,
+        ]);
+      });
+      aoa.push([]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 26 }, { wch: 22 }, ...stores.map(() => ({ wch: 12 })), { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Combined Order');
+    XLSX.writeFile(wb, `combined-order-${today()}.xlsx`);
+  };
+
   if (loading) return <Loading />;
 
   return (
@@ -828,7 +927,10 @@ function CombinedOrderView({ supabase, stores, departments, onBack }) {
               </div>
             </div>
           ))}
-          <Button onClick={exportCSV}>⬇ Download Combined CSV</Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={exportXLSX}>⬇ Download Combined Excel</Button>
+            <Button variant="secondary" onClick={exportCSV}>⬇ CSV</Button>
+          </div>
         </>
       )}
     </div>
