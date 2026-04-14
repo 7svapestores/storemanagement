@@ -166,7 +166,6 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
           in_stock: num(form.in_stock),
           need_to_order: num(form.need_to_order),
           notes: form.notes?.trim() || null,
-          is_custom: true,
           created_by: profile?.id,
         })
         .select()
