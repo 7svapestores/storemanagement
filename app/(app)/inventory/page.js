@@ -160,6 +160,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
         .from('inventory_count_items')
         .insert({
           count_id: c.id,
+          department: dept.name,
           department_id: dept.id,
           brand: form.brand.trim(),
           flavor: form.flavor.trim(),
@@ -167,6 +168,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
           need_to_order: num(form.need_to_order),
           notes: form.notes?.trim() || null,
           created_by: profile?.id,
+          created_by_name: profile?.name || null,
         })
         .select()
         .single();
