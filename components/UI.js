@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fmt, fK, weekLabel, getDateRange } from '@/lib/utils';
 
 // ── Stat Card ───────────────────────────────────────────────
@@ -91,15 +91,53 @@ export function DatePresets({ active, onChange }) {
 }
 
 // ── Date Filter Bar ─────────────────────────────────────────
+// Native <input type="date"> fires onChange on every keystroke / month nav,
+// which can briefly produce nonsense dates (like the 1st of a month the user
+// is just navigating through) and trigger a refetch. We hold a local copy of
+// the value and debounce the upstream callback by 500ms, so the page only
+// refilters once the user has stopped typing/picking. Preset buttons bypass
+// the debounce and apply immediately.
 export function DateBar({ preset, onPreset, startDate, endDate, onStartChange, onEndChange }) {
+  const [localStart, setLocalStart] = useState(startDate);
+  const [localEnd, setLocalEnd] = useState(endDate);
+  const startTimer = useRef(null);
+  const endTimer = useRef(null);
+
+  // Reflect upstream changes (preset clicks, hook init) into the inputs.
+  useEffect(() => { setLocalStart(startDate); }, [startDate]);
+  useEffect(() => { setLocalEnd(endDate); }, [endDate]);
+  useEffect(() => () => {
+    if (startTimer.current) clearTimeout(startTimer.current);
+    if (endTimer.current) clearTimeout(endTimer.current);
+  }, []);
+
+  const handleStart = (val) => {
+    setLocalStart(val);
+    if (startTimer.current) clearTimeout(startTimer.current);
+    startTimer.current = setTimeout(() => onStartChange(val), 500);
+  };
+  const handleEnd = (val) => {
+    setLocalEnd(val);
+    if (endTimer.current) clearTimeout(endTimer.current);
+    endTimer.current = setTimeout(() => onEndChange(val), 500);
+  };
+  const flushStart = () => {
+    if (startTimer.current) { clearTimeout(startTimer.current); startTimer.current = null; }
+    if (localStart !== startDate) onStartChange(localStart);
+  };
+  const flushEnd = () => {
+    if (endTimer.current) { clearTimeout(endTimer.current); endTimer.current = null; }
+    if (localEnd !== endDate) onEndChange(localEnd);
+  };
+
   return (
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
         <DatePresets active={preset} onChange={onPreset} />
         <div className="flex gap-1.5 items-center w-full md:w-auto">
-          <input type="date" value={startDate} onChange={e => onStartChange(e.target.value)} className="!flex-1 md:!w-[130px] md:!flex-none" />
+          <input type="date" value={localStart} onChange={e => handleStart(e.target.value)} onBlur={flushStart} className="!flex-1 md:!w-[130px] md:!flex-none" />
           <span className="text-sw-dim text-xs">→</span>
-          <input type="date" value={endDate} onChange={e => onEndChange(e.target.value)} className="!flex-1 md:!w-[130px] md:!flex-none" />
+          <input type="date" value={localEnd} onChange={e => handleEnd(e.target.value)} onBlur={flushEnd} className="!flex-1 md:!w-[130px] md:!flex-none" />
         </div>
       </div>
     </div>
