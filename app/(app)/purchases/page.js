@@ -21,6 +21,7 @@ export default function PurchasesPage() {
   const [editItem, setEditItem] = useState(null);
   const [vendorFilter, setVendorFilter] = useState('');
   const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
+  const [formStoreId, setFormStoreId] = useState('');
   const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
 
   useEffect(() => {
@@ -95,7 +96,7 @@ export default function PurchasesPage() {
     const amount = parseFloat(form.amount) || 0;
     const vendor = vendors.find(v => v.id === form.vendor_id);
 
-    if (!pageStoreId) { alert('Select a store first.'); return; }
+    if (!formStoreId) { alert('Select a store first.'); return; }
     if (!form.vendor_id) { alert('Select a vendor'); return; }
     if (amount <= 0) { alert('Total amount must be greater than 0'); return; }
 
@@ -120,7 +121,7 @@ export default function PurchasesPage() {
     // Simplified form: item = vendor name, quantity = 1, unit_cost = amount
     // (kept this shape for backward compat with the purchases table schema).
     const payload = {
-      store_id: pageStoreId,
+      store_id: formStoreId,
       week_of: form.week_of,
       item: effectiveVendor?.name || 'Purchase',
       quantity: 1,
@@ -138,7 +139,7 @@ export default function PurchasesPage() {
     const inserted = result.data;
     const error = result.error;
     if (error) { setUploading(false); alert(error.message); return; }
-    const storeName = stores.find(s => s.id === pageStoreId)?.name;
+    const storeName = stores.find(s => s.id === formStoreId)?.name;
 
     // Optional invoice image upload — links to the purchase row we just inserted.
     if (invoiceFile) {
@@ -150,7 +151,7 @@ export default function PurchasesPage() {
           date: form.week_of,
         });
         const { error: invErr } = await supabase.from('invoices').insert({
-          store_id: pageStoreId,
+          store_id: formStoreId,
           vendor_id: effectiveVendorId === '__other__' ? null : effectiveVendorId,
           vendor_name: effectiveVendor?.name || 'unknown',
           purchase_id: inserted?.id,
@@ -240,6 +241,7 @@ export default function PurchasesPage() {
     if (!hasStore) { setShowStorePicker(true); return; }
     setEditItem(null);
     setForm(blankForm());
+    setFormStoreId(pageStoreId || '');
     setInvoiceFile(null);
     setInvoicePreview(null);
     setModal(true);
@@ -253,6 +255,7 @@ export default function PurchasesPage() {
       vendor_id: row.vendor_id || vendors.find(v => v.name === row.supplier)?.id || '',
       notes: row.notes || '',
     });
+    setFormStoreId(row.store_id || pageStoreId || '');
     setInvoiceFile(null);
     setInvoicePreview(null);
     setModal(true);
@@ -382,9 +385,12 @@ export default function PurchasesPage() {
       )}
     </div>
     {modal && <Modal title={editItem ? 'Edit Purchase' : 'Log Purchase'} onClose={() => { setModal(false); setEditItem(null); }}>
-      <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
-        Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
-      </div>
+      <Field label="Store">
+        <select value={formStoreId} onChange={e => setFormStoreId(e.target.value)}>
+          <option value="">Select store…</option>
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </Field>
 
       <Field label="Date"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
 
