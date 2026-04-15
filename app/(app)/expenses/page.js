@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, StoreRequiredModal } from '@/components/UI';
-import { fmt, monthLabel, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
+import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 
 const now0 = new Date();
@@ -26,12 +26,13 @@ export default function ExpensesPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const [form, setForm] = useState({ store_id: '', month: curMonth, category: 'power', amount: '', note: '' });
+  const [form, setForm] = useState({ store_id: '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
   const [errors, setErrors] = useState({});
 
   // Monthly template state
   const [tplOpen, setTplOpen] = useState(false);
   const [tplMonth, setTplMonth] = useState(curMonth);
+  const [tplDate, setTplDate] = useState(today());
   const [tplData, setTplData] = useState({});     // { `${storeId}:${fixedCategoryId}`: amount-string }
   const [tplCustom, setTplCustom] = useState({}); // { storeId: [{ id, origId?, name, amount }] }
   const [tplDeleted, setTplDeleted] = useState([]); // DB ids of custom rows to delete on save
@@ -68,8 +69,9 @@ export default function ExpensesPage() {
   // ── Single-expense form validation ──────────────────────────
   const validate = (f) => {
     const e = {};
-    if (!f.month) e.month = 'Month is required';
+    if (!f.date) e.date = 'Date is required';
     if (!f.category) e.category = 'Category is required';
+    if (f.category === '__other__' && !(f.customCategory || '').trim()) e.customCategory = 'Enter a name for the expense';
     const amt = parseFloat(f.amount);
     if (f.amount === '' || isNaN(amt)) e.amount = 'Amount is required';
     else if (amt <= 0) e.amount = 'Amount must be greater than 0';
@@ -84,10 +86,12 @@ export default function ExpensesPage() {
     setMsg('');
     try {
       const amount = parseFloat(form.amount);
+      const category = form.category === '__other__' ? form.customCategory.trim() : form.category;
+      const monthKey = (form.date || '').slice(0, 7);
       const payload = {
         store_id: form.store_id,
-        month: form.month,
-        category: form.category,
+        month: monthKey,
+        category,
         amount,
         note: (form.note || '').trim(),
       };
@@ -98,11 +102,11 @@ export default function ExpensesPage() {
         action: 'create',
         entityType: 'expense',
         entityId: inserted?.id,
-        description: `${profile?.name} added expense ${catLabel(form.category)?.label || form.category} of ${fmtMoney(amount)} for ${storeName} (${form.month})`,
+        description: `${profile?.name} added expense ${catLabel(category)?.label || category} of ${fmtMoney(amount)} for ${storeName} (${form.date})`,
         storeName,
       });
       setModal(false);
-      setForm({ store_id: stores[0]?.id || '', month: curMonth, category: 'power', amount: '', note: '' });
+      setForm({ store_id: stores[0]?.id || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
       setErrors({});
       setMsg('success');
       setTimeout(() => setMsg(''), 2500);
@@ -201,8 +205,11 @@ export default function ExpensesPage() {
 
   const openTemplate = () => {
     setTplOpen(true);
-    setTplMonth(curMonth);
-    prefillTemplate(curMonth);
+    const d = today();
+    setTplDate(d);
+    const m = d.slice(0, 7);
+    setTplMonth(m);
+    prefillTemplate(m);
   };
 
   useEffect(() => {
@@ -398,14 +405,25 @@ export default function ExpensesPage() {
           <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
             Store: <span className="text-sw-text font-semibold">{selectedStoreName || '—'}</span>
           </div>
-          <Field label="Month">
-            <input type="month" value={form.month} onChange={e => setForm({...form, month: e.target.value})} className={errors.month ? '!border-sw-red' : ''} />
-            {errors.month && <p className="text-sw-red text-[11px] mt-1">{errors.month}</p>}
+          <Field label="Date">
+            <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className={errors.date ? '!border-sw-red' : ''} />
+            {errors.date && <p className="text-sw-red text-[11px] mt-1">{errors.date}</p>}
           </Field>
           <Field label="Category">
             <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className={errors.category ? '!border-sw-red' : ''}>
               {EXPENSE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+              <option value="__other__">✨ Other (custom)</option>
             </select>
+            {form.category === '__other__' && (
+              <input
+                type="text"
+                className={`mt-2 ${errors.customCategory ? '!border-sw-red' : ''}`}
+                placeholder="What is this expense? (e.g. Camera repair)"
+                value={form.customCategory}
+                onChange={e => setForm({...form, customCategory: e.target.value})}
+              />
+            )}
+            {errors.customCategory && <p className="text-sw-red text-[11px] mt-1">{errors.customCategory}</p>}
           </Field>
           <Field label="Amount">
             <input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount}
@@ -427,8 +445,17 @@ export default function ExpensesPage() {
       {tplOpen && (
         <Modal title="Fill Monthly Expenses" onClose={() => setTplOpen(false)} wide>
           <div className="mb-3 flex items-center gap-2 flex-wrap">
-            <label className="text-sw-sub text-[11px] font-bold uppercase">Month</label>
-            <input type="month" value={tplMonth} onChange={e => setTplMonth(e.target.value)} className="!w-auto md:!w-[160px]" />
+            <label className="text-sw-sub text-[11px] font-bold uppercase">Date</label>
+            <input
+              type="date"
+              value={tplDate}
+              onChange={e => {
+                const v = e.target.value;
+                setTplDate(v);
+                if (v) setTplMonth(v.slice(0, 7));
+              }}
+              className="!w-auto md:!w-[180px]"
+            />
             <span className="text-sw-dim text-[11px]">Blank rows are skipped. Custom expenses below each store support unique items.</span>
           </div>
 
