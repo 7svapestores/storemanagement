@@ -107,15 +107,32 @@ export function DateBar({ preset, onPreset, startDate, endDate, onStartChange, o
 }
 
 // ── useDateRange hook ───────────────────────────────────────
+// Behavior:
+//   - Selecting a preset sets both dates from the preset definition.
+//   - Manually editing start or end switches to 'custom' mode and only
+//     mutates the field the user touched. The other field is seeded from
+//     whatever the preset was showing, so users never see a blank input.
+//   - In 'custom' mode no preset button is highlighted.
 export function useDateRange(defaultPreset = 'last30') {
   const [preset, setPreset] = useState(defaultPreset);
-  const [custom, setCustom] = useState({ start: '', end: '' });
+  const [custom, setCustom] = useState(() => getDateRange(defaultPreset));
 
   const range = preset === 'custom' ? custom : getDateRange(preset);
 
-  const selectPreset = (p) => setPreset(p);
-  const setStart = (s) => { setPreset('custom'); setCustom(prev => ({ ...prev, start: s })); };
-  const setEnd = (e) => { setPreset('custom'); setCustom(prev => ({ ...prev, end: e })); };
+  const selectPreset = (p) => {
+    setPreset(p);
+    if (p !== 'custom') setCustom(getDateRange(p));
+  };
+  const setStart = (s) => {
+    const base = preset === 'custom' ? custom : getDateRange(preset);
+    setCustom({ start: s, end: base.end });
+    setPreset('custom');
+  };
+  const setEnd = (e) => {
+    const base = preset === 'custom' ? custom : getDateRange(preset);
+    setCustom({ start: base.start, end: e });
+    setPreset('custom');
+  };
 
   return { range, preset, selectPreset, setStart, setEnd };
 }
