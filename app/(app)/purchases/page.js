@@ -20,7 +20,12 @@ export default function PurchasesPage() {
   const [viewInvoice, setViewInvoice] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [vendorFilter, setVendorFilter] = useState('');
+  const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
   const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
+
+  useEffect(() => {
+    if (effectiveStoreId) setPageStoreId(effectiveStoreId);
+  }, [effectiveStoreId]);
 
   const blankForm = () => ({ week_of: today(), amount: '', vendor_id: vendors[0]?.id || '', notes: '' });
   const [newVendorName, setNewVendorName] = useState('');
@@ -59,7 +64,7 @@ export default function PurchasesPage() {
         .select('*, stores(name, color)')
         .gte('week_of', range.start).lte('week_of', range.end)
         .order('week_of', { ascending: false });
-      if (effectiveStoreId) q = q.eq('store_id', effectiveStoreId);
+      if (pageStoreId) q = q.eq('store_id', pageStoreId);
       const { data: p } = await q;
       setItems(p || []);
 
@@ -83,14 +88,14 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [range.start, range.end, effectiveStoreId]);
+  }, [range.start, range.end, pageStoreId]);
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
     const amount = parseFloat(form.amount) || 0;
     const vendor = vendors.find(v => v.id === form.vendor_id);
 
-    if (!effectiveStoreId) { alert('Select a store from the sidebar first.'); return; }
+    if (!pageStoreId) { alert('Select a store first.'); return; }
     if (!form.vendor_id) { alert('Select a vendor'); return; }
     if (amount <= 0) { alert('Total amount must be greater than 0'); return; }
 
@@ -115,7 +120,7 @@ export default function PurchasesPage() {
     // Simplified form: item = vendor name, quantity = 1, unit_cost = amount
     // (kept this shape for backward compat with the purchases table schema).
     const payload = {
-      store_id: effectiveStoreId,
+      store_id: pageStoreId,
       week_of: form.week_of,
       item: effectiveVendor?.name || 'Purchase',
       quantity: 1,
@@ -133,7 +138,7 @@ export default function PurchasesPage() {
     const inserted = result.data;
     const error = result.error;
     if (error) { setUploading(false); alert(error.message); return; }
-    const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+    const storeName = stores.find(s => s.id === pageStoreId)?.name;
 
     // Optional invoice image upload — links to the purchase row we just inserted.
     if (invoiceFile) {
@@ -145,7 +150,7 @@ export default function PurchasesPage() {
           date: form.week_of,
         });
         const { error: invErr } = await supabase.from('invoices').insert({
-          store_id: effectiveStoreId,
+          store_id: pageStoreId,
           vendor_id: effectiveVendorId === '__other__' ? null : effectiveVendorId,
           vendor_name: effectiveVendor?.name || 'unknown',
           purchase_id: inserted?.id,
@@ -228,8 +233,8 @@ export default function PurchasesPage() {
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
-  const hasStore = !!effectiveStoreId;
-  const storeName = stores.find(s => s.id === effectiveStoreId)?.name;
+  const hasStore = !!pageStoreId;
+  const storeName = stores.find(s => s.id === pageStoreId)?.name;
 
   const tryOpenAdd = () => {
     if (!hasStore) { setShowStorePicker(true); return; }
@@ -277,6 +282,17 @@ export default function PurchasesPage() {
         +
       </button>
     )}
+    <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
+      <select
+        value={pageStoreId}
+        onChange={e => setPageStoreId(e.target.value)}
+        className="!w-full sm:!w-auto sm:!min-w-[220px] !py-1.5 !text-[11px]"
+      >
+        <option value="">All Stores</option>
+        {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+    </div>
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Vendor filter */}
@@ -299,7 +315,7 @@ export default function PurchasesPage() {
         emptyMessage="No purchases yet. Tap + Add to log an invoice."
         columns={[
           { key: 'week_of', label: 'Date', render: v => weekLabel(v) },
-          ...(!effectiveStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
+          ...(!pageStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
           { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
           { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: (v, r) => {
             const inv = invoiceByPurchase[r.id];
