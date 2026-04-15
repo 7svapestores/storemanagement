@@ -23,6 +23,8 @@ export default function InvoicesPage() {
   const [storeFilter, setStoreFilter] = useState(effectiveStoreId || '');
   const [viewInvoice, setViewInvoice] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
 
   useEffect(() => {
     if (effectiveStoreId) setStoreFilter(effectiveStoreId);
@@ -76,7 +78,47 @@ export default function InvoicesPage() {
 
   const visible = invoices
     .filter(inv => !vendorFilter || (inv.vendor_name || 'Unknown') === vendorFilter)
-    .filter(inv => !search || (inv.notes || '').toLowerCase().includes(search.toLowerCase()));
+    .filter(inv => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      const haystack = [
+        (inv.vendor_name || '').toLowerCase(),
+        (inv.stores?.name || '').toLowerCase(),
+        String(inv.amount ?? ''),
+        (inv.notes || '').toLowerCase(),
+        inv.date || '',
+      ].join(' ');
+      return haystack.includes(q);
+    });
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const doBulkDelete = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) { setConfirmBulk(false); return; }
+    try {
+      const targets = invoices.filter(i => selected.has(i.id));
+      const paths = targets.map(t => t.image_path).filter(Boolean);
+      if (paths.length) {
+        const { error: rmErr } = await supabase.storage.from('invoices').remove(paths);
+        if (rmErr) console.warn('[invoices] bulk storage cleanup failed (non-fatal):', rmErr);
+      }
+      const { error } = await supabase.from('invoices').delete().in('id', ids);
+      if (error) throw error;
+      setSelected(new Set());
+      setConfirmBulk(false);
+      reload();
+    } catch (e) {
+      alert(`Bulk delete failed: ${e.message || e}`);
+      setConfirmBulk(false);
+    }
+  };
 
   const doDelete = async () => {
     const inv = confirmDelete;
@@ -122,11 +164,20 @@ export default function InvoicesPage() {
           {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
         </select>
         <input
-          placeholder="Search notes…"
+          type="text"
+          placeholder="Search invoices… (vendor, store, amount, notes)"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="!w-full sm:!w-[200px] !py-1.5 !text-[11px]"
+          className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
         />
+        {selected.size > 0 && (
+          <button
+            onClick={() => setConfirmBulk(true)}
+            className="text-sw-red text-[11px] font-bold border border-sw-red/40 rounded px-3 py-1.5 bg-sw-redD"
+          >
+            🗑 Delete Selected ({selected.size})
+          </button>
+        )}
       </div>
 
       {invoices.length === 0 ? (
@@ -174,8 +225,20 @@ export default function InvoicesPage() {
                 {visible.map(inv => (
                   <div
                     key={inv.id}
-                    className="relative bg-sw-card border border-sw-border rounded-lg overflow-hidden hover:border-sw-blue/40 transition-colors"
+                    className={`relative bg-sw-card border rounded-lg overflow-hidden transition-colors ${selected.has(inv.id) ? 'border-sw-blue ring-2 ring-sw-blue/40' : 'border-sw-border hover:border-sw-blue/40'}`}
                   >
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-md bg-sw-card2/90 border border-sw-border flex items-center justify-center cursor-pointer"
+                      title="Select"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(inv.id)}
+                        onChange={() => toggleSelect(inv.id)}
+                        className="!w-4 !h-4 !min-h-0 !p-0 !m-0"
+                      />
+                    </label>
                     <button
                       onClick={() => setViewInvoice(inv)}
                       className="block w-full text-left"
@@ -217,6 +280,15 @@ export default function InvoicesPage() {
           caption={`${viewInvoice.vendor_name} · ${utilDate(viewInvoice.date)} · ${viewInvoice.stores?.name || ''} · ${fmtMoney(viewInvoice.amount)}`}
           onClose={() => setViewInvoice(null)}
           downloadName={`invoice-${viewInvoice.vendor_name || 'purchase'}-${viewInvoice.date || ''}.jpg`}
+        />
+      )}
+
+      {confirmBulk && (
+        <ConfirmModal
+          title="Delete selected invoices?"
+          message={`Delete ${selected.size} selected invoice${selected.size === 1 ? '' : 's'}? This cannot be undone.`}
+          onCancel={() => setConfirmBulk(false)}
+          onConfirm={doBulkDelete}
         />
       )}
 

@@ -20,6 +20,7 @@ export default function PurchasesPage() {
   const [viewInvoice, setViewInvoice] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [vendorFilter, setVendorFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
   const [formStoreId, setFormStoreId] = useState('');
   const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
@@ -30,8 +31,11 @@ export default function PurchasesPage() {
 
   const blankForm = () => ({ week_of: today(), amount: '', vendor_id: vendors[0]?.id || '', notes: '' });
   const [newVendorName, setNewVendorName] = useState('');
-  const [invoiceFile, setInvoiceFile] = useState(null);
-  const [invoicePreview, setInvoicePreview] = useState(null);
+  // Multi-image upload: pending = newly selected files for current modal session
+  // existingInvoices = invoices already in the DB for the row being edited
+  const [pendingInvoices, setPendingInvoices] = useState([]); // [{ id, file, preview }]
+  const [existingInvoices, setExistingInvoices] = useState([]); // [{ id, image_url, image_path }]
+  const [confirmRemoveExisting, setConfirmRemoveExisting] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState('');
   const [formError, setFormError] = useState('');
@@ -76,10 +80,14 @@ export default function PurchasesPage() {
       if (purchaseIds.length) {
         const { data: invs } = await supabase
           .from('invoices')
-          .select('id, purchase_id, image_url, amount, vendor_name, date')
+          .select('id, purchase_id, image_url, image_path, amount, vendor_name, date')
           .in('purchase_id', purchaseIds);
         const map = {};
-        (invs || []).forEach(i => { if (i.purchase_id) map[i.purchase_id] = i; });
+        (invs || []).forEach(i => {
+          if (!i.purchase_id) return;
+          if (!map[i.purchase_id]) map[i.purchase_id] = [];
+          map[i.purchase_id].push(i);
+        });
         setInvoiceByPurchase(map);
       } else {
         setInvoiceByPurchase({});
@@ -146,32 +154,38 @@ export default function PurchasesPage() {
     if (error) { setUploading(false); alert(error.message); return; }
     const storeName = stores.find(s => s.id === formStoreId)?.name;
 
-    // Optional invoice image upload — links to the purchase row we just inserted.
-    if (invoiceFile) {
-      try {
-        const compressed = await compressImage(invoiceFile);
-        const { path, url } = await uploadInvoice(supabase, compressed, {
-          storeName,
-          vendorName: effectiveVendor?.name || 'unknown',
-          date: form.week_of,
-        });
-        const { error: invErr } = await supabase.from('invoices').insert({
-          store_id: formStoreId,
-          vendor_id: effectiveVendorId === '__other__' ? null : effectiveVendorId,
-          vendor_name: effectiveVendor?.name || 'unknown',
-          purchase_id: inserted?.id,
-          image_url: url,
-          image_path: path,
-          date: form.week_of,
-          amount,
-          notes: payload.notes,
-          uploaded_by: profile?.id,
-        });
-        if (invErr) console.error('[purchases] invoice insert failed:', invErr);
-      } catch (e) {
-        console.error('[purchases] invoice upload failed:', e);
-        alert(`Purchase saved, but invoice upload failed: ${e.message || e}`);
+    // Multi-image invoice upload — each pending file becomes its own invoices row
+    // linked to this purchase. Existing invoices that the user removed in-modal
+    // were already deleted via removeExistingInvoice().
+    if (pendingInvoices.length) {
+      let failures = 0;
+      for (const p of pendingInvoices) {
+        try {
+          const compressed = await compressImage(p.file);
+          const { path, url } = await uploadInvoice(supabase, compressed, {
+            storeName,
+            vendorName: effectiveVendor?.name || 'unknown',
+            date: form.week_of,
+          });
+          const { error: invErr } = await supabase.from('invoices').insert({
+            store_id: formStoreId,
+            vendor_id: effectiveVendorId === '__other__' ? null : effectiveVendorId,
+            vendor_name: effectiveVendor?.name || 'unknown',
+            purchase_id: inserted?.id,
+            image_url: url,
+            image_path: path,
+            date: form.week_of,
+            amount,
+            notes: payload.notes,
+            uploaded_by: profile?.id,
+          });
+          if (invErr) { console.error('[purchases] invoice insert failed:', invErr); failures++; }
+        } catch (e) {
+          console.error('[purchases] invoice upload failed:', e);
+          failures++;
+        }
       }
+      if (failures) alert(`Purchase saved, but ${failures} of ${pendingInvoices.length} invoice image(s) failed to upload.`);
     }
     setUploading(false);
     await logActivity(supabase, profile, {
@@ -184,18 +198,49 @@ export default function PurchasesPage() {
     });
     setModal(false);
     setEditItem(null);
-    setInvoiceFile(null);
-    setInvoicePreview(null);
+    setPendingInvoices([]);
+    setExistingInvoices([]);
     load();
   };
 
   const handleInvoicePick = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setInvoiceFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setInvoicePreview(ev.target.result);
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const additions = await Promise.all(files.map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve({ id: `pend_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, file, preview: ev.target.result });
+      reader.readAsDataURL(file);
+    })));
+    setPendingInvoices(prev => [...prev, ...additions]);
+    e.target.value = '';
+  };
+
+  const removePendingInvoice = (id) => {
+    setPendingInvoices(prev => prev.filter(p => p.id !== id));
+  };
+
+  const removeExistingInvoice = async (inv) => {
+    try {
+      if (inv.image_path) {
+        const { error: rmErr } = await supabase.storage.from('invoices').remove([inv.image_path]);
+        if (rmErr) console.warn('[purchases] storage cleanup failed (non-fatal):', rmErr);
+      }
+      const { error } = await supabase.from('invoices').delete().eq('id', inv.id);
+      if (error) throw error;
+      setExistingInvoices(prev => prev.filter(e => e.id !== inv.id));
+      setConfirmRemoveExisting(null);
+      // refresh the per-row map so the table reflects the change
+      setInvoiceByPurchase(prev => {
+        const next = { ...prev };
+        for (const k of Object.keys(next)) {
+          next[k] = (next[k] || []).filter(i => i.id !== inv.id);
+        }
+        return next;
+      });
+    } catch (e) {
+      alert(`Failed to delete invoice image: ${e.message || e}`);
+      setConfirmRemoveExisting(null);
+    }
   };
 
   const doDelete = async () => {
@@ -247,8 +292,8 @@ export default function PurchasesPage() {
     setForm(blankForm());
     setFormStoreId(pageStoreId || '');
     setFormError('');
-    setInvoiceFile(null);
-    setInvoicePreview(null);
+    setPendingInvoices([]);
+    setExistingInvoices([]);
     setModal(true);
   };
 
@@ -261,15 +306,27 @@ export default function PurchasesPage() {
       notes: row.notes || '',
     });
     setFormStoreId(row.store_id || pageStoreId || '');
-    setInvoiceFile(null);
-    setInvoicePreview(null);
+    setPendingInvoices([]);
+    setExistingInvoices(invoiceByPurchase[row.id] || []);
     setModal(true);
   };
 
-  // Vendor filter applied client-side on the already-loaded rows.
-  const visibleItems = vendorFilter
-    ? items.filter(p => p.supplier === vendorFilter)
-    : items;
+  // Vendor filter + free-text search applied client-side on the loaded rows.
+  const visibleItems = items.filter(p => {
+    if (vendorFilter && p.supplier !== vendorFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const haystack = [
+        (p.supplier || '').toLowerCase(),
+        (p.stores?.name || '').toLowerCase(),
+        String(p.total_cost ?? p.unit_cost ?? ''),
+        (p.notes || '').toLowerCase(),
+        p.week_of || '',
+      ].join(' ');
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
 
   const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.total_cost || 0), 0);
 
@@ -306,7 +363,7 @@ export default function PurchasesPage() {
     </div>
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-    {/* Vendor filter */}
+    {/* Vendor filter + search */}
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
       <label className="text-sw-sub text-[10px] font-bold uppercase">Vendor</label>
       <select
@@ -317,8 +374,15 @@ export default function PurchasesPage() {
         <option value="">All Vendors</option>
         {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
       </select>
-      {vendorFilter && (
-        <button onClick={() => setVendorFilter('')} className="text-sw-dim text-[10px] underline">clear</button>
+      <input
+        type="text"
+        placeholder="Search purchases… (vendor, store, amount, notes)"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
+      />
+      {(vendorFilter || search) && (
+        <button onClick={() => { setVendorFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
       )}
     </div>
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
@@ -329,16 +393,16 @@ export default function PurchasesPage() {
           ...(!pageStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
           { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
           { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: (v, r) => {
-            const inv = invoiceByPurchase[r.id];
+            const invs = invoiceByPurchase[r.id] || [];
             return (
               <span className="inline-flex items-center gap-1.5 justify-end">
-                {inv && (
+                {invs.length > 0 && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }}
-                    title="View invoice"
-                    className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-sm"
+                    onClick={(e) => { e.stopPropagation(); setViewInvoice(invs[0]); }}
+                    title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
+                    className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-sm relative"
                   >
-                    📷
+                    📷{invs.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[9px] rounded-full px-1 font-bold">{invs.length}</span>}
                   </button>
                 )}
                 <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span>
@@ -346,15 +410,16 @@ export default function PurchasesPage() {
             );
           } },
           { key: '_invoice', label: 'Invoice', align: 'center', hideOnMobile: true, render: (_, r) => {
-            const inv = invoiceByPurchase[r.id];
-            if (!inv) return <span className="text-sw-dim text-base">—</span>;
+            const invs = invoiceByPurchase[r.id] || [];
+            if (!invs.length) return <span className="text-sw-dim text-base">—</span>;
             return (
               <button
-                onClick={() => setViewInvoice(inv)}
-                title="View invoice"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-sw-blue border border-sw-blue/30 text-xl"
+                onClick={() => setViewInvoice(invs[0])}
+                title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
+                className="relative inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-sw-blue border border-sw-blue/30 text-xl"
               >
                 📷
+                {invs.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[10px] rounded-full px-1.5 font-bold">{invs.length}</span>}
               </button>
             );
           } },
@@ -438,45 +503,67 @@ export default function PurchasesPage() {
         />
       </Field>
 
-      <Field label="Invoice Image (optional)">
-        {!invoicePreview ? (
-          <div className="flex gap-2 flex-col sm:flex-row">
-            <button
-              type="button"
-              onClick={() => invoiceCameraRef.current?.click()}
-              className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
-            >
-              <span className="text-lg">📷</span><span>Take Photo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => invoiceLibraryRef.current?.click()}
-              className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
-            >
-              <span className="text-lg">📁</span><span>From Library</span>
-            </button>
-            <input ref={invoiceCameraRef} type="file" accept="image/*" capture="environment" onChange={handleInvoicePick} className="hidden" />
-            <input ref={invoiceLibraryRef} type="file" accept="image/*" onChange={handleInvoicePick} className="hidden" />
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setViewInvoice({ image_url: invoicePreview, vendor_name: 'Preview', date: form.week_of, amount: parseFloat(form.amount) || 0 })}
-              className="block w-full"
-            >
-              <img src={invoicePreview} alt="Invoice preview" className="max-h-[200px] w-full object-contain rounded-lg border border-sw-border bg-black/20" />
-            </button>
-            <div className="flex gap-2 items-center">
-              <button
-                type="button"
-                onClick={() => { setInvoiceFile(null); setInvoicePreview(null); }}
-                className="text-sw-red text-[11px] font-semibold border border-sw-red/30 rounded px-3 py-1.5 bg-sw-redD min-h-[32px]"
-              >
-                ✕ Remove
-              </button>
-              <span className="text-sw-dim text-[10px] truncate flex-1">{invoiceFile?.name}</span>
-            </div>
+      <Field label={`Invoice Images (optional) — ${existingInvoices.length + pendingInvoices.length} attached`}>
+        <div className="flex gap-2 flex-col sm:flex-row mb-2">
+          <button
+            type="button"
+            onClick={() => invoiceCameraRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+          >
+            <span className="text-lg">📷</span><span>Take Photo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => invoiceLibraryRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+          >
+            <span className="text-lg">📁</span><span>From Library</span>
+          </button>
+          <input ref={invoiceCameraRef} type="file" accept="image/*" capture="environment" onChange={handleInvoicePick} className="hidden" />
+          <input ref={invoiceLibraryRef} type="file" accept="image/*" multiple onChange={handleInvoicePick} className="hidden" />
+        </div>
+
+        {(existingInvoices.length + pendingInvoices.length) > 0 && (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {existingInvoices.map(inv => (
+              <div key={inv.id} className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setViewInvoice(inv)}
+                  className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                >
+                  <img src={inv.image_url} alt="Invoice" className="w-full h-full object-cover" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemoveExisting(inv)}
+                  title="Delete this invoice image"
+                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {pendingInvoices.map(p => (
+              <div key={p.id} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setViewInvoice({ image_url: p.preview, vendor_name: 'Preview', date: form.week_of, amount: parseFloat(form.amount) || 0 })}
+                  className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-blue/40 bg-black/20"
+                >
+                  <img src={p.preview} alt="Pending" className="w-full h-full object-cover" />
+                </button>
+                <span className="absolute top-1 left-1 bg-sw-blueD text-sw-blue border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
+                <button
+                  type="button"
+                  onClick={() => removePendingInvoice(p.id)}
+                  title="Remove"
+                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </Field>
@@ -490,7 +577,7 @@ export default function PurchasesPage() {
       </Field>
 
       <div className="flex gap-2 justify-end">
-        <Button variant="secondary" onClick={() => { setModal(false); setEditItem(null); setNewVendorName(''); setInvoiceFile(null); setInvoicePreview(null); }}>Cancel</Button>
+        <Button variant="secondary" onClick={() => { setModal(false); setEditItem(null); setNewVendorName(''); setPendingInvoices([]); setExistingInvoices([]); }}>Cancel</Button>
         <Button onClick={handleSave} disabled={uploading}>{uploading ? 'Saving…' : (editItem ? 'Update' : 'Save')}</Button>
       </div>
     </Modal>}
@@ -512,6 +599,14 @@ export default function PurchasesPage() {
           setForm(blankForm());
           setModal(true);
         }}
+      />
+    )}
+    {confirmRemoveExisting && (
+      <ConfirmModal
+        title="Delete this invoice image?"
+        message={`Remove this invoice image? The file will be deleted from storage and cannot be recovered.`}
+        onCancel={() => setConfirmRemoveExisting(null)}
+        onConfirm={() => removeExistingInvoice(confirmRemoveExisting)}
       />
     )}
     {confirmDelete && (

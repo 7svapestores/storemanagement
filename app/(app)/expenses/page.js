@@ -386,7 +386,18 @@ export default function ExpensesPage() {
         return false;
       }
     }
-    if (search && !(r.note || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const catName = (catLabel(r.category)?.label || r.category || '').toLowerCase();
+      const haystack = [
+        catName,
+        (r.stores?.name || '').toLowerCase(),
+        String(r.amount ?? ''),
+        (r.note || '').toLowerCase(),
+        r.month || '',
+      ].join(' ');
+      if (!haystack.includes(q)) return false;
+    }
     return true;
   });
   const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.amount || 0), 0);
@@ -446,10 +457,11 @@ export default function ExpensesPage() {
           <option value="__custom__">✨ Custom/Other</option>
         </select>
         <input
-          placeholder="Search notes…"
+          type="text"
+          placeholder="Search expenses… (type, store, amount, notes)"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="!w-full sm:!w-[220px] !py-1.5 !text-[11px]"
+          className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
         />
         {(typeFilter || search) && (
           <button onClick={() => { setTypeFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
