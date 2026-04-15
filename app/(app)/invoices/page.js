@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal } from '@/components/UI';
+import ImageGallery from '@/components/ImageGallery';
 import { dayLabel } from '@/lib/utils';
 
 const utilDate = (d) => {
@@ -240,7 +241,7 @@ export default function InvoicesPage() {
                       />
                     </label>
                     <button
-                      onClick={() => setViewInvoice(inv)}
+                      onClick={() => setViewInvoice({ ...inv, _gallery: visible })}
                       className="block w-full text-left"
                     >
                       <div className="aspect-square bg-black/30 overflow-hidden">
@@ -274,14 +275,18 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {viewInvoice && (
-        <ImageViewer
-          src={viewInvoice.image_url}
-          caption={`${viewInvoice.vendor_name} · ${utilDate(viewInvoice.date)} · ${viewInvoice.stores?.name || ''} · ${fmtMoney(viewInvoice.amount)}`}
-          onClose={() => setViewInvoice(null)}
-          downloadName={`invoice-${viewInvoice.vendor_name || 'purchase'}-${viewInvoice.date || ''}.jpg`}
-        />
-      )}
+      <ImageGallery
+        images={viewInvoice?._gallery
+          ? viewInvoice._gallery.map(i => ({
+              image_url: i.image_url,
+              caption: `${i.vendor_name} · ${utilDate(i.date)} · ${i.stores?.name || ''} · ${fmtMoney(i.amount)}`,
+              downloadName: `invoice-${i.vendor_name || 'purchase'}-${i.date || ''}.jpg`,
+            }))
+          : []}
+        startIndex={viewInvoice?._gallery ? viewInvoice._gallery.findIndex(i => i.id === viewInvoice.id) : 0}
+        isOpen={!!viewInvoice}
+        onClose={() => setViewInvoice(null)}
+      />
 
       {confirmBulk && (
         <ConfirmModal

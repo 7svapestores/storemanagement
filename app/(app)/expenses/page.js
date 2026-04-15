@@ -1,9 +1,18 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
+import { compressImage, uploadReceipt } from '@/lib/storage';
+import ImageGallery from '@/components/ImageGallery';
+
+// Convert a public receipts URL back to its storage path so we can delete it.
+const pathFromReceiptUrl = (url) => {
+  if (!url) return null;
+  const m = String(url).match(/\/receipts\/(.+?)(?:\?.*)?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+};
 
 const now0 = new Date();
 const curMonth = `${now0.getFullYear()}-${String(now0.getMonth()+1).padStart(2,'0')}`;
@@ -36,6 +45,14 @@ export default function ExpensesPage() {
   // Single-expense form
   const [form, setForm] = useState({ store_id: '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
   const [errors, setErrors] = useState({});
+
+  // Receipt images
+  const [pendingReceipts, setPendingReceipts] = useState([]); // [{ id, file, preview }]
+  const [existingReceipts, setExistingReceipts] = useState([]); // [url]
+  const [removedReceipts, setRemovedReceipts] = useState([]); // [url] removed during this edit
+  const [galleryImages, setGalleryImages] = useState(null);
+  const receiptCameraRef = useRef(null);
+  const receiptLibraryRef = useRef(null);
 
   useEffect(() => {
     if (effectiveStoreId) setPageStoreId(effectiveStoreId);
@@ -96,6 +113,23 @@ export default function ExpensesPage() {
     return e;
   };
 
+  const handleReceiptPick = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const additions = await Promise.all(files.map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve({ id: `pend_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, file, preview: ev.target.result });
+      reader.readAsDataURL(file);
+    })));
+    setPendingReceipts(prev => [...prev, ...additions]);
+    e.target.value = '';
+  };
+  const removePendingReceipt = (id) => setPendingReceipts(prev => prev.filter(p => p.id !== id));
+  const removeExistingReceipt = (url) => {
+    setExistingReceipts(prev => prev.filter(u => u !== url));
+    setRemovedReceipts(prev => [...prev, url]);
+  };
+
   const handleSave = async () => {
     const e = validate(form);
     setErrors(e);
@@ -106,12 +140,40 @@ export default function ExpensesPage() {
       const amount = parseFloat(form.amount);
       const category = form.category === '__other__' ? form.customCategory.trim() : form.category;
       const monthKey = (form.date || '').slice(0, 7);
+      const storeName = stores.find(s => s.id === form.store_id)?.name;
+
+      // Upload any newly attached receipt images first.
+      const newUrls = [];
+      for (const p of pendingReceipts) {
+        try {
+          const compressed = await compressImage(p.file);
+          const { url } = await uploadReceipt(supabase, compressed, {
+            storeName,
+            date: form.date,
+            kind: 'expense',
+          });
+          if (url) newUrls.push(url);
+        } catch (upErr) {
+          console.error('[expenses] receipt upload failed:', upErr);
+        }
+      }
+
+      // Delete any receipts the user removed during this edit.
+      const removedPaths = removedReceipts.map(pathFromReceiptUrl).filter(Boolean);
+      if (removedPaths.length) {
+        const { error: rmErr } = await supabase.storage.from('receipts').remove(removedPaths);
+        if (rmErr) console.warn('[expenses] receipt cleanup failed (non-fatal):', rmErr);
+      }
+
+      const image_urls = [...existingReceipts, ...newUrls];
+
       const payload = {
         store_id: form.store_id,
         month: monthKey,
         category,
         amount,
         note: (form.note || '').trim(),
+        image_urls,
       };
 
       let inserted, error;
@@ -123,7 +185,6 @@ export default function ExpensesPage() {
         inserted = res.data; error = res.error;
       }
       if (error) { setMsg(error.message); return; }
-      const storeName = stores.find(s => s.id === form.store_id)?.name;
       await logActivity(supabase, profile, {
         action: editItem ? 'update' : 'create',
         entityType: 'expense',
@@ -135,6 +196,9 @@ export default function ExpensesPage() {
       setModal(false);
       setEditItem(null);
       setForm({ store_id: pageStoreId || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
+      setPendingReceipts([]);
+      setExistingReceipts([]);
+      setRemovedReceipts([]);
       setErrors({});
       setMsg('success');
       setTimeout(() => setMsg(''), 2500);
@@ -359,6 +423,9 @@ export default function ExpensesPage() {
   const tryOpenAdd = () => {
     setEditItem(null);
     setForm({ store_id: pageStoreId || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
+    setPendingReceipts([]);
+    setExistingReceipts([]);
+    setRemovedReceipts([]);
     setErrors({});
     setModal(true);
   };
@@ -373,6 +440,9 @@ export default function ExpensesPage() {
       amount: String(row.amount ?? ''),
       note: row.note || '',
     });
+    setPendingReceipts([]);
+    setExistingReceipts(Array.isArray(row.image_urls) ? row.image_urls : []);
+    setRemovedReceipts([]);
     setErrors({});
     setModal(true);
   };
@@ -477,6 +547,20 @@ export default function ExpensesPage() {
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
             { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
             { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-red">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
+            { key: '_images', label: 'Image', align: 'center', sortable: false, render: (_, r) => {
+              const urls = Array.isArray(r.image_urls) ? r.image_urls : [];
+              if (!urls.length) return <span className="text-sw-dim">—</span>;
+              return (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setGalleryImages(urls.map((u, i) => ({ image_url: u, caption: `${r.stores?.name || ''} · ${r.month}`, downloadName: `receipt-${r.month}-${i+1}.jpg` }))); }}
+                  title={urls.length > 1 ? `View receipts (${urls.length})` : 'View receipt'}
+                  className="relative inline-flex items-center justify-center w-10 h-10 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-base"
+                >
+                  📷
+                  {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[9px] rounded-full px-1 font-bold">{urls.length}</span>}
+                </button>
+              );
+            } },
             { key: 'note', label: 'Note', render: v => v || '—' },
           ]}
           rows={visibleItems}
@@ -537,6 +621,71 @@ export default function ExpensesPage() {
             {errors.amount && <p className="text-sw-red text-[11px] mt-1">{errors.amount}</p>}
           </Field>
           <Field label="Note"><input type="text" value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Optional" /></Field>
+
+          <Field label={`Receipt/Bill Image (Optional) — ${existingReceipts.length + pendingReceipts.length} attached`}>
+            <div className="flex gap-2 flex-col sm:flex-row mb-2">
+              <button
+                type="button"
+                onClick={() => receiptCameraRef.current?.click()}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+              >
+                <span className="text-lg">📷</span><span>Take Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => receiptLibraryRef.current?.click()}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+              >
+                <span className="text-lg">📁</span><span>From Library</span>
+              </button>
+              <input ref={receiptCameraRef} type="file" accept="image/*" capture="environment" onChange={handleReceiptPick} className="hidden" />
+              <input ref={receiptLibraryRef} type="file" accept="image/*" multiple onChange={handleReceiptPick} className="hidden" />
+            </div>
+            {(existingReceipts.length + pendingReceipts.length) > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {existingReceipts.map((url, i) => (
+                  <div key={`ex-${i}`} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setGalleryImages([...existingReceipts, ...pendingReceipts.map(p => p.preview)].map(u => ({ image_url: u })))}
+                      className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                    >
+                      <img src={url} alt="Receipt" className="w-full h-full object-cover" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeExistingReceipt(url)}
+                      title="Remove"
+                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {pendingReceipts.map(p => (
+                  <div key={p.id} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setGalleryImages([{ image_url: p.preview }])}
+                      className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-blue/40 bg-black/20"
+                    >
+                      <img src={p.preview} alt="New receipt" className="w-full h-full object-cover" />
+                    </button>
+                    <span className="absolute top-1 left-1 bg-sw-blueD text-sw-blue border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingReceipt(p.id)}
+                      title="Remove"
+                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Field>
+
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => { setModal(false); setEditItem(null); setErrors({}); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>
@@ -667,6 +816,12 @@ export default function ExpensesPage() {
           </div>
         </Modal>
       )}
+
+      <ImageGallery
+        images={galleryImages || []}
+        isOpen={!!galleryImages}
+        onClose={() => setGalleryImages(null)}
+      />
 
       {confirmDelete && (
         <ConfirmModal

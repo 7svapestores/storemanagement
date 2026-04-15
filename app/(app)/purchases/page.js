@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
+import ImageGallery from '@/components/ImageGallery';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadInvoice, compressImage } from '@/lib/storage';
@@ -18,6 +19,7 @@ export default function PurchasesPage() {
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [invoiceByPurchase, setInvoiceByPurchase] = useState({});
   const [viewInvoice, setViewInvoice] = useState(null);
+  const [galleryImages, setGalleryImages] = useState(null); // array | null
   const [editItem, setEditItem] = useState(null);
   const [vendorFilter, setVendorFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -398,7 +400,7 @@ export default function PurchasesPage() {
               <span className="inline-flex items-center gap-1.5 justify-end">
                 {invs.length > 0 && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); setViewInvoice(invs[0]); }}
+                    onClick={(e) => { e.stopPropagation(); setGalleryImages(invs.map(i => ({ image_url: i.image_url, caption: `${i.vendor_name || ''} · ${i.date || ''}`, downloadName: `invoice-${i.vendor_name || 'purchase'}-${i.date || ''}.jpg` }))); }}
                     title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
                     className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-sm relative"
                   >
@@ -414,7 +416,7 @@ export default function PurchasesPage() {
             if (!invs.length) return <span className="text-sw-dim text-base">—</span>;
             return (
               <button
-                onClick={() => setViewInvoice(invs[0])}
+                onClick={() => setGalleryImages(invs.map(i => ({ image_url: i.image_url, caption: `${i.vendor_name || ''} · ${i.date || ''}`, downloadName: `invoice-${i.vendor_name || 'purchase'}-${i.date || ''}.jpg` })))}
                 title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
                 className="relative inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-sw-blue border border-sw-blue/30 text-xl"
               >
@@ -581,6 +583,11 @@ export default function PurchasesPage() {
         <Button onClick={handleSave} disabled={uploading}>{uploading ? 'Saving…' : (editItem ? 'Update' : 'Save')}</Button>
       </div>
     </Modal>}
+    <ImageGallery
+      images={galleryImages || []}
+      isOpen={!!galleryImages}
+      onClose={() => setGalleryImages(null)}
+    />
     {viewInvoice && (
       <ImageViewer
         src={viewInvoice.image_url}
