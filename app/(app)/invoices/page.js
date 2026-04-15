@@ -151,6 +151,7 @@ export default function InvoicesPage() {
         <MultiSelect
           label="Store"
           placeholder="All Stores"
+          unitLabel="store"
           value={storeFilter}
           onChange={setStoreFilter}
           options={stores.map(s => ({ value: s.id, label: s.name }))}
@@ -158,6 +159,7 @@ export default function InvoicesPage() {
         <MultiSelect
           label="Vendor"
           placeholder="All Vendors"
+          unitLabel="vendor"
           value={vendorFilter}
           onChange={setVendorFilter}
           options={vendors.map(v => ({ value: v.name, label: v.name }))}

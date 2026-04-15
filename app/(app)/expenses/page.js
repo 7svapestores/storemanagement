@@ -503,6 +503,7 @@ export default function ExpensesPage() {
         <MultiSelect
           label="Store"
           placeholder="All Stores"
+          unitLabel="store"
           value={pageStoreIds}
           onChange={setPageStoreIds}
           options={stores.map(s => ({ value: s.id, label: s.name }))}
@@ -516,6 +517,7 @@ export default function ExpensesPage() {
         <MultiSelect
           label="Type"
           placeholder="All Types"
+          unitLabel="type"
           value={typeFilter}
           onChange={setTypeFilter}
           options={[

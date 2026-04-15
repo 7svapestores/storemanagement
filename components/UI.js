@@ -176,14 +176,18 @@ export function useDateRange(defaultPreset = 'last30') {
 }
 
 // ── MultiSelect ─────────────────────────────────────────────
-// Dropdown that lets the user toggle many options at once.
+// Dropdown that lets the user toggle many options at once. Styling is done
+// with inline styles for the checkbox cell + panel so it renders consistently
+// regardless of tailwind purge state.
+//
 // props:
 //   options: [{ value, label, icon? }]
-//   value: array of selected values
+//   value: array of selected values (controlled)
 //   onChange: (newArray) => void
-//   placeholder: string shown when nothing is selected (e.g. 'All Stores')
+//   placeholder: string shown when nothing is selected
 //   label: short uppercase label on the left (optional)
-export function MultiSelect({ options, value = [], onChange, placeholder = 'All', label, className = '' }) {
+//   unitLabel: singular noun used in summary ("store", "vendor")
+export function MultiSelect({ options, value = [], onChange, placeholder = 'All', label, unitLabel = 'selected', className = '' }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -210,49 +214,116 @@ export function MultiSelect({ options, value = [], onChange, placeholder = 'All'
   const selectAll = () => onChange(options.map(o => o.value));
   const clearAll = () => onChange([]);
 
+  // Render the trigger content. When ≤3 chips, show them. Otherwise collapse
+  // to "N <unit>s selected" so the trigger doesn't grow unbounded.
+  const triggerContent = () => {
+    if (value.length === 0) {
+      return <span style={{ color: '#64748B', fontSize: 11 }}>{placeholder}</span>;
+    }
+    if (value.length > 3) {
+      return (
+        <span style={{ color: '#60A5FA', fontSize: 11, fontWeight: 600 }}>
+          {value.length} {unitLabel}{value.length === 1 ? '' : 's'} selected
+        </span>
+      );
+    }
+    return value.map(v => {
+      const opt = options.find(o => o.value === v);
+      return (
+        <span
+          key={v}
+          onClick={(e) => { e.stopPropagation(); toggle(v); }}
+          title="Remove"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'rgba(59,130,246,0.15)', color: '#60A5FA',
+            border: '1px solid rgba(59,130,246,0.4)', borderRadius: 4,
+            padding: '2px 6px', fontSize: 10, fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {opt?.icon ? `${opt.icon} ` : ''}{opt?.label || v}
+          <span style={{ color: 'rgba(96,165,250,0.7)' }}>✕</span>
+        </span>
+      );
+    });
+  };
+
   return (
-    <div ref={wrapRef} className={`relative inline-flex items-center gap-2 ${className}`}>
-      {label && <label className="text-sw-sub text-[10px] font-bold uppercase">{label}</label>}
+    <div
+      ref={wrapRef}
+      className={className}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+    >
+      {label && (
+        <label style={{ color: '#64748B', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          {label}
+        </label>
+      )}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="bg-sw-card2 border border-sw-border rounded-lg px-2 py-1.5 text-left min-h-[36px] min-w-[180px] max-w-full flex items-center gap-1 flex-wrap"
+        style={{
+          background: '#131C28',
+          border: '1px solid #1A2536',
+          borderRadius: 8,
+          padding: '6px 10px',
+          minHeight: 36,
+          minWidth: 200,
+          maxWidth: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          color: '#E2E8F0',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
       >
-        {value.length === 0 ? (
-          <span className="text-sw-dim text-[11px]">{placeholder}</span>
-        ) : (
-          value.map(v => {
-            const opt = options.find(o => o.value === v);
-            return (
-              <span
-                key={v}
-                className="inline-flex items-center gap-1 bg-sw-blueD text-sw-blue border border-sw-blue/30 rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                onClick={(e) => { e.stopPropagation(); toggle(v); }}
-                title="Remove"
-              >
-                {opt?.icon ? `${opt.icon} ` : ''}{opt?.label || v}
-                <span className="text-sw-blue/70">✕</span>
-              </span>
-            );
-          })
-        )}
-        <span className="ml-auto text-sw-dim text-[10px]">▾</span>
+        {triggerContent()}
+        <span style={{ marginLeft: 'auto', color: '#64748B', fontSize: 10 }}>▾</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-40 bg-sw-card border border-sw-border rounded-lg shadow-lg min-w-[220px] max-h-[280px] overflow-auto py-1">
-          <div className="flex justify-between px-3 py-1.5 border-b border-sw-border sticky top-0 bg-sw-card">
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: '100%',
+            marginTop: 4,
+            zIndex: 50,
+            background: '#131C28',
+            border: '1px solid #1A2536',
+            borderRadius: 8,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            minWidth: 240,
+            maxHeight: 300,
+            overflow: 'auto',
+            padding: '4px 0',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              borderBottom: '1px solid #1A2536',
+              position: 'sticky',
+              top: 0,
+              background: '#131C28',
+            }}
+          >
             <button
               type="button"
               onClick={selectAll}
-              className="text-sw-blue text-[10px] font-bold uppercase"
+              style={{ background: 'transparent', border: 0, color: '#60A5FA', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}
             >
               Select all
             </button>
             <button
               type="button"
               onClick={clearAll}
-              className="text-sw-dim text-[10px] font-bold uppercase"
+              style={{ background: 'transparent', border: 0, color: '#64748B', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}
             >
               Clear
             </button>
@@ -260,23 +331,48 @@ export function MultiSelect({ options, value = [], onChange, placeholder = 'All'
           {options.map(o => {
             const active = selectedSet.has(o.value);
             return (
-              <button
+              <div
                 key={o.value}
-                type="button"
                 onClick={() => toggle(o.value)}
-                className={`w-full text-left px-3 py-2 text-[12px] font-semibold flex items-center gap-2 ${active ? 'bg-sw-blueD text-sw-blue' : 'text-sw-text hover:bg-sw-card2'}`}
+                role="button"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  background: active ? 'rgba(59,130,246,0.12)' : 'transparent',
+                  color: active ? '#93C5FD' : '#E2E8F0',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  transition: 'background 120ms',
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#1A2536'; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
               >
-                <span
-                  className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-sw-blue border-sw-blue text-black' : 'border-sw-border'}`}
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    minWidth: 20,
+                    border: `2px solid ${active ? '#3B82F6' : '#6B7280'}`,
+                    borderRadius: 4,
+                    background: active ? '#3B82F6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
                 >
-                  {active ? '✓' : ''}
+                  {active && <span style={{ color: 'white', fontSize: 14, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                </div>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {o.icon ? `${o.icon} ` : ''}{o.label}
                 </span>
-                <span className="truncate">{o.icon ? `${o.icon} ` : ''}{o.label}</span>
-              </button>
+              </div>
             );
           })}
           {options.length === 0 && (
-            <div className="px-3 py-2 text-sw-dim text-[11px]">No options</div>
+            <div style={{ padding: '10px 12px', color: '#64748B', fontSize: 11 }}>No options</div>
           )}
         </div>
       )}

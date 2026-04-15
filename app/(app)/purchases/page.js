@@ -357,6 +357,7 @@ export default function PurchasesPage() {
       <MultiSelect
         label="Store"
         placeholder="All Stores"
+        unitLabel="store"
         value={pageStoreIds}
         onChange={setPageStoreIds}
         options={stores.map(s => ({ value: s.id, label: s.name }))}
@@ -369,6 +370,7 @@ export default function PurchasesPage() {
       <MultiSelect
         label="Vendor"
         placeholder="All Vendors"
+        unitLabel="vendor"
         value={vendorFilter}
         onChange={setVendorFilter}
         options={vendors.map(v => ({ value: v.name, label: v.name }))}
