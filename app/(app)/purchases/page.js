@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -21,14 +21,15 @@ export default function PurchasesPage() {
   const [viewInvoice, setViewInvoice] = useState(null);
   const [galleryImages, setGalleryImages] = useState(null); // array | null
   const [editItem, setEditItem] = useState(null);
-  const [vendorFilter, setVendorFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState([]); // array of vendor names
   const [search, setSearch] = useState('');
-  const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
+  const [pageStoreIds, setPageStoreIds] = useState(effectiveStoreId ? [effectiveStoreId] : []);
+  const pageStoreId = pageStoreIds.length === 1 ? pageStoreIds[0] : '';
   const [formStoreId, setFormStoreId] = useState('');
   const [form, setForm] = useState({ week_of: today(), amount: '', vendor_id: '', notes: '' });
 
   useEffect(() => {
-    if (effectiveStoreId) setPageStoreId(effectiveStoreId);
+    if (effectiveStoreId) setPageStoreIds([effectiveStoreId]);
   }, [effectiveStoreId]);
 
   const blankForm = () => ({ week_of: today(), amount: '', vendor_id: vendors[0]?.id || '', notes: '' });
@@ -73,7 +74,7 @@ export default function PurchasesPage() {
         .select('*, stores(name, color)')
         .gte('week_of', range.start).lte('week_of', range.end)
         .order('week_of', { ascending: false });
-      if (pageStoreId) q = q.eq('store_id', pageStoreId);
+      if (pageStoreIds.length) q = q.in('store_id', pageStoreIds);
       const { data: p } = await q;
       setItems(p || []);
 
@@ -101,7 +102,7 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [range.start, range.end, pageStoreId]);
+  }, [range.start, range.end, pageStoreIds.join(',')]);
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
@@ -315,7 +316,7 @@ export default function PurchasesPage() {
 
   // Vendor filter + free-text search applied client-side on the loaded rows.
   const visibleItems = items.filter(p => {
-    if (vendorFilter && p.supplier !== vendorFilter) return false;
+    if (vendorFilter.length && !vendorFilter.includes(p.supplier)) return false;
     if (search) {
       const q = search.toLowerCase();
       const haystack = [
@@ -353,29 +354,25 @@ export default function PurchasesPage() {
       +
     </button>
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-      <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
-      <select
-        value={pageStoreId}
-        onChange={e => setPageStoreId(e.target.value)}
-        className="!w-full sm:!w-auto sm:!min-w-[220px] !py-1.5 !text-[11px]"
-      >
-        <option value="">All Stores</option>
-        {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
+      <MultiSelect
+        label="Store"
+        placeholder="All Stores"
+        value={pageStoreIds}
+        onChange={setPageStoreIds}
+        options={stores.map(s => ({ value: s.id, label: s.name }))}
+      />
     </div>
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Vendor filter + search */}
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-      <label className="text-sw-sub text-[10px] font-bold uppercase">Vendor</label>
-      <select
+      <MultiSelect
+        label="Vendor"
+        placeholder="All Vendors"
         value={vendorFilter}
-        onChange={e => setVendorFilter(e.target.value)}
-        className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]"
-      >
-        <option value="">All Vendors</option>
-        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-      </select>
+        onChange={setVendorFilter}
+        options={vendors.map(v => ({ value: v.name, label: v.name }))}
+      />
       <input
         type="text"
         placeholder="Search purchases… (vendor, store, amount, notes)"
@@ -383,8 +380,8 @@ export default function PurchasesPage() {
         onChange={e => setSearch(e.target.value)}
         className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
       />
-      {(vendorFilter || search) && (
-        <button onClick={() => { setVendorFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+      {(vendorFilter.length || search) && (
+        <button onClick={() => { setVendorFilter([]); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
       )}
     </div>
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">

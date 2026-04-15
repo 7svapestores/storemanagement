@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, StatCard, Loading, StoreBadge, Alert, Button } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, StatCard, Loading, StoreBadge, Alert, Button, MultiSelect } from '@/components/UI';
 import { fmt, dayLabel, downloadCSV } from '@/lib/utils';
 
 export default function EmployeeShortsPage() {
@@ -12,8 +12,8 @@ export default function EmployeeShortsPage() {
   const [rows, setRows] = useState([]);
   const [stores, setStores] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [storeFilter, setStoreFilter] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [storeFilter, setStoreFilter] = useState([]); // array of store ids
+  const [employeeFilter, setEmployeeFilter] = useState([]); // array of employee ids
   const [statusFilter, setStatusFilter] = useState('pending'); // 'all' | 'pending' | 'deducted'
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [busy, setBusy] = useState(false);
@@ -34,8 +34,8 @@ export default function EmployeeShortsPage() {
         .select('*, stores(name, color)')
         .gte('date', range.start).lte('date', range.end)
         .order('date', { ascending: false });
-      if (storeFilter) q = q.eq('store_id', storeFilter);
-      if (employeeFilter) q = q.eq('employee_id', employeeFilter);
+      if (storeFilter.length) q = q.in('store_id', storeFilter);
+      if (employeeFilter.length) q = q.in('employee_id', employeeFilter);
       if (statusFilter === 'pending') q = q.eq('deducted', false);
       if (statusFilter === 'deducted') q = q.eq('deducted', true);
 
@@ -50,7 +50,7 @@ export default function EmployeeShortsPage() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [range.start, range.end, storeFilter, employeeFilter, statusFilter]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [range.start, range.end, storeFilter.join(','), employeeFilter.join(','), statusFilter]);
 
   const totals = useMemo(() => {
     const all = rows.reduce((s, r) => s + Number(r.total_short || 0), 0);
@@ -127,14 +127,20 @@ export default function EmployeeShortsPage() {
 
       {/* Filters */}
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="!w-auto !min-w-[160px] !py-1.5 !text-[11px]">
-          <option value="">All employees</option>
-          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)} className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]">
-          <option value="">All stores</option>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <MultiSelect
+          label="Employee"
+          placeholder="All Employees"
+          value={employeeFilter}
+          onChange={setEmployeeFilter}
+          options={employees.map(e => ({ value: e.id, label: e.name }))}
+        />
+        <MultiSelect
+          label="Store"
+          placeholder="All Stores"
+          value={storeFilter}
+          onChange={setStoreFilter}
+          options={stores.map(s => ({ value: s.id, label: s.name }))}
+        />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="!w-auto !min-w-[140px] !py-1.5 !text-[11px]">
           <option value="pending">Not yet deducted</option>
           <option value="deducted">Already deducted</option>

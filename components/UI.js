@@ -175,6 +175,115 @@ export function useDateRange(defaultPreset = 'last30') {
   return { range, preset, selectPreset, setStart, setEnd };
 }
 
+// ── MultiSelect ─────────────────────────────────────────────
+// Dropdown that lets the user toggle many options at once.
+// props:
+//   options: [{ value, label, icon? }]
+//   value: array of selected values
+//   onChange: (newArray) => void
+//   placeholder: string shown when nothing is selected (e.g. 'All Stores')
+//   label: short uppercase label on the left (optional)
+export function MultiSelect({ options, value = [], onChange, placeholder = 'All', label, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selectedSet = new Set(value);
+  const toggle = (v) => {
+    if (selectedSet.has(v)) onChange(value.filter(x => x !== v));
+    else onChange([...value, v]);
+  };
+  const selectAll = () => onChange(options.map(o => o.value));
+  const clearAll = () => onChange([]);
+
+  return (
+    <div ref={wrapRef} className={`relative inline-flex items-center gap-2 ${className}`}>
+      {label && <label className="text-sw-sub text-[10px] font-bold uppercase">{label}</label>}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="bg-sw-card2 border border-sw-border rounded-lg px-2 py-1.5 text-left min-h-[36px] min-w-[180px] max-w-full flex items-center gap-1 flex-wrap"
+      >
+        {value.length === 0 ? (
+          <span className="text-sw-dim text-[11px]">{placeholder}</span>
+        ) : (
+          value.map(v => {
+            const opt = options.find(o => o.value === v);
+            return (
+              <span
+                key={v}
+                className="inline-flex items-center gap-1 bg-sw-blueD text-sw-blue border border-sw-blue/30 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                onClick={(e) => { e.stopPropagation(); toggle(v); }}
+                title="Remove"
+              >
+                {opt?.icon ? `${opt.icon} ` : ''}{opt?.label || v}
+                <span className="text-sw-blue/70">✕</span>
+              </span>
+            );
+          })
+        )}
+        <span className="ml-auto text-sw-dim text-[10px]">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-40 bg-sw-card border border-sw-border rounded-lg shadow-lg min-w-[220px] max-h-[280px] overflow-auto py-1">
+          <div className="flex justify-between px-3 py-1.5 border-b border-sw-border sticky top-0 bg-sw-card">
+            <button
+              type="button"
+              onClick={selectAll}
+              className="text-sw-blue text-[10px] font-bold uppercase"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-sw-dim text-[10px] font-bold uppercase"
+            >
+              Clear
+            </button>
+          </div>
+          {options.map(o => {
+            const active = selectedSet.has(o.value);
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => toggle(o.value)}
+                className={`w-full text-left px-3 py-2 text-[12px] font-semibold flex items-center gap-2 ${active ? 'bg-sw-blueD text-sw-blue' : 'text-sw-text hover:bg-sw-card2'}`}
+              >
+                <span
+                  className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-sw-blue border-sw-blue text-black' : 'border-sw-border'}`}
+                >
+                  {active ? '✓' : ''}
+                </span>
+                <span className="truncate">{o.icon ? `${o.icon} ` : ''}{o.label}</span>
+              </button>
+            );
+          })}
+          {options.length === 0 && (
+            <div className="px-3 py-2 text-sw-dim text-[11px]">No options</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Trend Chart ─────────────────────────────────────────────
 export function TrendChart({ data, height = 170 }) {
   if (!data?.length) return <div className="text-sw-dim text-center py-8 text-sm">No data</div>;
@@ -292,21 +401,36 @@ export function ImageViewer({ src, caption, onClose, downloadName }) {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)', paddingTop: 12 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <a
-          href={src}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => window.open(src, '_blank', 'noopener,noreferrer')}
           className="text-white text-[12px] font-semibold underline underline-offset-2"
         >
           Open original
-        </a>
-        <a
-          href={src}
-          download={downloadName || 'invoice.jpg'}
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const r = await fetch(src, { mode: 'cors' });
+              const blob = await r.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = downloadName || 'invoice.jpg';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+            } catch (err) {
+              console.error('[viewer] download failed, fallback:', err);
+              window.open(src, '_blank', 'noopener,noreferrer');
+            }
+          }}
           className="text-white text-[12px] font-semibold underline underline-offset-2"
         >
           Download
-        </a>
+        </button>
         <button
           onClick={onClose}
           className="px-5 py-2 rounded-lg bg-white text-black text-[13px] font-bold min-h-[44px]"

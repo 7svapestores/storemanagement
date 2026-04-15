@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal } from '@/components/UI';
+import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal, MultiSelect } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { dayLabel } from '@/lib/utils';
 
@@ -19,16 +19,16 @@ export default function InvoicesPage() {
   const [stores, setStores] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [vendorFilter, setVendorFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState([]); // array of vendor names
   const [search, setSearch] = useState('');
-  const [storeFilter, setStoreFilter] = useState(effectiveStoreId || '');
+  const [storeFilter, setStoreFilter] = useState(effectiveStoreId ? [effectiveStoreId] : []); // array of store ids
   const [viewInvoice, setViewInvoice] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
 
   useEffect(() => {
-    if (effectiveStoreId) setStoreFilter(effectiveStoreId);
+    if (effectiveStoreId) setStoreFilter([effectiveStoreId]);
   }, [effectiveStoreId]);
 
   const reload = async () => {
@@ -47,7 +47,7 @@ export default function InvoicesPage() {
         .select('*, stores(name, color)')
         .gte('date', range.start).lte('date', range.end)
         .order('date', { ascending: false });
-      if (storeFilter) q = q.eq('store_id', storeFilter);
+      if (storeFilter.length) q = q.in('store_id', storeFilter);
       const { data, error } = await q;
       if (error) throw error;
       setInvoices(data || []);
@@ -59,7 +59,7 @@ export default function InvoicesPage() {
     }
   };
 
-  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [range.start, range.end, storeFilter]);
+  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [range.start, range.end, storeFilter.join(',')]);
 
   // Group by vendor for the folder list.
   const vendorGroups = useMemo(() => {
@@ -78,7 +78,7 @@ export default function InvoicesPage() {
   if (loading) return <Loading />;
 
   const visible = invoices
-    .filter(inv => !vendorFilter || (inv.vendor_name || 'Unknown') === vendorFilter)
+    .filter(inv => !vendorFilter.length || vendorFilter.includes(inv.vendor_name || 'Unknown'))
     .filter(inv => {
       if (!search) return true;
       const q = search.toLowerCase();
@@ -148,22 +148,20 @@ export default function InvoicesPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <select
+        <MultiSelect
+          label="Store"
+          placeholder="All Stores"
           value={storeFilter}
-          onChange={e => setStoreFilter(e.target.value)}
-          className="!w-full sm:!w-auto sm:!min-w-[200px] !py-1.5 !text-[11px]"
-        >
-          <option value="">All Stores</option>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select
+          onChange={setStoreFilter}
+          options={stores.map(s => ({ value: s.id, label: s.name }))}
+        />
+        <MultiSelect
+          label="Vendor"
+          placeholder="All Vendors"
           value={vendorFilter}
-          onChange={e => setVendorFilter(e.target.value)}
-          className="!w-full sm:!w-auto sm:!min-w-[180px] !py-1.5 !text-[11px]"
-        >
-          <option value="">All Vendors</option>
-          {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-        </select>
+          onChange={setVendorFilter}
+          options={vendors.map(v => ({ value: v.name, label: v.name }))}
+        />
         <input
           type="text"
           placeholder="Search invoices… (vendor, store, amount, notes)"
@@ -191,19 +189,19 @@ export default function InvoicesPage() {
           <div className="md:w-[220px] md:flex-shrink-0 mb-3 md:mb-0">
             <div className="md:bg-sw-card md:border md:border-sw-border md:rounded-xl md:p-2 md:space-y-1 flex md:flex-col gap-2 md:gap-1 overflow-x-auto md:overflow-visible">
               <button
-                onClick={() => setVendorFilter('')}
+                onClick={() => setVendorFilter([])}
                 className={`flex-shrink-0 md:flex-shrink text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg border min-h-[44px]
-                  ${!vendorFilter ? 'bg-sw-blueD text-sw-blue border-sw-blue/30' : 'bg-sw-card2 text-sw-text border-sw-border hover:border-sw-blue/30'}`}
+                  ${vendorFilter.length === 0 ? 'bg-sw-blueD text-sw-blue border-sw-blue/30' : 'bg-sw-card2 text-sw-text border-sw-border hover:border-sw-blue/30'}`}
               >
                 <span className="text-[12px] font-semibold truncate">📁 All Vendors</span>
                 <span className="text-[10px] text-sw-sub flex-shrink-0">{invoices.length}</span>
               </button>
               {vendorGroups.map(g => {
-                const active = g.name === vendorFilter;
+                const active = vendorFilter.includes(g.name);
                 return (
                   <button
                     key={g.name}
-                    onClick={() => setVendorFilter(g.name)}
+                    onClick={() => setVendorFilter(active ? vendorFilter.filter(v => v !== g.name) : [...vendorFilter, g.name])}
                     className={`flex-shrink-0 md:flex-shrink text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg border min-h-[44px]
                       ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue/30' : 'bg-sw-card2 text-sw-text border-sw-border hover:border-sw-blue/30'}`}
                   >

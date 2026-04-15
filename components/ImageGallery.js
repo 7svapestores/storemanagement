@@ -35,6 +35,25 @@ export default function ImageGallery({ images, isOpen, onClose, startIndex = 0, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, images?.length]);
 
+  const downloadImage = async (url, filename) => {
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename || 'image.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (err) {
+      console.error('[gallery] download failed, falling back to open:', err);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   if (!isOpen || !images || images.length === 0) return null;
 
   const normalized = images.map(i => typeof i === 'string' ? { image_url: i } : i);
@@ -135,21 +154,20 @@ export default function ImageGallery({ images, isOpen, onClose, startIndex = 0, 
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)', paddingTop: 8 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <a
-          href={cur.image_url}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => window.open(cur.image_url, '_blank', 'noopener,noreferrer')}
           className="text-white text-[12px] font-semibold underline underline-offset-2"
         >
           Open original
-        </a>
-        <a
-          href={cur.image_url}
-          download={cur.downloadName || `image-${index + 1}.jpg`}
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadImage(cur.image_url, cur.downloadName || `image-${index + 1}.jpg`)}
           className="text-white text-[12px] font-semibold underline underline-offset-2"
         >
           Download
-        </a>
+        </button>
         <button
           onClick={onClose}
           className="px-5 py-2 rounded-lg bg-white text-black text-[13px] font-bold min-h-[44px]"

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
@@ -38,8 +38,9 @@ export default function ExpensesPage() {
   const [msg, setMsg] = useState('');
 
   // Page-level filters
-  const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [pageStoreIds, setPageStoreIds] = useState(effectiveStoreId ? [effectiveStoreId] : []);
+  const pageStoreId = pageStoreIds.length === 1 ? pageStoreIds[0] : '';
+  const [typeFilter, setTypeFilter] = useState([]); // array of category ids / '__custom__'
   const [search, setSearch] = useState('');
 
   // Single-expense form
@@ -55,7 +56,7 @@ export default function ExpensesPage() {
   const receiptLibraryRef = useRef(null);
 
   useEffect(() => {
-    if (effectiveStoreId) setPageStoreId(effectiveStoreId);
+    if (effectiveStoreId) setPageStoreIds([effectiveStoreId]);
   }, [effectiveStoreId]);
 
   // Monthly template state
@@ -83,7 +84,7 @@ export default function ExpensesPage() {
         .gte('month', startMonth)
         .lte('month', endMonth)
         .order('month', { ascending: false });
-      if (pageStoreId) q = q.eq('store_id', pageStoreId);
+      if (pageStoreIds.length) q = q.in('store_id', pageStoreIds);
       const { data: e } = await q;
       setItems(e || []);
     } catch (err) {
@@ -92,7 +93,7 @@ export default function ExpensesPage() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pageStoreId, range.start, range.end]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pageStoreIds.join(','), range.start, range.end]);
 
   const catLabel = id => EXPENSE_CATEGORIES.find(c => c.id === id);
   const renderCatInTable = (v) => {
@@ -449,12 +450,10 @@ export default function ExpensesPage() {
 
   // ── Client-side filtering ───────────────────────────────────
   const visibleItems = items.filter(r => {
-    if (typeFilter) {
-      if (typeFilter === '__custom__') {
-        if (FIXED_EXPENSE_IDS.has(r.category)) return false;
-      } else if (r.category !== typeFilter) {
-        return false;
-      }
+    if (typeFilter.length) {
+      const catMatches = typeFilter.includes(r.category);
+      const customMatches = typeFilter.includes('__custom__') && !FIXED_EXPENSE_IDS.has(r.category);
+      if (!catMatches && !customMatches) return false;
     }
     if (search) {
       const q = search.toLowerCase();
@@ -501,31 +500,29 @@ export default function ExpensesPage() {
 
       {/* Page-level store selector */}
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
-        <select
-          value={pageStoreId}
-          onChange={e => setPageStoreId(e.target.value)}
-          className="!w-full sm:!w-auto sm:!min-w-[220px] !py-1.5 !text-[11px]"
-        >
-          <option value="">All Stores</option>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <MultiSelect
+          label="Store"
+          placeholder="All Stores"
+          value={pageStoreIds}
+          onChange={setPageStoreIds}
+          options={stores.map(s => ({ value: s.id, label: s.name }))}
+        />
       </div>
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {/* Type + search filter row */}
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <label className="text-sw-sub text-[10px] font-bold uppercase">Type</label>
-        <select
+        <MultiSelect
+          label="Type"
+          placeholder="All Types"
           value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
-          className="!w-full sm:!w-auto sm:!min-w-[200px] !py-1.5 !text-[11px]"
-        >
-          <option value="">All Types</option>
-          {EXPENSE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
-          <option value="__custom__">✨ Custom/Other</option>
-        </select>
+          onChange={setTypeFilter}
+          options={[
+            ...EXPENSE_CATEGORIES.map(c => ({ value: c.id, label: c.label, icon: c.icon })),
+            { value: '__custom__', label: 'Custom/Other', icon: '✨' },
+          ]}
+        />
         <input
           type="text"
           placeholder="Search expenses… (type, store, amount, notes)"
@@ -533,8 +530,8 @@ export default function ExpensesPage() {
           onChange={e => setSearch(e.target.value)}
           className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
         />
-        {(typeFilter || search) && (
-          <button onClick={() => { setTypeFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+        {(typeFilter.length || search) && (
+          <button onClick={() => { setTypeFilter([]); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, DateBar, useDateRange, Loading, Alert } from '@/components/UI';
+import { PageHeader, DateBar, useDateRange, Loading, Alert, MultiSelect } from '@/components/UI';
 
 const ENTITY_LABEL = {
   daily_sales: 'Daily Sale',
@@ -36,9 +36,9 @@ export default function ActivityPage() {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [actionFilter, setActionFilter] = useState('');
-  const [entityFilter, setEntityFilter] = useState('');
-  const [storeFilter, setStoreFilter] = useState('');
+  const [actionFilter, setActionFilter] = useState([]);
+  const [entityFilter, setEntityFilter] = useState([]);
+  const [storeFilter, setStoreFilter] = useState([]);
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
@@ -56,9 +56,9 @@ export default function ActivityPage() {
           .lte('created_at', range.end + 'T23:59:59')
           .order('created_at', { ascending: false })
           .limit(500);
-        if (actionFilter) q = q.eq('action', actionFilter);
-        if (entityFilter) q = q.eq('entity_type', entityFilter);
-        if (storeFilter) q = q.eq('store_name', storeFilter);
+        if (actionFilter.length) q = q.in('action', actionFilter);
+        if (entityFilter.length) q = q.in('entity_type', entityFilter);
+        if (storeFilter.length) q = q.in('store_name', storeFilter);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -71,7 +71,7 @@ export default function ActivityPage() {
       }
     };
     load();
-  }, [range.start, range.end, actionFilter, entityFilter, storeFilter]);
+  }, [range.start, range.end, actionFilter.join(','), entityFilter.join(','), storeFilter.join(',')]);
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
@@ -98,20 +98,31 @@ export default function ActivityPage() {
       />
 
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)} className="!w-auto !min-w-[140px] !py-1.5 !text-[11px]">
-          <option value="">All actions</option>
-          <option value="create">Create</option>
-          <option value="update">Update</option>
-          <option value="delete">Delete</option>
-        </select>
-        <select value={entityFilter} onChange={e => setEntityFilter(e.target.value)} className="!w-auto !min-w-[160px] !py-1.5 !text-[11px]">
-          <option value="">All entities</option>
-          {Object.entries(ENTITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)} className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]">
-          <option value="">All stores</option>
-          {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-        </select>
+        <MultiSelect
+          label="Action"
+          placeholder="All Actions"
+          value={actionFilter}
+          onChange={setActionFilter}
+          options={[
+            { value: 'create', label: 'Create' },
+            { value: 'update', label: 'Update' },
+            { value: 'delete', label: 'Delete' },
+          ]}
+        />
+        <MultiSelect
+          label="Entity"
+          placeholder="All Entities"
+          value={entityFilter}
+          onChange={setEntityFilter}
+          options={Object.entries(ENTITY_LABEL).map(([k, v]) => ({ value: k, label: v }))}
+        />
+        <MultiSelect
+          label="Store"
+          placeholder="All Stores"
+          value={storeFilter}
+          onChange={setStoreFilter}
+          options={stores.map(s => ({ value: s.name, label: s.name }))}
+        />
       </div>
 
       {rows.length === 0 ? (
