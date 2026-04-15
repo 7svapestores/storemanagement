@@ -34,6 +34,7 @@ export default function PurchasesPage() {
   const [invoicePreview, setInvoicePreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState('');
+  const [formError, setFormError] = useState('');
   const invoiceCameraRef = useRef(null);
   const invoiceLibraryRef = useRef(null);
 
@@ -97,7 +98,8 @@ export default function PurchasesPage() {
     const amount = parseFloat(form.amount) || 0;
     const vendor = vendors.find(v => v.id === form.vendor_id);
 
-    if (!formStoreId) { alert('Select a store first.'); return; }
+    if (!formStoreId) { setFormError('Please select a store'); return; }
+    setFormError('');
     if (!form.vendor_id) { alert('Select a vendor'); return; }
     if (amount <= 0) { alert('Total amount must be greater than 0'); return; }
 
@@ -241,10 +243,10 @@ export default function PurchasesPage() {
   const storeName = stores.find(s => s.id === pageStoreId)?.name;
 
   const tryOpenAdd = () => {
-    if (!hasStore) { setShowStorePicker(true); return; }
     setEditItem(null);
     setForm(blankForm());
     setFormStoreId(pageStoreId || '');
+    setFormError('');
     setInvoiceFile(null);
     setInvoicePreview(null);
     setModal(true);
@@ -279,20 +281,18 @@ export default function PurchasesPage() {
     )}
     <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores'}>
       <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Date','Store','Vendor','Amount','Notes'], visibleItems.map(p => [p.week_of, p.stores?.name, p.supplier, p.total_cost, p.notes]))} className="!text-[11px]">📥 CSV</Button>
-      {hasStore && <Button onClick={tryOpenAdd} className="hidden md:inline-flex">+ Add</Button>}
+      <Button onClick={tryOpenAdd} className="hidden md:inline-flex">+ Add</Button>
     </PageHeader>
 
     {/* Mobile-only floating action button — sits above the bottom nav */}
-    {hasStore && (
-      <button
-        onClick={tryOpenAdd}
-        className="md:hidden fixed right-4 z-30 rounded-full bg-sw-blue text-black text-2xl font-extrabold shadow-lg w-14 h-14 flex items-center justify-center"
-        style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
-        aria-label="Add purchase"
-      >
-        +
-      </button>
-    )}
+    <button
+      onClick={tryOpenAdd}
+      className="md:hidden fixed right-4 z-30 rounded-full bg-sw-blue text-black text-2xl font-extrabold shadow-lg w-14 h-14 flex items-center justify-center"
+      style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
+      aria-label="Add purchase"
+    >
+      +
+    </button>
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
       <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
       <select
@@ -394,10 +394,17 @@ export default function PurchasesPage() {
     </div>
     {modal && <Modal title={editItem ? 'Edit Purchase' : 'Log Purchase'} onClose={() => { setModal(false); setEditItem(null); }}>
       <Field label="Store">
-        <select value={formStoreId} onChange={e => setFormStoreId(e.target.value)}>
+        <select
+          value={formStoreId}
+          onChange={e => { setFormStoreId(e.target.value); if (e.target.value) setFormError(''); }}
+          style={formError ? { borderColor: '#F87171' } : undefined}
+        >
           <option value="">Select store…</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        {formError && (
+          <div className="text-sw-red text-[11px] font-semibold mt-1">{formError}</div>
+        )}
       </Field>
 
       <Field label="Date"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
