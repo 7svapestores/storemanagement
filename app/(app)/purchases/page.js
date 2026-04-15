@@ -33,6 +33,7 @@ export default function PurchasesPage() {
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState('');
   const invoiceCameraRef = useRef(null);
   const invoiceLibraryRef = useRef(null);
 
@@ -116,6 +117,8 @@ export default function PurchasesPage() {
       effectiveVendorId = newVendor.id;
       setVendors(v => [...v, newVendor].sort((a, b) => a.name.localeCompare(b.name)));
       setNewVendorName('');
+      setToast(`New vendor added: ${newVendor.name}`);
+      setTimeout(() => setToast(''), 3500);
     }
 
     // Simplified form: item = vendor name, quantity = 1, unit_cost = amount
@@ -269,6 +272,11 @@ export default function PurchasesPage() {
   const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.total_cost || 0), 0);
 
   return (<div>
+    {toast && (
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-sw-greenD text-sw-green border border-sw-green/40 rounded-lg px-4 py-2 text-[12px] font-semibold shadow-lg">
+        ✓ {toast}
+      </div>
+    )}
     <PageHeader title="🛒 Product Buying" subtitle={hasStore ? storeName : 'All Stores'}>
       <Button variant="secondary" onClick={() => downloadCSV('purchases.csv', ['Date','Store','Vendor','Amount','Notes'], visibleItems.map(p => [p.week_of, p.stores?.name, p.supplier, p.total_cost, p.notes]))} className="!text-[11px]">📥 CSV</Button>
       {hasStore && <Button onClick={tryOpenAdd} className="hidden md:inline-flex">+ Add</Button>}

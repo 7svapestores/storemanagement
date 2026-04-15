@@ -45,8 +45,8 @@ input, select, button, textarea { font-family: inherit; }
 ::-webkit-scrollbar-thumb:hover { background: #263A54; }
 
 /* Input styles */
-input[type="text"], input[type="number"], input[type="date"], input[type="month"],
-input[type="email"], input[type="password"], input[type="search"], select, textarea {
+input:not([type]), input[type="text"], input[type="number"], input[type="date"], input[type="month"],
+input[type="email"], input[type="password"], input[type="search"], input[type="tel"], input[type="url"], select, textarea {
   width: 100%;
   padding: 9px 12px;
   background: #131C28;
@@ -67,8 +67,8 @@ input:focus, select:focus, textarea:focus { border-color: #39FF14; box-shadow: 0
 
 /* iOS safari zooms on focus if input font-size < 16px — keep it 16 on small screens */
 @media (max-width: 767px) {
-  input[type="text"], input[type="number"], input[type="date"], input[type="month"],
-  input[type="email"], input[type="password"], input[type="search"], select, textarea {
+  input:not([type]), input[type="text"], input[type="number"], input[type="date"], input[type="month"],
+  input[type="email"], input[type="password"], input[type="search"], input[type="tel"], input[type="url"], select, textarea {
     font-size: 16px;
     padding: 11px 14px;
   }
