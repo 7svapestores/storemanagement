@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, StoreRequiredModal } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 
@@ -17,25 +17,38 @@ let localIdCounter = 1;
 const newLocalId = () => `tmp_${localIdCounter++}`;
 
 export default function ExpensesPage() {
-  const { supabase, isOwner, profile, effectiveStoreId, setSelectedStore } = useAuth();
-  const [showStorePicker, setShowStorePicker] = useState(null); // 'add' | 'template' | null
+  const { supabase, isOwner, profile, effectiveStoreId } = useAuth();
+  const { range, preset, selectPreset, setStart, setEnd } = useDateRange('thismonth');
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+
+  // Page-level filters
+  const [pageStoreId, setPageStoreId] = useState(effectiveStoreId || '');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [search, setSearch] = useState('');
+
+  // Single-expense form
   const [form, setForm] = useState({ store_id: '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (effectiveStoreId) setPageStoreId(effectiveStoreId);
+  }, [effectiveStoreId]);
 
   // Monthly template state
   const [tplOpen, setTplOpen] = useState(false);
   const [tplMonth, setTplMonth] = useState(curMonth);
   const [tplDate, setTplDate] = useState(today());
-  const [tplData, setTplData] = useState({});     // { `${storeId}:${fixedCategoryId}`: amount-string }
-  const [tplCustom, setTplCustom] = useState({}); // { storeId: [{ id, origId?, name, amount }] }
-  const [tplDeleted, setTplDeleted] = useState([]); // DB ids of custom rows to delete on save
+  const [tplStoreId, setTplStoreId] = useState('');
+  const [tplData, setTplData] = useState({});
+  const [tplCustom, setTplCustom] = useState({});
+  const [tplDeleted, setTplDeleted] = useState([]);
   const [tplLoading, setTplLoading] = useState(false);
   const [tplSaving, setTplSaving] = useState(false);
 
@@ -45,22 +58,26 @@ export default function ExpensesPage() {
       const { data: st } = await supabase.from('stores').select('*').order('created_at');
       setStores(st || []);
 
-      let q = supabase.from('expenses').select('*, stores(name, color)').order('month', { ascending: false });
-      if (effectiveStoreId) q = q.eq('store_id', effectiveStoreId);
+      const startMonth = range.start.slice(0, 7);
+      const endMonth = range.end.slice(0, 7);
+      let q = supabase
+        .from('expenses')
+        .select('*, stores(name, color)')
+        .gte('month', startMonth)
+        .lte('month', endMonth)
+        .order('month', { ascending: false });
+      if (pageStoreId) q = q.eq('store_id', pageStoreId);
       const { data: e } = await q;
       setItems(e || []);
-
-      if (!form.store_id && st?.length) setForm(f => ({ ...f, store_id: effectiveStoreId || st[0].id }));
     } catch (err) {
       console.error('[expenses] load failed:', err);
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, [effectiveStoreId]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pageStoreId, range.start, range.end]);
 
   const catLabel = id => EXPENSE_CATEGORIES.find(c => c.id === id);
-  // For custom rows loaded from DB, show the raw name (the id) as the label.
   const renderCatInTable = (v) => {
     const c = catLabel(v);
     return c ? `${c.icon} ${c.label}` : `✨ ${v}`;
@@ -69,6 +86,7 @@ export default function ExpensesPage() {
   // ── Single-expense form validation ──────────────────────────
   const validate = (f) => {
     const e = {};
+    if (!f.store_id) e.store_id = 'Store is required';
     if (!f.date) e.date = 'Date is required';
     if (!f.category) e.category = 'Category is required';
     if (f.category === '__other__' && !(f.customCategory || '').trim()) e.customCategory = 'Enter a name for the expense';
@@ -95,18 +113,28 @@ export default function ExpensesPage() {
         amount,
         note: (form.note || '').trim(),
       };
-      const { data: inserted, error } = await supabase.from('expenses').insert(payload).select().single();
+
+      let inserted, error;
+      if (editItem) {
+        const res = await supabase.from('expenses').update(payload).eq('id', editItem.id).select().single();
+        inserted = res.data; error = res.error;
+      } else {
+        const res = await supabase.from('expenses').insert(payload).select().single();
+        inserted = res.data; error = res.error;
+      }
       if (error) { setMsg(error.message); return; }
       const storeName = stores.find(s => s.id === form.store_id)?.name;
       await logActivity(supabase, profile, {
-        action: 'create',
+        action: editItem ? 'update' : 'create',
         entityType: 'expense',
         entityId: inserted?.id,
-        description: `${profile?.name} added expense ${catLabel(category)?.label || category} of ${fmtMoney(amount)} for ${storeName} (${form.date})`,
+        description: `${profile?.name} ${editItem ? 'updated' : 'added'} expense ${catLabel(category)?.label || category} of ${fmtMoney(amount)} for ${storeName} (${form.date})`,
         storeName,
+        metadata: editItem ? { before: editItem, after: payload } : null,
       });
       setModal(false);
-      setForm({ store_id: stores[0]?.id || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
+      setEditItem(null);
+      setForm({ store_id: pageStoreId || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
       setErrors({});
       setMsg('success');
       setTimeout(() => setMsg(''), 2500);
@@ -125,7 +153,7 @@ export default function ExpensesPage() {
       action: 'delete',
       entityType: 'expense',
       entityId: row.id,
-      description: `${profile?.name} deleted expense ${catLabel(row.category)?.label || row.category || row.category} of ${fmtMoney(row.amount)} for ${row.stores?.name} (${row.month})`,
+      description: `${profile?.name} deleted expense ${catLabel(row.category)?.label || row.category} of ${fmtMoney(row.amount)} for ${row.stores?.name} (${row.month})`,
       storeName: row.stores?.name,
       metadata: { deleted: row },
     });
@@ -143,10 +171,9 @@ export default function ExpensesPage() {
         .select('id, store_id, category, amount, month')
         .in('month', [month, prevKey]);
 
-      // Split current + previous, fixed + custom.
       const fixedByKeyCur = {};
       const fixedByKeyPrev = {};
-      const customCurByStore = {}; // { storeId: [{ id, origId, name, amount }] }
+      const customCurByStore = {};
       const customPrevByStore = {};
 
       (data || []).forEach(r => {
@@ -168,7 +195,6 @@ export default function ExpensesPage() {
         }
       });
 
-      // Seed fixed categories — current month, fall back to previous.
       const seededFixed = {};
       for (const st of stores) {
         for (const cat of EXPENSE_CATEGORIES) {
@@ -178,8 +204,6 @@ export default function ExpensesPage() {
         }
       }
 
-      // Seed custom rows — use current month rows if present (with origIds for update/delete),
-      // otherwise clone previous month rows as brand-new inserts.
       const seededCustom = {};
       for (const st of stores) {
         if (customCurByStore[st.id]?.length) {
@@ -209,6 +233,7 @@ export default function ExpensesPage() {
     setTplDate(d);
     const m = d.slice(0, 7);
     setTplMonth(m);
+    setTplStoreId(pageStoreId || '');
     prefillTemplate(m);
   };
 
@@ -224,20 +249,16 @@ export default function ExpensesPage() {
       [storeId]: [...(prev[storeId] || []), { id: newLocalId(), name: '', amount: '' }],
     }));
   };
-
   const updateCustomRow = (storeId, rowId, patch) => {
     setTplCustom(prev => ({
       ...prev,
       [storeId]: (prev[storeId] || []).map(r => r.id === rowId ? { ...r, ...patch } : r),
     }));
   };
-
   const removeCustomRow = (storeId, rowId) => {
     setTplCustom(prev => {
       const row = (prev[storeId] || []).find(r => r.id === rowId);
-      if (row?.origId) {
-        setTplDeleted(d => [...d, row.origId]);
-      }
+      if (row?.origId) setTplDeleted(d => [...d, row.origId]);
       return {
         ...prev,
         [storeId]: (prev[storeId] || []).filter(r => r.id !== rowId),
@@ -248,21 +269,19 @@ export default function ExpensesPage() {
   const saveTemplate = async () => {
     setTplSaving(true);
     try {
-      // Fetch existing rows for the month so we know what's insert vs update.
       const { data: existing } = await supabase
         .from('expenses')
         .select('id, store_id, category, amount')
         .eq('month', tplMonth);
       const existingByKey = {};
-      (existing || []).forEach(r => {
-        existingByKey[`${r.store_id}:${r.category}`] = r;
-      });
+      (existing || []).forEach(r => { existingByKey[`${r.store_id}:${r.category}`] = r; });
 
       const inserts = [];
       const updates = [];
 
-      // Fixed categories
-      for (const st of stores) {
+      const templateStoresNow = tplStoreId ? stores.filter(s => s.id === tplStoreId) : stores;
+
+      for (const st of templateStoresNow) {
         for (const cat of EXPENSE_CATEGORIES) {
           const key = `${st.id}:${cat.id}`;
           const raw = tplData[key];
@@ -278,24 +297,19 @@ export default function ExpensesPage() {
         }
       }
 
-      // Custom rows per store
-      for (const st of stores) {
+      for (const st of templateStoresNow) {
         const rows = tplCustom[st.id] || [];
         for (const r of rows) {
           const name = (r.name || '').trim();
           const amt = parseFloat(r.amount);
           if (!name || isNaN(amt) || amt <= 0) continue;
           if (r.origId) {
-            // existing row — update name/amount if changed
             const dbRow = (existing || []).find(e => e.id === r.origId);
             if (dbRow) {
               const nameChanged = dbRow.category !== name;
               const amtChanged = Number(dbRow.amount) !== amt;
               if (nameChanged || amtChanged) {
-                const { error } = await supabase
-                  .from('expenses')
-                  .update({ category: name, amount: amt })
-                  .eq('id', r.origId);
+                const { error } = await supabase.from('expenses').update({ category: name, amount: amt }).eq('id', r.origId);
                 if (error) throw error;
               }
             }
@@ -305,12 +319,10 @@ export default function ExpensesPage() {
         }
       }
 
-      // Deletions for custom rows the user removed
       for (const id of tplDeleted) {
         const { error } = await supabase.from('expenses').delete().eq('id', id);
         if (error) throw error;
       }
-
       if (inserts.length) {
         const { error } = await supabase.from('expenses').insert(inserts);
         if (error) throw error;
@@ -342,21 +354,45 @@ export default function ExpensesPage() {
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
-  const hasStore = !!effectiveStoreId;
-  const selectedStoreName = stores.find(s => s.id === effectiveStoreId)?.name;
-  const singleFormInvalid = Object.keys(validate(form)).length > 0;
+  const selectedStoreName = stores.find(s => s.id === pageStoreId)?.name;
 
   const tryOpenAdd = () => {
-    if (!hasStore) { setShowStorePicker('add'); return; }
-    setForm(f => ({ ...f, store_id: effectiveStoreId }));
+    setEditItem(null);
+    setForm({ store_id: pageStoreId || '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
+    setErrors({});
     setModal(true);
   };
-  const tryOpenTemplate = () => {
-    if (!hasStore) { setShowStorePicker('template'); return; }
-    openTemplate();
+  const openEdit = (row) => {
+    setEditItem(row);
+    const isFixed = FIXED_EXPENSE_IDS.has(row.category);
+    setForm({
+      store_id: row.store_id,
+      date: `${row.month}-01`,
+      category: isFixed ? row.category : '__other__',
+      customCategory: isFixed ? '' : row.category,
+      amount: String(row.amount ?? ''),
+      note: row.note || '',
+    });
+    setErrors({});
+    setModal(true);
   };
 
-  // Compute store totals (fixed + custom) for the template modal footer.
+  // ── Client-side filtering ───────────────────────────────────
+  const visibleItems = items.filter(r => {
+    if (typeFilter) {
+      if (typeFilter === '__custom__') {
+        if (FIXED_EXPENSE_IDS.has(r.category)) return false;
+      } else if (r.category !== typeFilter) {
+        return false;
+      }
+    }
+    if (search && !(r.note || '').toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const visibleTotal = visibleItems.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  // Template modal: use tplStoreId to decide which stores to show
+  const templateStoresVisible = tplStoreId ? stores.filter(s => s.id === tplStoreId) : stores;
   const storeTotal = (st) => {
     let sum = 0;
     for (const cat of EXPENSE_CATEGORIES) {
@@ -369,42 +405,99 @@ export default function ExpensesPage() {
     }
     return sum;
   };
-  const templateStores = effectiveStoreId ? stores.filter(s => s.id === effectiveStoreId) : stores;
-  const grandTotal = templateStores.reduce((s, st) => s + storeTotal(st), 0);
+  const grandTotal = templateStoresVisible.reduce((s, st) => s + storeTotal(st), 0);
 
   return (
     <div>
-      <PageHeader title="📋 Expenses" subtitle={hasStore ? selectedStoreName : 'All Stores'}>
-        <Button variant="secondary" onClick={() => downloadCSV('expenses.csv', ['Month','Store','Category','Amount','Note'], items.map(e => [e.month, e.stores?.name, catLabel(e.category)?.label || e.category, e.amount, e.note]))} className="!text-[11px]">📥 CSV</Button>
-        <Button variant="secondary" onClick={tryOpenTemplate}>📝 Fill Monthly</Button>
+      <PageHeader title="📋 Expenses" subtitle={pageStoreId ? selectedStoreName : 'All Stores'}>
+        <Button variant="secondary" onClick={() => downloadCSV('expenses.csv', ['Month','Store','Category','Amount','Note'], visibleItems.map(e => [e.month, e.stores?.name, catLabel(e.category)?.label || e.category, e.amount, e.note]))} className="!text-[11px]">📥 CSV</Button>
+        <Button variant="secondary" onClick={() => openTemplate()}>📝 Fill Monthly</Button>
         <Button onClick={tryOpenAdd}>+ Add</Button>
       </PageHeader>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
 
+      {/* Page-level store selector */}
+      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+        <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
+        <select
+          value={pageStoreId}
+          onChange={e => setPageStoreId(e.target.value)}
+          className="!w-full sm:!w-auto sm:!min-w-[220px] !py-1.5 !text-[11px]"
+        >
+          <option value="">All Stores</option>
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+
+      <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
+
+      {/* Type + search filter row */}
+      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+        <label className="text-sw-sub text-[10px] font-bold uppercase">Type</label>
+        <select
+          value={typeFilter}
+          onChange={e => setTypeFilter(e.target.value)}
+          className="!w-full sm:!w-auto sm:!min-w-[200px] !py-1.5 !text-[11px]"
+        >
+          <option value="">All Types</option>
+          {EXPENSE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+          <option value="__custom__">✨ Custom/Other</option>
+        </select>
+        <input
+          placeholder="Search notes…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="!w-full sm:!w-[220px] !py-1.5 !text-[11px]"
+        />
+        {(typeFilter || search) && (
+          <button onClick={() => { setTypeFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+        )}
+      </div>
+
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable
-          emptyMessage="No expenses recorded. Use Fill Monthly to enter your bills quickly."
+          emptyMessage="No expenses for this period. Use Fill Monthly to enter your bills quickly."
+          defaultSort={{ key: 'month', dir: 'desc' }}
           columns={[
-            { key: 'month', label: 'Month', render: v => monthLabel(v) },
-            { key: 'store_id', label: 'Store', render: (_,r) => r.stores?.name },
-            { key: 'category', label: 'Type', render: renderCatInTable },
-            { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-red">{fmt(v)}</span> },
-            { key: 'note', label: 'Note' },
+            { key: 'month', label: 'Date', render: v => monthLabel(v), sortValue: r => r.month },
+            { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
+            { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
+            { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-red">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
+            { key: 'note', label: 'Note', render: v => v || '—' },
           ]}
-          rows={items}
+          rows={visibleItems}
           isOwner={isOwner}
-          onDelete={isOwner ? id => { const r = items.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
+          onEdit={isOwner ? openEdit : undefined}
+          onDelete={isOwner ? id => { const r = visibleItems.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
         />
+        {visibleItems.length > 0 && (
+          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center flex-wrap gap-2">
+            <span className="text-sw-sub text-[11px] font-bold uppercase tracking-wide">
+              Showing {visibleItems.length} of {items.length} expenses
+            </span>
+            <span className="text-sw-red text-[16px] font-extrabold font-mono">
+              TOTAL: {fmt(visibleTotal)}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Single-expense form */}
       {modal && (
-        <Modal title="Add Expense" onClose={() => { setModal(false); setErrors({}); }}>
-          <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
-            Store: <span className="text-sw-text font-semibold">{selectedStoreName || '—'}</span>
-          </div>
+        <Modal title={editItem ? 'Edit Expense' : 'Add Expense'} onClose={() => { setModal(false); setEditItem(null); setErrors({}); }}>
+          <Field label="Store">
+            <select
+              value={form.store_id}
+              onChange={e => setForm({...form, store_id: e.target.value})}
+              className={errors.store_id ? '!border-sw-red' : ''}
+            >
+              <option value="">Select store…</option>
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {errors.store_id && <p className="text-sw-red text-[11px] mt-1">{errors.store_id}</p>}
+          </Field>
           <Field label="Date">
             <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className={errors.date ? '!border-sw-red' : ''} />
             {errors.date && <p className="text-sw-red text-[11px] mt-1">{errors.date}</p>}
@@ -431,11 +524,11 @@ export default function ExpensesPage() {
               className={errors.amount ? '!border-sw-red' : ''} />
             {errors.amount && <p className="text-sw-red text-[11px] mt-1">{errors.amount}</p>}
           </Field>
-          <Field label="Note"><input value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Optional" /></Field>
+          <Field label="Note"><input type="text" value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Optional" /></Field>
           <div className="flex gap-2 justify-end">
-            <Button variant="secondary" onClick={() => { setModal(false); setErrors({}); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || singleFormInvalid}>
-              {saving ? 'Saving…' : 'Save'}
+            <Button variant="secondary" onClick={() => { setModal(false); setEditItem(null); setErrors({}); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : (editItem ? 'Update' : 'Save')}
             </Button>
           </div>
         </Modal>
@@ -445,6 +538,15 @@ export default function ExpensesPage() {
       {tplOpen && (
         <Modal title="Fill Monthly Expenses" onClose={() => setTplOpen(false)} wide>
           <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <label className="text-sw-sub text-[11px] font-bold uppercase">Store</label>
+            <select
+              value={tplStoreId}
+              onChange={e => setTplStoreId(e.target.value)}
+              className="!w-auto md:!w-[200px] !py-1.5 !text-[11px]"
+            >
+              <option value="">All Stores</option>
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
             <label className="text-sw-sub text-[11px] font-bold uppercase">Date</label>
             <input
               type="date"
@@ -456,14 +558,14 @@ export default function ExpensesPage() {
               }}
               className="!w-auto md:!w-[180px]"
             />
-            <span className="text-sw-dim text-[11px]">Blank rows are skipped. Custom expenses below each store support unique items.</span>
+            <span className="text-sw-dim text-[11px]">Blank rows are skipped.</span>
           </div>
 
           {tplLoading ? (
             <div className="py-8 text-center text-sw-dim">Loading template…</div>
           ) : (
             <div className="space-y-4 max-h-[60vh] overflow-auto pr-1">
-              {(effectiveStoreId ? stores.filter(s => s.id === effectiveStoreId) : stores).map(st => {
+              {templateStoresVisible.map(st => {
                 const total = storeTotal(st);
                 return (
                   <div key={st.id} className="bg-sw-card2 rounded-lg border border-sw-border p-3">
@@ -475,7 +577,6 @@ export default function ExpensesPage() {
                       <span className="text-sw-green text-[12px] font-mono font-bold">{fmt(total)}</span>
                     </div>
 
-                    {/* Fixed category grid */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
                       {EXPENSE_CATEGORIES.map(cat => {
                         const key = `${st.id}:${cat.id}`;
@@ -495,7 +596,6 @@ export default function ExpensesPage() {
                       })}
                     </div>
 
-                    {/* Custom expenses section */}
                     <div className="border-t border-sw-border pt-2">
                       <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wide mb-1.5">Custom Expenses</div>
                       {(tplCustom[st.id] || []).length === 0 && (
@@ -554,23 +654,6 @@ export default function ExpensesPage() {
             </div>
           </div>
         </Modal>
-      )}
-
-      {showStorePicker && (
-        <StoreRequiredModal
-          stores={stores}
-          onCancel={() => setShowStorePicker(null)}
-          onSelectStore={(s) => {
-            setSelectedStore(s.id);
-            const nextAction = showStorePicker;
-            setShowStorePicker(null);
-            if (nextAction === 'template') openTemplate();
-            else {
-              setForm(f => ({ ...f, store_id: s.id }));
-              setModal(true);
-            }
-          }}
-        />
       )}
 
       {confirmDelete && (
