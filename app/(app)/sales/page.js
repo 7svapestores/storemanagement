@@ -164,6 +164,32 @@ export default function SalesPage() {
 
   const removeImage = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
 
+  // Live duplicate check: whenever date or store changes in the modal, re-check
+  // whether a sale already exists for that combination and show/clear the error.
+  const modalStoreIdForDupe = editItem?.store_id || effectiveStoreId || formStoreId;
+  useEffect(() => {
+    if (!modal || modal === 'edit') return;
+    if (!modalStoreIdForDupe || !form.date) { setModalError(''); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: existing } = await supabase
+        .from('daily_sales')
+        .select('id')
+        .eq('store_id', modalStoreIdForDupe)
+        .eq('date', form.date)
+        .maybeSingle();
+      if (cancelled) return;
+      if (existing) {
+        const name = stores.find(s => s.id === modalStoreIdForDupe)?.name || 'this store';
+        setModalError(`Sales already entered for ${name} on ${shortDate(form.date)}. ${isOwner ? 'Use Edit on the existing row to change it.' : 'Contact the owner to make changes.'}`);
+      } else {
+        setModalError('');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal, modalStoreIdForDupe, form.date]);
+
   const handleSave = async () => {
     const num = (v) => parseFloat(v) || 0;
     // When editing, the target is always the row's own store so an owner
@@ -358,6 +384,7 @@ export default function SalesPage() {
           .maybeSingle();
         if (existing) {
           setModalError(`Sales already entered for ${storeName || 'this store'} on ${shortDate(data.date)}. Contact the owner to make changes.`);
+          setSaving(false);
           return;
         }
       }
@@ -370,6 +397,7 @@ export default function SalesPage() {
         } else {
           setModalError(error.message);
         }
+        setSaving(false);
         return;
       }
       if (inserted?.id) await upsertShortOver(inserted.id);
@@ -1019,7 +1047,7 @@ export default function SalesPage() {
               <Field label="Date"><input type="date" value={todayStr} readOnly disabled /></Field>
             ))}
             {isOnSummaryTab ? (
-              <Button onClick={handleSave} disabled={saving} className="w-full !py-3 !text-sm !rounded-xl mt-4">
+              <Button onClick={handleSave} disabled={saving || !!modalError} className="w-full !py-3 !text-sm !rounded-xl mt-4">
                 {saving ? 'Saving…' : 'Submit Sales'}
               </Button>
             ) : (
@@ -1242,7 +1270,7 @@ export default function SalesPage() {
           ))}
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="secondary" onClick={closeModal}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving || (modal !== 'edit' && !!modalError)}>
               {saving ? 'Saving…' : (modal === 'edit' ? 'Update' : 'Save')}
             </Button>
           </div>
