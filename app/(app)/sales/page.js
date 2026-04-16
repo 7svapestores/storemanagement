@@ -181,7 +181,7 @@ export default function SalesPage() {
 
     // ── Validation ─────────────────────────────────────────────
     const errs = {};
-    const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'cashapp_check', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
+    const r1Required = ['r1_gross', 'r1_net', 'cash_sales', 'card_sales', 'r1_canceled_basket', 'r1_safe_drop', 'r1_sales_tax'];
     r1Required.forEach(k => { if (form[k] === '') errs[k] = true; });
 
     if (usesReg2) {
@@ -584,9 +584,8 @@ export default function SalesPage() {
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.card_sales} onChange={onNum('card_sales')} className={errCls('card_sales')} />
                 {errHint('card_sales')}
               </Field>
-              <Field label={<>CashApp / Check {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.cashapp_check} onChange={onNum('cashapp_check')} className={errCls('cashapp_check')} />
-                {errHint('cashapp_check')}
+              <Field label="CashApp / Check">
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.cashapp_check} onChange={onNum('cashapp_check')} />
               </Field>
               <Field label={<>Canceled Basket {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_canceled_basket} onChange={onNum('r1_canceled_basket')} className={errCls('r1_canceled_basket')} />
