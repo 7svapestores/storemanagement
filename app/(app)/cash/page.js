@@ -48,7 +48,7 @@ export default function CashPage() {
   // Modal form
   const [formStoreId, setFormStoreId] = useState('');
   const [form, setForm] = useState({ date: today(), cash_collected: '', note: '' });
-  const [expected, setExpected] = useState(0);
+  const [expectedBreakdown, setExpectedBreakdown] = useState({ r1: 0, r2: 0, total: 0 });
 
   useEffect(() => {
     if (effectiveStoreId) setStoreFilter([effectiveStoreId]);
@@ -60,21 +60,68 @@ export default function CashPage() {
     try {
       const { data: st } = await supabase.from('stores').select('*').order('created_at');
       setStores(st || []);
-      let salesQ = supabase.from('daily_sales').select('store_id, date, cash_sales').gte('date', range.start).lte('date', range.end);
-      let cashQ = supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end);
+
+      // Fetch safe-drop fields from daily_sales (the real "expected cash")
+      let salesQ = supabase
+        .from('daily_sales')
+        .select('store_id, date, r1_safe_drop, r2_safe_drop')
+        .gte('date', range.start).lte('date', range.end);
+      let cashQ = supabase
+        .from('cash_collections')
+        .select('*')
+        .gte('date', range.start).lte('date', range.end);
       if (storeFilter.length) {
         salesQ = salesQ.in('store_id', storeFilter);
         cashQ = cashQ.in('store_id', storeFilter);
       }
       const { data: sales } = await salesQ;
       const { data: cash } = await cashQ;
+
       const map = {};
-      sales?.forEach(s => { const k = `${s.store_id}_${s.date}`; map[k] = { ...(map[k]||{}), store_id: s.store_id, date: s.date, cash_sales: (map[k]?.cash_sales||0) + s.cash_sales }; });
-      cash?.forEach(c => { const k = `${c.store_id}_${c.date}`; map[k] = { ...(map[k]||{}), store_id: c.store_id, date: c.date, cash_collected: (map[k]?.cash_collected||0) + c.cash_collected, note: c.note || (map[k]?.note || ''), cash_id: c.id }; });
+      sales?.forEach(s => {
+        const k = `${s.store_id}_${s.date}`;
+        const prev = map[k] || {};
+        map[k] = {
+          ...prev,
+          store_id: s.store_id,
+          date: s.date,
+          r1_safe_drop: (prev.r1_safe_drop || 0) + (s.r1_safe_drop || 0),
+          r2_safe_drop: (prev.r2_safe_drop || 0) + (s.r2_safe_drop || 0),
+        };
+      });
+      cash?.forEach(c => {
+        const k = `${c.store_id}_${c.date}`;
+        const prev = map[k] || {};
+        map[k] = {
+          ...prev,
+          store_id: c.store_id,
+          date: c.date,
+          cash_collected: (prev.cash_collected || 0) + (c.cash_collected || 0),
+          note: c.note || prev.note || '',
+          cash_id: c.id,
+        };
+      });
+
       const rows = Object.values(map).map(r => {
-        const cs = r.cash_sales||0, cc = r.cash_collected||0, so = +(cc-cs).toFixed(2);
+        const r1 = r.r1_safe_drop || 0;
+        const r2 = r.r2_safe_drop || 0;
+        const expected = +(r1 + r2).toFixed(2);
+        const cc = r.cash_collected || 0;
+        const so = +(cc - expected).toFixed(2);
         const store = st?.find(s => s.id === r.store_id);
-        return { ...r, id: r.cash_id || `${r.store_id}_${r.date}`, cash_sales: cs, cash_collected: cc, short_over: so, status: !cc ? 'pending' : Math.abs(so) < 0.01 ? 'matched' : so > 0 ? 'over' : 'short', store_name: store?.name, store_color: store?.color };
+        return {
+          ...r,
+          id: r.cash_id || `${r.store_id}_${r.date}`,
+          expected,
+          r1_safe_drop: r1,
+          r2_safe_drop: r2,
+          cash_collected: cc,
+          short_over: so,
+          status: !cc ? 'pending' : Math.abs(so) < 0.01 ? 'matched' : so > 0 ? 'over' : 'short',
+          store_name: store?.name,
+          store_color: store?.color,
+          has_r2: !!store?.has_register2,
+        };
       });
       setRecon(rows);
     } catch (e) {
@@ -87,14 +134,20 @@ export default function CashPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch expected cash for the selected store + date in modal
+  // Fetch expected breakdown for the selected store + date in modal
   useEffect(() => {
     if (formStoreId && form.date) {
-      supabase.from('daily_sales').select('cash_sales')
-        .eq('store_id', formStoreId).eq('date', form.date)
-        .then(({ data }) => setExpected(data?.reduce((s,r) => s + (r.cash_sales||0), 0) || 0));
+      supabase.from('daily_sales')
+        .select('r1_safe_drop, r2_safe_drop')
+        .eq('store_id', formStoreId)
+        .eq('date', form.date)
+        .then(({ data }) => {
+          const r1 = (data || []).reduce((s, r) => s + (r.r1_safe_drop || 0), 0);
+          const r2 = (data || []).reduce((s, r) => s + (r.r2_safe_drop || 0), 0);
+          setExpectedBreakdown({ r1, r2, total: r1 + r2 });
+        });
     } else {
-      setExpected(0);
+      setExpectedBreakdown({ r1: 0, r2: 0, total: 0 });
     }
   }, [formStoreId, form.date]);
 
@@ -105,13 +158,13 @@ export default function CashPage() {
       store_id: formStoreId, date: form.date, cash_collected: cashCollected, note: form.note, collected_by: profile?.id,
     }, { onConflict: 'store_id,date' });
     if (error) { alert(error.message); return; }
-    const storeName = stores.find(s => s.id === formStoreId)?.name;
+    const stName = stores.find(s => s.id === formStoreId)?.name;
     const wasEdit = modal === 'edit';
     await logActivity(supabase, profile, {
       action: wasEdit ? 'update' : 'create',
       entityType: 'cash_collection',
-      description: `${profile?.name} ${wasEdit ? 'updated' : 'recorded'} cash collection of ${fmtMoney(cashCollected)} for ${storeName} on ${shortDate(form.date)}`,
-      storeName,
+      description: `${profile?.name} ${wasEdit ? 'updated' : 'recorded'} cash collection of ${fmtMoney(cashCollected)} for ${stName} on ${shortDate(form.date)}`,
+      storeName: stName,
     });
     setModal(null);
     setEditRow(null);
@@ -123,12 +176,12 @@ export default function CashPage() {
     if (!row) return;
     const { error } = await supabase.from('cash_collections').delete().eq('store_id', row.store_id).eq('date', row.date);
     if (error) { alert(error.message); setConfirmDelete(null); return; }
-    const storeName = stores.find(s => s.id === row.store_id)?.name;
+    const stName = stores.find(s => s.id === row.store_id)?.name;
     await logActivity(supabase, profile, {
       action: 'delete',
       entityType: 'cash_collection',
-      description: `${profile?.name} deleted cash collection of ${fmtMoney(row.cash_collected)} for ${storeName} on ${shortDate(row.date)}`,
-      storeName,
+      description: `${profile?.name} deleted cash collection of ${fmtMoney(row.cash_collected)} for ${stName} on ${shortDate(row.date)}`,
+      storeName: stName,
       metadata: { deleted: row },
     });
     setConfirmDelete(null);
@@ -137,6 +190,7 @@ export default function CashPage() {
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
+
   // Client-side filters: status + search
   const visibleRows = recon.filter(r => {
     if (statusFilter.length && !statusFilter.includes(r.status)) return false;
@@ -144,7 +198,7 @@ export default function CashPage() {
       const q = search.toLowerCase();
       const hay = [
         (r.store_name || '').toLowerCase(),
-        String(r.cash_sales ?? ''),
+        String(r.expected ?? ''),
         String(r.cash_collected ?? ''),
         String(r.short_over ?? ''),
         (r.note || '').toLowerCase(),
@@ -156,9 +210,9 @@ export default function CashPage() {
     return true;
   });
 
-  const totalExpected = visibleRows.reduce((s,r) => s + (r.cash_sales||0), 0);
-  const totalCollected = visibleRows.reduce((s,r) => s + (r.cash_collected||0), 0);
-  const totalCashInHand = visibleRows.reduce((s,r) => s + (r.cash_collected||0), 0);
+  const totalExpected = visibleRows.reduce((s,r) => s + (r.expected || 0), 0);
+  const totalCollected = visibleRows.reduce((s,r) => s + (r.cash_collected || 0), 0);
+  const totalCashInHand = totalCollected;
   const totalShort = visibleRows.filter(r => r.short_over < 0).reduce((s,r) => s + r.short_over, 0);
   const totalOver = visibleRows.filter(r => r.short_over > 0).reduce((s,r) => s + r.short_over, 0);
   const pendingCount = visibleRows.filter(r => r.status === 'pending').length;
@@ -166,6 +220,12 @@ export default function CashPage() {
 
   const singleStoreId = storeFilter.length === 1 ? storeFilter[0] : '';
   const storeName = stores.find(s => s.id === singleStoreId)?.name;
+  const modalStore = stores.find(s => s.id === formStoreId);
+  const modalDiff = (() => {
+    const col = parseFloat(form.cash_collected);
+    if (isNaN(col) || expectedBreakdown.total <= 0) return null;
+    return +(col - expectedBreakdown.total).toFixed(2);
+  })();
 
   const tryOpenCollect = () => {
     setEditRow(null);
@@ -182,7 +242,7 @@ export default function CashPage() {
   };
 
   return (<div>
-    <PageHeader title="🏦 Cash Collection" subtitle={singleStoreId ? `${storeName} · Auto short/over vs sales` : 'All Stores · Auto short/over vs sales'}>
+    <PageHeader title="🏦 Cash Collection" subtitle={singleStoreId ? `${storeName} · Auto short/over vs safe drops` : 'All Stores · Auto short/over vs safe drops'}>
       <Button onClick={tryOpenCollect}>+ Collect</Button>
     </PageHeader>
     {loadError && <Alert type="error">{loadError}</Alert>}
@@ -233,7 +293,14 @@ export default function CashPage() {
         columns={[
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_name', label: 'Store', render: (v,r) => <StoreBadge name={v} color={r.store_color} />, sortValue: r => r.store_name || '' },
-          { key: 'cash_sales', label: 'Expected', align: 'right', mono: true, render: v => fmt(v), sortValue: r => Number(r.cash_sales || 0) },
+          { key: 'expected', label: 'Expected', align: 'right', mono: true,
+            render: (v, r) => (
+              <span title={r.has_r2 ? `R1: ${fmt(r.r1_safe_drop)} + R2: ${fmt(r.r2_safe_drop)}` : `R1: ${fmt(r.r1_safe_drop)}`}>
+                {fmt(v)}
+              </span>
+            ),
+            sortValue: r => Number(r.expected || 0),
+          },
           { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-sw-blue font-semibold">{fmt(v)}</span> : <span className="text-sw-dim">—</span>, sortValue: r => Number(r.cash_collected || 0) },
           { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-sw-amber text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span>, sortValue: r => Number(r.short_over || 0) },
           { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v) },
@@ -273,8 +340,50 @@ export default function CashPage() {
         {!formStoreId && <div className="text-sw-red text-[11px] font-semibold mt-1">Please select a store</div>}
       </Field>
       <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></Field>
-      {expected > 0 && <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border"><div className="flex justify-between"><span className="text-sw-sub text-xs">Expected</span><span className="text-sw-text font-bold font-mono">{fmt(expected)}</span></div></div>}
-      <Field label="Cash Collected"><input type="number" value={form.cash_collected} onChange={e => setForm({...form, cash_collected: e.target.value})} className="!text-lg !py-3 !font-mono !font-bold" /></Field>
+
+      {/* Expected breakdown */}
+      {expectedBreakdown.total > 0 && (
+        <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border">
+          <div className="text-sw-sub text-[10px] font-bold uppercase mb-2">Expected Cash</div>
+          <div className="space-y-1 text-[12px]">
+            <div className="flex justify-between">
+              <span className="text-sw-sub">R1 Safe Drop</span>
+              <span className="text-sw-text font-mono font-semibold">{fmt(expectedBreakdown.r1)}</span>
+            </div>
+            {(modalStore?.has_register2 && expectedBreakdown.r2 > 0) && (
+              <div className="flex justify-between">
+                <span className="text-sw-sub">R2 Safe Drop</span>
+                <span className="text-sw-text font-mono font-semibold">{fmt(expectedBreakdown.r2)}</span>
+              </div>
+            )}
+            <div className="border-t border-sw-border pt-1 mt-1 flex justify-between">
+              <span className="text-sw-text font-bold">Total Expected</span>
+              <span className="text-sw-text font-mono font-extrabold text-[14px]">{fmt(expectedBreakdown.total)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Field label="Cash Collected">
+        <input
+          type="number"
+          value={form.cash_collected}
+          onChange={e => setForm({...form, cash_collected: e.target.value})}
+          className="!text-lg !py-3 !font-mono !font-bold"
+        />
+      </Field>
+
+      {/* Live short/over indicator */}
+      {modalDiff !== null && (
+        <div className={`rounded-lg p-2.5 mb-3 border text-[12px] font-bold font-mono text-center ${
+          Math.abs(modalDiff) < 0.01 ? 'bg-sw-blueD text-sw-blue border-sw-blue/30'
+          : modalDiff > 0 ? 'bg-sw-greenD text-sw-green border-sw-green/30'
+          : 'bg-sw-redD text-sw-red border-sw-red/30'
+        }`}>
+          {Math.abs(modalDiff) < 0.01 ? '✓ MATCHED' : modalDiff > 0 ? `OVER +${fmt(modalDiff)}` : `SHORT ${fmt(modalDiff)}`}
+        </div>
+      )}
+
       <Field label="Note"><input type="text" value={form.note} onChange={e => setForm({...form, note: e.target.value})} /></Field>
       <div className="flex gap-2 justify-end"><Button variant="secondary" onClick={() => { setModal(null); setEditRow(null); }}>Cancel</Button><Button onClick={handleSave}>Save</Button></div>
     </Modal>}
