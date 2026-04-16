@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -23,6 +23,14 @@ export default function PurchasesPage() {
   const [editItem, setEditItem] = useState(null);
   const [vendorFilter, setVendorFilter] = useState([]); // array of vendor names
   const [search, setSearch] = useState('');
+  const [sortState, setSortState] = useState({ key: 'week_of', dir: 'desc' });
+  const purchaseSortOptions = [
+    { label: 'Date (newest)', key: 'week_of', dir: 'desc' },
+    { label: 'Date (oldest)', key: 'week_of', dir: 'asc' },
+    { label: 'Vendor A-Z', key: 'supplier', dir: 'asc' },
+    { label: 'Amount (high-low)', key: 'total_cost', dir: 'desc' },
+    { label: 'Amount (low-high)', key: 'total_cost', dir: 'asc' },
+  ];
   const [pageStoreIds, setPageStoreIds] = useState(effectiveStoreId ? [effectiveStoreId] : []);
   const pageStoreId = pageStoreIds.length === 1 ? pageStoreIds[0] : '';
   const [formStoreId, setFormStoreId] = useState('');
@@ -367,6 +375,7 @@ export default function PurchasesPage() {
 
     {/* Vendor filter + search */}
     <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <SortDropdown options={purchaseSortOptions} value={sortState} onChange={setSortState} />
       <MultiSelect
         label="Vendor"
         placeholder="All Vendors"
@@ -388,6 +397,8 @@ export default function PurchasesPage() {
     </div>
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
       <DataTable
+        sortState={sortState}
+        onSortChange={setSortState}
         emptyMessage="No purchases yet. Tap + Add to log an invoice."
         columns={[
           { key: 'week_of', label: 'Date', render: v => weekLabel(v) },

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
@@ -18,6 +18,16 @@ export default function SalesPage() {
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [formError, setFormError] = useState('');
+  const [sortState, setSortState] = useState({ key: 'date', dir: 'desc' });
+  const salesSortOptions = [
+    { label: 'Date (newest)', key: 'date', dir: 'desc' },
+    { label: 'Date (oldest)', key: 'date', dir: 'asc' },
+    { label: 'Store A-Z', key: 'store_id', dir: 'asc' },
+    { label: 'Gross (high-low)', key: 'gross_sales', dir: 'desc' },
+    { label: 'Net (high-low)', key: 'net_sales', dir: 'desc' },
+    { label: 'Cash (high-low)', key: 'cash_total', dir: 'desc' },
+    { label: 'Status (alerts first)', key: '_status', dir: 'asc' },
+  ];
   // Local form-only store id. Used when the owner picks a store for a
   // specific Add entry while "All Stores" is selected in the sidebar.
   // This is NEVER written back to the sidebar's selectedStore.
@@ -1126,9 +1136,14 @@ export default function SalesPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
+      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+        <SortDropdown options={salesSortOptions} value={sortState} onChange={setSortState} />
+      </div>
+
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable
-          defaultSort={{ key: 'date', dir: 'desc' }}
+          sortState={sortState}
+          onSortChange={setSortState}
           columns={[
           {
             key: '_status', label: '', align: 'center', sortable: true,

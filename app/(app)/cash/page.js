@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, ConfirmModal, MultiSelect, SmartDatePicker } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, ConfirmModal, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
@@ -44,6 +44,18 @@ export default function CashPage() {
   const [storeFilter, setStoreFilter] = useState(effectiveStoreId ? [effectiveStoreId] : []);
   const [statusFilter, setStatusFilter] = useState([]);
   const [search, setSearch] = useState('');
+
+  // Sort
+  const [sortState, setSortState] = useState({ key: 'date', dir: 'desc' });
+  const cashSortOptions = [
+    { label: 'Date (newest)', key: 'date', dir: 'desc' },
+    { label: 'Date (oldest)', key: 'date', dir: 'asc' },
+    { label: 'Store A-Z', key: 'store_name', dir: 'asc' },
+    { label: 'Store Z-A', key: 'store_name', dir: 'desc' },
+    { label: 'Expected (high-low)', key: 'expected', dir: 'desc' },
+    { label: 'Expected (low-high)', key: 'expected', dir: 'asc' },
+    { label: 'Status (priority)', key: 'status', dir: 'asc' },
+  ];
 
   // Modal form
   const [formStoreId, setFormStoreId] = useState('');
@@ -213,8 +225,8 @@ export default function CashPage() {
   const totalExpected = visibleRows.reduce((s,r) => s + (r.expected || 0), 0);
   const totalCollected = visibleRows.reduce((s,r) => s + (r.cash_collected || 0), 0);
   const totalCashInHand = totalCollected;
-  const shortRows = visibleRows.filter(r => r.short_over < 0);
-  const overRows = visibleRows.filter(r => r.short_over > 0);
+  const shortRows = visibleRows.filter(r => r.status === 'short');
+  const overRows = visibleRows.filter(r => r.status === 'over');
   const totalShort = shortRows.reduce((s,r) => s + r.short_over, 0);
   const totalOver = overRows.reduce((s,r) => s + r.short_over, 0);
   const pendingRows = visibleRows.filter(r => r.status === 'pending');
@@ -270,6 +282,7 @@ export default function CashPage() {
         onChange={setStatusFilter}
         options={STATUS_OPTIONS}
       />
+      <SortDropdown options={cashSortOptions} value={sortState} onChange={setSortState} />
       <input
         type="text"
         placeholder="Search… (store, amount, notes)"
@@ -293,7 +306,8 @@ export default function CashPage() {
 
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
       <DataTable
-        defaultSort={{ key: 'date', dir: 'desc' }}
+        sortState={sortState}
+        onSortChange={setSortState}
         columns={[
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_name', label: 'Store', render: (v,r) => <StoreBadge name={v} color={r.store_color} />, sortValue: r => r.store_name || '' },

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
@@ -42,6 +42,15 @@ export default function ExpensesPage() {
   const pageStoreId = pageStoreIds.length === 1 ? pageStoreIds[0] : '';
   const [typeFilter, setTypeFilter] = useState([]); // array of category ids / '__custom__'
   const [search, setSearch] = useState('');
+  const [sortState, setSortState] = useState({ key: 'month', dir: 'desc' });
+  const expenseSortOptions = [
+    { label: 'Date (newest)', key: 'month', dir: 'desc' },
+    { label: 'Date (oldest)', key: 'month', dir: 'asc' },
+    { label: 'Store A-Z', key: 'store_id', dir: 'asc' },
+    { label: 'Type A-Z', key: 'category', dir: 'asc' },
+    { label: 'Amount (high-low)', key: 'amount', dir: 'desc' },
+    { label: 'Amount (low-high)', key: 'amount', dir: 'asc' },
+  ];
 
   // Single-expense form
   const [form, setForm] = useState({ store_id: '', date: today(), category: 'power', customCategory: '', amount: '', note: '' });
@@ -525,6 +534,7 @@ export default function ExpensesPage() {
             { value: '__custom__', label: 'Custom/Other', icon: '✨' },
           ]}
         />
+        <SortDropdown options={expenseSortOptions} value={sortState} onChange={setSortState} />
         <input
           type="text"
           placeholder="Search expenses… (type, store, amount, notes)"
@@ -540,7 +550,8 @@ export default function ExpensesPage() {
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
         <DataTable
           emptyMessage="No expenses for this period. Use Fill Monthly to enter your bills quickly."
-          defaultSort={{ key: 'month', dir: 'desc' }}
+          sortState={sortState}
+          onSortChange={setSortState}
           columns={[
             { key: 'month', label: 'Date', render: v => monthLabel(v), sortValue: r => r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },

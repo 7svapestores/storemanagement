@@ -712,6 +712,32 @@ export function EmptyState({ icon = '📭', title = 'Nothing here yet', message,
   );
 }
 
+// ── Sort Dropdown ───────────────────────────────────────────
+// A simple <select> that mirrors/drives DataTable sort state.
+// props:
+//   options: [{ label: 'Date (newest)', key: 'date', dir: 'desc' }, ...]
+//   value: { key, dir } — current sort state
+//   onChange: ({ key, dir }) => void
+export function SortDropdown({ options, value, onChange }) {
+  const selected = options.findIndex(o => o.key === value?.key && o.dir === value?.dir);
+  return (
+    <div className="inline-flex items-center gap-2">
+      <label className="text-sw-sub text-[10px] font-bold uppercase">Sort</label>
+      <select
+        value={selected >= 0 ? selected : ''}
+        onChange={e => {
+          const idx = Number(e.target.value);
+          if (!isNaN(idx) && options[idx]) onChange({ key: options[idx].key, dir: options[idx].dir });
+        }}
+        className="!w-auto !min-w-[180px] !py-1.5 !text-[11px]"
+      >
+        {selected < 0 && <option value="">Custom</option>}
+        {options.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 // ── Data Table ──────────────────────────────────────────────
 // Per-column flags:
 //   hideOnMobile: true   — hide below 768px
@@ -720,8 +746,14 @@ export function EmptyState({ icon = '📭', title = 'Nothing here yet', message,
 //
 // DataTable props:
 //   defaultSort={{ key, dir }} — initial sort state
-export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data', defaultSort }) {
-  const [sort, setSort] = useState(defaultSort || null);
+export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emptyMessage = 'No data', defaultSort, sortState, onSortChange }) {
+  const [internalSort, setInternalSort] = useState(defaultSort || null);
+  const sort = sortState !== undefined ? sortState : internalSort;
+  const setSort = (v) => {
+    const next = typeof v === 'function' ? v(sort) : v;
+    setInternalSort(next);
+    onSortChange?.(next);
+  };
   const colClass = (c) => c.hideOnMobile ? 'hidden md:table-cell' : '';
 
   // Sortable when: explicitly opted in via `sortable: true`, OR the key isn't
