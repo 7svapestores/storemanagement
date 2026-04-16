@@ -2,6 +2,85 @@
 import { useState, useEffect, useRef } from 'react';
 import { fmt, fK, weekLabel, getDateRange } from '@/lib/utils';
 
+// ── SmartDatePicker ─────────────────────────────────────────
+// Three dropdown selects (Month / Day / Year) + a native date fallback icon.
+// Props: value (YYYY-MM-DD string), onChange (YYYY-MM-DD string => void)
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const daysInMonth = (m, y) => new Date(y, m, 0).getDate();
+const pad2 = n => String(n).padStart(2, '0');
+const curYear = new Date().getFullYear();
+
+export function SmartDatePicker({ value, onChange }) {
+  const parse = (v) => {
+    if (!v) { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }; }
+    const [y, m, d] = String(v).split('-').map(Number);
+    return { y: y || curYear, m: m || 1, d: d || 1 };
+  };
+  const { y, m, d: day } = parse(value);
+  const nativeRef = useRef(null);
+
+  const emit = (ny, nm, nd) => {
+    const maxDay = daysInMonth(nm, ny);
+    const safeDay = Math.min(nd, maxDay);
+    onChange(`${ny}-${pad2(nm)}-${pad2(safeDay)}`);
+  };
+
+  const maxDays = daysInMonth(m, y);
+  const yearStart = curYear - 2;
+  const yearEnd = curYear + 1;
+
+  const selStyle = {
+    background: '#131C28', border: '1px solid #1A2536', borderRadius: 8,
+    color: '#E2E8F0', fontSize: 13, padding: '9px 8px', minHeight: 44,
+    outline: 'none', flex: 1, minWidth: 0, cursor: 'pointer',
+  };
+
+  return (
+    <div className="flex gap-1.5 items-center">
+      <select
+        value={m}
+        onChange={e => emit(y, Number(e.target.value), day)}
+        style={{ ...selStyle, minWidth: 110 }}
+      >
+        {MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+      </select>
+      <select
+        value={Math.min(day, maxDays)}
+        onChange={e => emit(y, m, Number(e.target.value))}
+        style={selStyle}
+      >
+        {Array.from({ length: maxDays }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+      </select>
+      <select
+        value={y}
+        onChange={e => emit(Number(e.target.value), m, day)}
+        style={{ ...selStyle, minWidth: 80 }}
+      >
+        {Array.from({ length: yearEnd - yearStart + 1 }, (_, i) => {
+          const yr = yearStart + i;
+          return <option key={yr} value={yr}>{yr}</option>;
+        })}
+      </select>
+      <button
+        type="button"
+        onClick={() => nativeRef.current?.showPicker?.()}
+        title="Open calendar"
+        style={{ background: '#131C28', border: '1px solid #1A2536', borderRadius: 8, minHeight: 44, width: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}
+      >
+        📅
+      </button>
+      <input
+        ref={nativeRef}
+        type="date"
+        value={value || ''}
+        onChange={e => { if (e.target.value) onChange(e.target.value); }}
+        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}
+        tabIndex={-1}
+      />
+    </div>
+  );
+}
+
 // ── Stat Card ───────────────────────────────────────────────
 export function StatCard({ label, value, sub, color, icon }) {
   return (

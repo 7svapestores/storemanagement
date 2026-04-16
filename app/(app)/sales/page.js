@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
@@ -1266,7 +1266,7 @@ export default function SalesPage() {
             {formError && <div className="text-sw-red text-[11px] font-semibold mt-1">{formError}</div>}
           </Field>
           {renderTabbedForm(ownerUsesReg2, /*allowShortOver*/ true, (
-            <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Date"><SmartDatePicker value={form.date} onChange={v => setForm({ ...form, date: v })} /></Field>
           ))}
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="secondary" onClick={closeModal}>Cancel</Button>

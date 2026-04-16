@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, ConfirmModal, MultiSelect } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, ConfirmModal, MultiSelect, SmartDatePicker } from '@/components/UI';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
@@ -339,7 +339,7 @@ export default function CashPage() {
         </select>
         {!formStoreId && <div className="text-sw-red text-[11px] font-semibold mt-1">Please select a store</div>}
       </Field>
-      <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></Field>
+      <Field label="Date"><SmartDatePicker value={form.date} onChange={v => setForm({...form, date: v})} /></Field>
 
       {/* Expected breakdown */}
       {expectedBreakdown.total > 0 && (

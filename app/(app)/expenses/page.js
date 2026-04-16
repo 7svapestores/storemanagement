@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker } from '@/components/UI';
 import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
@@ -594,7 +594,7 @@ export default function ExpensesPage() {
             {errors.store_id && <p className="text-sw-red text-[11px] mt-1">{errors.store_id}</p>}
           </Field>
           <Field label="Date">
-            <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className={errors.date ? '!border-sw-red' : ''} />
+            <SmartDatePicker value={form.date} onChange={v => setForm({...form, date: v})} />
             {errors.date && <p className="text-sw-red text-[11px] mt-1">{errors.date}</p>}
           </Field>
           <Field label="Category">
@@ -708,16 +708,7 @@ export default function ExpensesPage() {
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <label className="text-sw-sub text-[11px] font-bold uppercase">Date</label>
-            <input
-              type="date"
-              value={tplDate}
-              onChange={e => {
-                const v = e.target.value;
-                setTplDate(v);
-                if (v) setTplMonth(v.slice(0, 7));
-              }}
-              className="!w-auto md:!w-[180px]"
-            />
+            <SmartDatePicker value={tplDate} onChange={v => { setTplDate(v); if (v) setTplMonth(v.slice(0, 7)); }} />
             <span className="text-sw-dim text-[11px]">Blank rows are skipped.</span>
           </div>
 

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -473,7 +473,7 @@ export default function PurchasesPage() {
         )}
       </Field>
 
-      <Field label="Date"><input type="date" value={form.week_of} onChange={e => setForm({...form, week_of: e.target.value})} /></Field>
+      <Field label="Date"><SmartDatePicker value={form.week_of} onChange={v => setForm({...form, week_of: v})} /></Field>
 
       <Field label="Vendor">
         <select value={form.vendor_id} onChange={e => setForm({...form, vendor_id: e.target.value})}>
