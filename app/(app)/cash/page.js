@@ -213,10 +213,14 @@ export default function CashPage() {
   const totalExpected = visibleRows.reduce((s,r) => s + (r.expected || 0), 0);
   const totalCollected = visibleRows.reduce((s,r) => s + (r.cash_collected || 0), 0);
   const totalCashInHand = totalCollected;
-  const totalShort = visibleRows.filter(r => r.short_over < 0).reduce((s,r) => s + r.short_over, 0);
-  const totalOver = visibleRows.filter(r => r.short_over > 0).reduce((s,r) => s + r.short_over, 0);
-  const pendingCount = visibleRows.filter(r => r.status === 'pending').length;
-  const matchedCount = visibleRows.filter(r => r.status === 'matched').length;
+  const shortRows = visibleRows.filter(r => r.short_over < 0);
+  const overRows = visibleRows.filter(r => r.short_over > 0);
+  const totalShort = shortRows.reduce((s,r) => s + r.short_over, 0);
+  const totalOver = overRows.reduce((s,r) => s + r.short_over, 0);
+  const pendingRows = visibleRows.filter(r => r.status === 'pending');
+  const pendingExpected = pendingRows.reduce((s,r) => s + (r.expected || 0), 0);
+  const matchedRows = visibleRows.filter(r => r.status === 'matched');
+  const matchedCollected = matchedRows.reduce((s,r) => s + (r.cash_collected || 0), 0);
 
   const singleStoreId = storeFilter.length === 1 ? storeFilter[0] : '';
   const storeName = stores.find(s => s.id === singleStoreId)?.name;
@@ -280,11 +284,11 @@ export default function CashPage() {
 
     {/* Stat cards — fed by filtered rows */}
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
-      <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} icon="💰" color="#60A5FA" />
-      <StatCard label="Total Short" value={fmt(totalShort)} icon="🔴" color="#F87171" />
-      <StatCard label="Total Over" value={fmt(totalOver)} icon="🟢" color="#34D399" />
-      <StatCard label="Pending" value={pendingCount} icon="⏳" color="#FBBF24" />
-      <StatCard label="Matched" value={matchedCount} icon="✅" color="#34D399" />
+      <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} sub="Collected so far" icon="💰" color="#60A5FA" />
+      <StatCard label="Total Short" value={fmt(totalShort)} sub={`${shortRows.length} record${shortRows.length === 1 ? '' : 's'} short`} icon="🔴" color="#F87171" />
+      <StatCard label="Total Over" value={`+${fmt(totalOver)}`} sub={`${overRows.length} record${overRows.length === 1 ? '' : 's'} over`} icon="🟢" color="#34D399" />
+      <StatCard label="Pending" value={`${pendingRows.length} / ${fmt(pendingExpected)}`} sub={`${pendingRows.length} pending · Expected to collect`} icon="⏳" color="#FBBF24" />
+      <StatCard label="Matched" value={`${matchedRows.length} / ${fmt(matchedCollected)}`} sub={`${matchedRows.length} matched · Reconciled`} icon="✅" color="#34D399" />
     </div>
 
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
