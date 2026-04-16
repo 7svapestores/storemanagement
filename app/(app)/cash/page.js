@@ -79,6 +79,7 @@ export default function CashPage() {
   if (loading) return <Loading />;
   const totalShort = recon.filter(r => r.short_over < 0).reduce((s,r) => s + r.short_over, 0);
   const totalOver = recon.filter(r => r.short_over > 0).reduce((s,r) => s + r.short_over, 0);
+  const totalCashInHand = recon.reduce((s,r) => s + (r.cash_collected||0), 0);
   const statusBadge = v => { const c = { matched:'bg-sw-greenD text-sw-green', over:'bg-sw-greenD text-sw-green', short:'bg-sw-redD text-sw-red', pending:'bg-sw-amberD text-sw-amber' }[v]||''; return <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${c} uppercase`}>{v}</span>; };
 
   const hasStore = !!effectiveStoreId;
@@ -97,6 +98,7 @@ export default function CashPage() {
     {loadError && <Alert type="error">{loadError}</Alert>}
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="flex gap-2.5 flex-wrap mb-3.5">
+      <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} icon="💰" color="#60A5FA" />
       <StatCard label="Total Short" value={fmt(totalShort)} icon="🔴" color="#F87171" />
       <StatCard label="Total Over" value={fmt(totalOver)} icon="🟢" color="#34D399" />
       <StatCard label="Pending" value={recon.filter(r=>r.status==='pending').length} icon="⏳" color="#FBBF24" />
