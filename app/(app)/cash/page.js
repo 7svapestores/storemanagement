@@ -301,7 +301,8 @@ export default function CashPage() {
       const netColor = Math.abs(netShortOver) < 0.01 ? '#64748B' : netShortOver > 0 ? '#34D399' : '#F87171';
       const netValue = Math.abs(netShortOver) < 0.01 ? fmt(0) : netShortOver > 0 ? `+${fmt(netShortOver)}` : fmt(netShortOver);
       return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
+          <StatCard label="Expected Cash" value={fmt(totalExpected)} sub="Total expected from all days" icon="💵" color="#FBBF24" />
           <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} sub="Collected so far" icon="💰" color="#60A5FA" />
           <StatCard label="Net Short/Over" value={netValue} sub={`${shortRows.length} short · ${overRows.length} over`} icon="📊" color={netColor} />
           <StatCard label="Pending" value={`${pendingRows.length} / ${fmt(pendingExpected)}`} sub={`${pendingRows.length} pending · Expected to collect`} icon="⏳" color="#FBBF24" />
