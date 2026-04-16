@@ -744,8 +744,13 @@ export function DataTable({ columns, rows, onEdit, onDelete, isOwner = true, emp
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
-      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-      return String(av).localeCompare(String(bv)) * dir;
+      let cmp;
+      if (typeof av === 'number' && typeof bv === 'number') cmp = (av - bv) * dir;
+      else cmp = String(av).localeCompare(String(bv)) * dir;
+      if (cmp !== 0) return cmp;
+      const ad = a.date || a.week_of || a.month || '';
+      const bd = b.date || b.week_of || b.month || '';
+      return bd.localeCompare(ad);
     });
   })();
 

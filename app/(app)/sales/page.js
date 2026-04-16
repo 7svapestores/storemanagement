@@ -1131,7 +1131,14 @@ export default function SalesPage() {
           defaultSort={{ key: 'date', dir: 'desc' }}
           columns={[
           {
-            key: '_status', label: '', align: 'center', render: (_, r) => {
+            key: '_status', label: '', align: 'center', sortable: true,
+            sortValue: r => {
+              const st = stores.find(s => s.id === r.store_id);
+              if (!st?.has_register2) return 2;
+              const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              return Math.abs(diff) < 0.01 ? 2 : 1;
+            },
+            render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
               const rowUsesR2 = !!rowStore?.has_register2;
               if (!rowUsesR2) return <span className="text-sw-green text-base" title="No Register 2">✅</span>;

@@ -303,7 +303,7 @@ export default function CashPage() {
           },
           { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-sw-blue font-semibold">{fmt(v)}</span> : <span className="text-sw-dim">—</span>, sortValue: r => Number(r.cash_collected || 0) },
           { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-sw-amber text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span>, sortValue: r => Number(r.short_over || 0) },
-          { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v) },
+          { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v), sortValue: r => ({ pending: 1, short: 2, over: 3, matched: 4 })[r.status] || 99 },
         ]}
         rows={visibleRows}
         isOwner={isOwner}
