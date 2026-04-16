@@ -1,37 +1,205 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, Field, Button, Loading } from '@/components/UI';
+import { PageHeader, Field, Button, Loading, Modal } from '@/components/UI';
 
-const colors = ['#F87171','#60A5FA','#34D399','#FBBF24','#C084FC','#FB7185','#FB923C','#38BDF8','#4ADE80','#E879F9'];
+const COLORS = ['#F87171','#60A5FA','#34D399','#FBBF24','#C084FC','#FB7185','#FB923C','#38BDF8','#4ADE80','#E879F9'];
+
+const Toggle = ({ value, onChange, label, hint }) => (
+  <div className="flex items-center justify-between py-3 px-1 border-b border-sw-border">
+    <div>
+      <div className="text-sw-text text-[13px] font-semibold">{label}</div>
+      {hint && <div className="text-sw-dim text-[10px]">{hint}</div>}
+    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      style={{
+        width: 48, height: 28, borderRadius: 14,
+        background: value ? '#22C55E' : '#374151',
+        display: 'flex', alignItems: 'center', padding: 3,
+        cursor: 'pointer', border: 'none', transition: 'background 200ms',
+      }}
+    >
+      <div style={{
+        width: 22, height: 22, borderRadius: 11, background: '#fff',
+        transform: value ? 'translateX(20px)' : 'translateX(0)',
+        transition: 'transform 200ms',
+      }} />
+    </button>
+  </div>
+);
 
 export default function SettingsPage() {
   const { supabase, isOwner } = useAuth();
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', color: '#60A5FA', email: '' });
+  const [editStore, setEditStore] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
 
-  const load = async () => { setLoading(true); const { data } = await supabase.from('stores').select('*').order('created_at'); setStores(data||[]); setLoading(false); };
+  const blankStore = { name: '', color: '#60A5FA', email: '', has_register2: false, tax_rate: '8.25', address: '', phone: '', is_active: true };
+  const [form, setForm] = useState(blankStore);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('stores').select('*').order('created_at');
+    setStores(data || []);
+    setLoading(false);
+  };
   useEffect(() => { load(); }, []);
+
+  const openEdit = (s) => {
+    setEditStore(s);
+    setForm({
+      name: s.name || '',
+      color: s.color || '#60A5FA',
+      email: s.email || '',
+      has_register2: !!s.has_register2,
+      tax_rate: String(s.tax_rate ?? '8.25'),
+      address: s.address || '',
+      phone: s.phone || '',
+      is_active: s.is_active !== false,
+    });
+  };
+
+  const openAdd = () => {
+    setEditStore(null);
+    setForm(blankStore);
+    setAddOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setMsg('Store name is required'); setTimeout(() => setMsg(''), 2500); return; }
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      color: form.color,
+      email: form.email.trim(),
+      has_register2: form.has_register2,
+      tax_rate: parseFloat(form.tax_rate) || 8.25,
+      address: form.address.trim(),
+      phone: form.phone.trim(),
+      is_active: form.is_active,
+    };
+    const { error } = editStore
+      ? await supabase.from('stores').update(payload).eq('id', editStore.id)
+      : await supabase.from('stores').insert(payload);
+    if (error) { setMsg(error.message); setSaving(false); return; }
+    setSaving(false);
+    setEditStore(null);
+    setAddOpen(false);
+    setMsg('Saved!');
+    setTimeout(() => setMsg(''), 2500);
+    load();
+  };
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
-  return (<div>
-    <PageHeader title="⚙️ Settings" />
-    <div className="bg-sw-card rounded-xl p-5 border border-sw-border">
-      <h3 className="text-sw-text text-sm font-bold mb-3">Stores ({stores.length})</h3>
-      {stores.map(s => (<div key={s.id} className="flex items-center gap-2 py-1.5 px-2.5 mb-1 bg-sw-card2 rounded-md">
-        <div className="w-2 h-2 rounded-sm" style={{ background: s.color }} />
-        <span className="text-sw-text text-xs flex-1">{s.name}</span>
-        <span className="text-sw-dim text-[10px]">{s.email||''}</span>
-      </div>))}
-      <div className="flex gap-2 items-end mt-3.5">
-        <div className="flex-1"><Field label="Store Name"><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="New store" /></Field></div>
-        <div className="flex-1"><Field label="Email"><input value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="store@email.com" /></Field></div>
-        <div className="flex gap-1 mb-3.5">{colors.map(c => <button key={c} onClick={() => setForm({...form, color: c})} className="w-[18px] h-[18px] rounded cursor-pointer" style={{ background: c, border: form.color === c ? '2px solid #fff' : '2px solid transparent' }} />)}</div>
-        <Button onClick={async () => { if (!form.name.trim()) return; const { error } = await supabase.from('stores').insert({ name: form.name, color: form.color, email: form.email }); if (error) { alert(error.message); return; } setForm({ name: '', color: '#60A5FA', email: '' }); load(); }} className="mb-3.5">Add</Button>
+  const showModal = editStore || addOpen;
+
+  return (
+    <div>
+      <PageHeader title="⚙️ Settings" subtitle={`${stores.length} stores`}>
+        <Button onClick={openAdd}>+ Add Store</Button>
+      </PageHeader>
+
+      {msg && (
+        <div className={`mb-3 rounded-lg px-3 py-2 text-[12px] font-semibold ${msg === 'Saved!' ? 'bg-sw-greenD text-sw-green border border-sw-green/30' : 'bg-sw-redD text-sw-red border border-sw-red/30'}`}>
+          {msg}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {stores.map(s => (
+          <div
+            key={s.id}
+            className={`bg-sw-card rounded-xl border p-4 ${s.is_active === false ? 'border-sw-border/40 opacity-60' : 'border-sw-border'}`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 rounded" style={{ background: s.color }} />
+                <div>
+                  <div className="text-sw-text text-[14px] font-bold">{s.name}</div>
+                  {s.email && <div className="text-sw-dim text-[11px]">{s.email}</div>}
+                </div>
+              </div>
+              <Button variant="secondary" onClick={() => openEdit(s)} className="!text-[11px] !px-3 !py-1.5">Edit</Button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+              <div>
+                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Register 2</div>
+                <div className={s.has_register2 ? 'text-sw-green font-semibold' : 'text-sw-dim'}>
+                  {s.has_register2 ? 'Enabled' : 'Disabled'}
+                </div>
+              </div>
+              <div>
+                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Tax Rate</div>
+                <div className="text-sw-text font-mono">{s.tax_rate ?? '8.25'}%</div>
+              </div>
+              <div>
+                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Status</div>
+                <div className={s.is_active === false ? 'text-sw-red font-semibold' : 'text-sw-green font-semibold'}>
+                  {s.is_active === false ? 'Inactive' : 'Active'}
+                </div>
+              </div>
+              <div>
+                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Phone</div>
+                <div className="text-sw-dim truncate">{s.phone || '—'}</div>
+              </div>
+            </div>
+            {s.address && <div className="text-sw-dim text-[10px] mt-2">{s.address}</div>}
+          </div>
+        ))}
       </div>
+
+      {showModal && (
+        <Modal title={editStore ? `Edit — ${editStore.name}` : 'Add Store'} onClose={() => { setEditStore(null); setAddOpen(false); }}>
+          <Field label="Store Name">
+            <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. 7s Vape Love - Dallas" />
+          </Field>
+
+          <Field label="Color">
+            <div className="flex gap-1.5 flex-wrap">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setForm({ ...form, color: c })}
+                  className="w-7 h-7 rounded-md cursor-pointer"
+                  style={{ background: c, border: form.color === c ? '3px solid #fff' : '3px solid transparent' }}
+                />
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Email (optional)">
+            <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="store@example.com" />
+          </Field>
+
+          <Field label="Tax Rate (%)">
+            <input type="number" step="0.01" min="0" max="100" value={form.tax_rate} onChange={e => setForm({ ...form, tax_rate: e.target.value })} />
+          </Field>
+
+          <Field label="Address (optional)">
+            <input type="text" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="123 Main St, City, TX" />
+          </Field>
+
+          <Field label="Phone (optional)">
+            <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="(555) 123-4567" />
+          </Field>
+
+          <Toggle label="Has Register 2" hint="Enable second register (Bells, Kerens)" value={form.has_register2} onChange={v => setForm({ ...form, has_register2: v })} />
+          <Toggle label="Active" hint="Inactive stores hidden from dropdowns but data preserved" value={form.is_active} onChange={v => setForm({ ...form, is_active: v })} />
+
+          <div className="flex gap-2 justify-end mt-3">
+            <Button variant="secondary" onClick={() => { setEditStore(null); setAddOpen(false); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </Modal>
+      )}
     </div>
-  </div>);
+  );
 }

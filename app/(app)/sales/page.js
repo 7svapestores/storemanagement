@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, StoreRequiredModal } from '@/components/UI';
-import { fmt, fK, dayLabel, today, downloadCSV, hasRegister2 } from '@/lib/utils';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal } from '@/components/UI';
+import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
 
@@ -17,7 +17,7 @@ export default function SalesPage() {
   const [editItem, setEditItem] = useState(null);
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [showStorePicker, setShowStorePicker] = useState(false);
+  const [formError, setFormError] = useState('');
   // Local form-only store id. Used when the owner picks a store for a
   // specific Add entry while "All Stores" is selected in the sidebar.
   // This is NEVER written back to the sidebar's selectedStore.
@@ -173,11 +173,11 @@ export default function SalesPage() {
       ? profile.store_id
       : (editItem?.store_id || effectiveStoreId || formStoreId);
     if (!storeIdToUse) {
-      setMsg('Please select a store from the sidebar first.');
+      setFormError('Please select a store');
       return;
     }
     const storeForRegister = stores.find(s => s.id === storeIdToUse);
-    const usesReg2 = hasRegister2(storeForRegister?.name);
+    const usesReg2 = !!storeForRegister?.has_register2;
 
     // ── Validation ─────────────────────────────────────────────
     const errs = {};
@@ -505,7 +505,7 @@ export default function SalesPage() {
     ? profile?.store_id
     : (editItem?.store_id || effectiveStoreId || formStoreId);
   const currentStoreObj = stores.find(s => s.id === currentStoreId);
-  const currentUsesReg2 = hasRegister2(currentStoreObj?.name);
+  const currentUsesReg2 = !!currentStoreObj?.has_register2;
 
   // Short/over — positive = SHORT (red), negative = OVER (green).
   //   r1 = cash_sales - (r1_safe_drop + r1_house_account_amount)
@@ -923,7 +923,8 @@ export default function SalesPage() {
     const todayStr = today();
     const todayEntry = sales.find(s => s.date === todayStr && s.store_id === profile?.store_id);
     const storeName = stores.find(s => s.id === profile?.store_id)?.name;
-    const empUsesReg2 = hasRegister2(storeName);
+    const empStoreObj = stores.find(s => s.id === profile?.store_id);
+    const empUsesReg2 = !!empStoreObj?.has_register2;
 
     return (
       <div className="max-w-xl mx-auto">
@@ -1057,7 +1058,8 @@ export default function SalesPage() {
   // the sidebar-selected store, then the form-local picked store.
   const storeName = stores.find(s => s.id === (editItem?.store_id || effectiveStoreId || formStoreId))?.name;
 
-  const ownerUsesReg2 = hasRegister2(storeName);
+  const modalStoreObj = stores.find(s => s.id === (editItem?.store_id || effectiveStoreId || formStoreId));
+  const ownerUsesReg2 = !!modalStoreObj?.has_register2;
 
   const resetReceipts = () => {
     setR1Images([]);
@@ -1065,8 +1067,9 @@ export default function SalesPage() {
   };
 
   const tryOpenAdd = () => {
-    if (!hasStore) { setShowStorePicker(true); return; }
     setForm(blankForm());
+    setFormStoreId(effectiveStoreId || null);
+    setFormError('');
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
@@ -1103,7 +1106,7 @@ export default function SalesPage() {
           {
             key: '_status', label: '', align: 'center', render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
-              const rowUsesR2 = hasRegister2(rowStore?.name);
+              const rowUsesR2 = !!rowStore?.has_register2;
               if (!rowUsesR2) return <span className="text-sw-green text-base" title="No Register 2">✅</span>;
               const diff = r.basket_r2_diff != null
                 ? Number(r.basket_r2_diff)
@@ -1154,14 +1157,14 @@ export default function SalesPage() {
           { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, sortable: true,
             sortValue: (r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
-              if (!hasRegister2(rowStore?.name)) return null;
+              if (!rowStore?.has_register2) return null;
               return r.basket_r2_diff != null
                 ? Number(r.basket_r2_diff)
                 : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
             },
             render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
-              const rowUsesR2 = hasRegister2(rowStore?.name);
+              const rowUsesR2 = !!rowStore?.has_register2;
               if (!rowUsesR2) return <span className="text-sw-dim">—</span>;
               const diff = r.basket_r2_diff != null
                 ? Number(r.basket_r2_diff)
@@ -1219,9 +1222,22 @@ export default function SalesPage() {
               ⚠️ {modalError}
             </div>
           )}
-          <div className="bg-sw-card2 rounded-lg p-2 mb-3 border border-sw-border text-[11px]">
-            Store: <span className="text-sw-text font-semibold">{storeName || '—'}</span>
-          </div>
+          <Field label="Store">
+            <select
+              value={editItem?.store_id || formStoreId || ''}
+              onChange={e => {
+                setFormStoreId(e.target.value);
+                setFormError('');
+                setActiveTab('r1');
+              }}
+              style={formError ? { borderColor: '#F87171' } : undefined}
+              disabled={!!editItem}
+            >
+              <option value="">Select store…</option>
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {formError && <div className="text-sw-red text-[11px] font-semibold mt-1">{formError}</div>}
+          </Field>
           {renderTabbedForm(ownerUsesReg2, /*allowShortOver*/ true, (
             <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
           ))}
@@ -1292,24 +1308,6 @@ export default function SalesPage() {
           </Modal>
         );
       })()}
-
-      {showStorePicker && (
-        <StoreRequiredModal
-          stores={stores}
-          onCancel={() => setShowStorePicker(false)}
-          onSelectStore={(s) => {
-            // Only set the form-local store — never mutate the sidebar.
-            setFormStoreId(s.id);
-            setShowStorePicker(false);
-            setForm(blankForm());
-            setActiveTab('r1');
-            setFieldErrors({});
-            setModalError('');
-            resetReceipts();
-            setModal('add');
-          }}
-        />
-      )}
 
       {confirmDelete && (
         <ConfirmModal
