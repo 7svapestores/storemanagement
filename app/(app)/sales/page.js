@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown, MultiSelect } from '@/components/UI';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
@@ -28,6 +28,16 @@ export default function SalesPage() {
     { label: 'Cash (high-low)', key: 'cash_total', dir: 'desc' },
     { label: 'Status (alerts first)', key: '_status', dir: 'asc' },
   ];
+
+  // Page-level filters
+  const [pageStoreIds, setPageStoreIds] = useState(effectiveStoreId ? [effectiveStoreId] : []);
+  const [employeeFilter, setEmployeeFilter] = useState([]);
+  const [mismatchFilter, setMismatchFilter] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (effectiveStoreId) setPageStoreIds([effectiveStoreId]);
+  }, [effectiveStoreId]);
   // Local form-only store id. Used when the owner picks a store for a
   // specific Add entry while "All Stores" is selected in the sidebar.
   // This is NEVER written back to the sidebar's selectedStore.
@@ -91,7 +101,6 @@ export default function SalesPage() {
     return null;
   };
 
-  // All queries + mutations scope to the selected store (or employee's assigned store).
   const storeId = effectiveStoreId;
 
   const load = useCallback(async () => {
@@ -112,7 +121,8 @@ export default function SalesPage() {
         .gte('date', range.start)
         .lte('date', range.end)
         .order('date', { ascending: false });
-      if (storeId) q = q.eq('store_id', storeId);
+      if (isEmployee && storeId) q = q.eq('store_id', storeId);
+      else if (pageStoreIds.length) q = q.in('store_id', pageStoreIds);
 
       const { data: salesData, error: salesErr } = await q;
       if (salesErr) {
@@ -150,7 +160,7 @@ export default function SalesPage() {
     } finally {
       setLoading(false);
     }
-  }, [range.start, range.end, storeId]);
+  }, [range.start, range.end, storeId, pageStoreIds.join(',')]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1103,6 +1113,45 @@ export default function SalesPage() {
     setR2Images([]);
   };
 
+  // Unique employees from loaded data for the filter dropdown
+  const employeeOptions = (() => {
+    const map = {};
+    sales.forEach(r => {
+      const p = r.profiles;
+      if (p?.id) map[p.id] = p.name || p.username || 'Unknown';
+    });
+    return Object.entries(map).map(([id, name]) => ({ value: id, label: name }));
+  })();
+
+  // Client-side filtering
+  const filteredSales = sales.filter(r => {
+    if (employeeFilter.length && !employeeFilter.includes(r.entered_by)) return false;
+    if (mismatchFilter) {
+      const st = stores.find(s => s.id === r.store_id);
+      const usesR2 = !!st?.has_register2;
+      if (usesR2) {
+        const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+        const hasMismatch = Math.abs(diff) >= 0.01;
+        if (mismatchFilter === 'mismatch' && !hasMismatch) return false;
+        if (mismatchFilter === 'clean' && hasMismatch) return false;
+      } else {
+        if (mismatchFilter === 'mismatch') return false;
+      }
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [
+        (r.stores?.name || '').toLowerCase(),
+        String(r.gross_sales ?? r.total_sales ?? ''),
+        String(r.net_sales ?? ''),
+        (r.profiles?.name || r.profiles?.username || '').toLowerCase(),
+        r.date || '',
+      ].join(' ');
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   const tryOpenAdd = () => {
     setForm(blankForm());
     setFormStoreId(effectiveStoreId || null);
@@ -1137,7 +1186,47 @@ export default function SalesPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+        <MultiSelect
+          label="Store"
+          placeholder="All Stores"
+          unitLabel="store"
+          value={pageStoreIds}
+          onChange={setPageStoreIds}
+          options={stores.map(s => ({ value: s.id, label: s.name }))}
+        />
+        {employeeOptions.length > 0 && (
+          <MultiSelect
+            label="Employee"
+            placeholder="All Employees"
+            unitLabel="employee"
+            value={employeeFilter}
+            onChange={setEmployeeFilter}
+            options={employeeOptions}
+          />
+        )}
+        <div className="inline-flex items-center gap-2">
+          <label className="text-sw-sub text-[10px] font-bold uppercase">Status</label>
+          <select
+            value={mismatchFilter}
+            onChange={e => setMismatchFilter(e.target.value)}
+            className="!w-auto !min-w-[160px] !py-1.5 !text-[11px]"
+          >
+            <option value="">All</option>
+            <option value="mismatch">Mismatches only ⚠️</option>
+            <option value="clean">Clean only ✅</option>
+          </select>
+        </div>
         <SortDropdown options={salesSortOptions} value={sortState} onChange={setSortState} />
+        <input
+          type="text"
+          placeholder="Search… (store, amount, employee)"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="!w-full sm:!flex-1 sm:!min-w-[220px] !py-1.5 !text-[11px]"
+        />
+        {(pageStoreIds.length > 0 || employeeFilter.length > 0 || mismatchFilter || search) && (
+          <button onClick={() => { setPageStoreIds([]); setEmployeeFilter([]); setMismatchFilter(''); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+        )}
       </div>
 
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
@@ -1261,7 +1350,7 @@ export default function SalesPage() {
               </div>
             ),
           }] : []),
-        ]} rows={sales} isOwner={false} />
+        ]} rows={filteredSales} isOwner={false} />
       </div>
 
       {modal && (
