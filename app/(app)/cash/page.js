@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, ConfirmModal, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
@@ -38,7 +38,6 @@ export default function CashPage() {
   const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState(null);
   const [editRow, setEditRow] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Page-level filters
   const [storeFilter, setStoreFilter] = useState(effectiveStoreId ? [effectiveStoreId] : []);
@@ -183,22 +182,6 @@ export default function CashPage() {
     load();
   };
 
-  const doDelete = async () => {
-    const row = confirmDelete;
-    if (!row) return;
-    const { error } = await supabase.from('cash_collections').delete().eq('store_id', row.store_id).eq('date', row.date);
-    if (error) { alert(error.message); setConfirmDelete(null); return; }
-    const stName = stores.find(s => s.id === row.store_id)?.name;
-    await logActivity(supabase, profile, {
-      action: 'delete',
-      entityType: 'cash_collection',
-      description: `${profile?.name} deleted cash collection of ${fmtMoney(row.cash_collected)} for ${stName} on ${shortDate(row.date)}`,
-      storeName: stName,
-      metadata: { deleted: row },
-    });
-    setConfirmDelete(null);
-    load();
-  };
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
@@ -329,11 +312,28 @@ export default function CashPage() {
           { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-sw-blue font-semibold">{fmt(v)}</span> : <span className="text-sw-dim">—</span>, sortValue: r => Number(r.cash_collected || 0) },
           { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-sw-amber text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span>, sortValue: r => Number(r.short_over || 0) },
           { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v), sortValue: r => ({ pending: 1, short: 2, over: 3, matched: 4 })[r.status] || 99 },
+          ...(isOwner ? [{ key: '_action', label: '', align: 'right', sortable: false, render: (_, r) => (
+            r.status === 'pending' ? (
+              <button
+                onClick={() => openEdit(r)}
+                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-greenD border border-sw-green/30 text-sw-green text-[12px] font-semibold"
+                style={{ minHeight: 32 }}
+              >
+                💰 Collect
+              </button>
+            ) : (
+              <button
+                onClick={() => openEdit(r)}
+                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold"
+                style={{ minHeight: 32 }}
+              >
+                ✏️ Edit
+              </button>
+            )
+          ) }] : []),
         ]}
         rows={visibleRows}
-        isOwner={isOwner}
-        onEdit={isOwner ? openEdit : undefined}
-        onDelete={isOwner ? id => { const r = visibleRows.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
+        isOwner={false}
       />
       {visibleRows.length > 0 && (
         <div className="px-3 py-2 border-t border-sw-border bg-sw-card2">
@@ -351,7 +351,7 @@ export default function CashPage() {
     </div>
 
     {/* Collect / Edit modal */}
-    {modal && <Modal title={modal==='edit' ? 'Edit Cash Collection' : 'Collect Cash'} onClose={() => { setModal(null); setEditRow(null); }}>
+    {modal && <Modal title={modal==='edit' ? (editRow?.status === 'pending' ? `Collect Cash — ${editRow?.store_name || ''}` : 'Edit Cash Collection') : 'Collect Cash'} onClose={() => { setModal(null); setEditRow(null); }}>
       <Field label="Store">
         <select
           value={formStoreId}
@@ -412,13 +412,5 @@ export default function CashPage() {
       <div className="flex gap-2 justify-end"><Button variant="secondary" onClick={() => { setModal(null); setEditRow(null); }}>Cancel</Button><Button onClick={handleSave}>Save</Button></div>
     </Modal>}
 
-    {confirmDelete && (
-      <ConfirmModal
-        title="Delete this cash collection?"
-        message={`Delete ${fmtMoney(confirmDelete.cash_collected)} collected for ${confirmDelete.store_name || 'store'} on ${shortDate(confirmDelete.date)}? This will be logged.`}
-        onCancel={() => setConfirmDelete(null)}
-        onConfirm={doDelete}
-      />
-    )}
   </div>);
 }
