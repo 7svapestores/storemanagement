@@ -62,20 +62,16 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState('r1'); // 'r1' | 'r2' | 'summary'
   const [form, setForm] = useState({
     date: today(),
-    // Register 1
     r1_gross: '', r1_net: '',
     cash_sales: '', card_sales: '',
     cashapp_check: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
-    r1_house_account_choice: '',
-    r1_house_account_custom: '',
-    r1_house_account_amount: '',
-    // Register 2 (Bells/Kerens)
     r2_net: '',
     register2_cash: '',
     r2_safe_drop: '',
     notes: '',
   });
+  const [houseAccounts, setHouseAccounts] = useState([]);
 
   const blankForm = () => ({
     date: today(),
@@ -83,23 +79,22 @@ export default function SalesPage() {
     cash_sales: '', card_sales: '',
     cashapp_check: '',
     r1_canceled_basket: '', r1_safe_drop: '', r1_sales_tax: '',
-    r1_house_account_choice: '',
-    r1_house_account_custom: '',
-    r1_house_account_amount: '',
     r2_net: '',
     register2_cash: '',
     r2_safe_drop: '',
     notes: '',
   });
 
-  // Resolve the saved house account name from the dropdown + custom input.
-  const resolvedHouseAccountName = () => {
-    const c = form.r1_house_account_choice;
-    if (c === 'billy') return 'Billy';
-    if (c === 'elias') return 'Elias';
-    if (c === 'other') return (form.r1_house_account_custom || '').trim() || null;
+  const resolveHAName = (entry) => {
+    if (entry.choice === 'billy') return 'Billy';
+    if (entry.choice === 'elias') return 'Elias';
+    if (entry.choice === 'other') return (entry.customName || '').trim() || null;
     return null;
   };
+  const haTotal = houseAccounts.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  const addHA = () => setHouseAccounts(prev => [...prev, { choice: '', customName: '', amount: '' }]);
+  const updateHA = (i, patch) => setHouseAccounts(prev => prev.map((e, j) => j === i ? { ...e, ...patch } : e));
+  const removeHA = (i) => setHouseAccounts(prev => prev.filter((_, j) => j !== i));
 
   const storeId = effectiveStoreId;
 
@@ -236,15 +231,11 @@ export default function SalesPage() {
       if (form.r2_safe_drop === '')    errs.r2_safe_drop = true;
     }
 
-    // House account: if amount > 0, a name is required.
-    if (num(form.r1_house_account_amount) > 0) {
-      if (!resolvedHouseAccountName()) {
-        errs.r1_house_account_choice = true;
-        if (form.r1_house_account_choice === 'other') {
-          errs.r1_house_account_custom = true;
-        }
+    houseAccounts.forEach((e, i) => {
+      if ((parseFloat(e.amount) || 0) > 0 && !resolveHAName(e)) {
+        errs[`ha_name_${i}`] = true;
       }
-    }
+    });
 
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
@@ -318,11 +309,12 @@ export default function SalesPage() {
       r1_canceled_basket: num(form.r1_canceled_basket),
       r1_safe_drop: num(form.r1_safe_drop),
       r1_sales_tax: num(form.r1_sales_tax),
-      r1_house_account_name: resolvedHouseAccountName(),
-      r1_house_account_amount: num(form.r1_house_account_amount),
-      // `credits` is kept in sync by the DB trigger but we also send it here
-      // for clients/reports that read it directly.
-      credits: num(form.r1_house_account_amount),
+      house_accounts: houseAccounts
+        .filter(e => (parseFloat(e.amount) || 0) > 0)
+        .map(e => ({ name: resolveHAName(e) || 'Unnamed', amount: parseFloat(e.amount) || 0 })),
+      r1_house_account_name: houseAccounts.length ? (resolveHAName(houseAccounts[0]) || null) : null,
+      r1_house_account_amount: haTotal,
+      credits: haTotal,
       // Register 2 (zeros for single-register stores)
       r2_net: usesReg2 ? num(form.r2_net) : 0,
       r2_gross: usesReg2 ? num(form.r2_net) : 0, // legacy column kept in sync
@@ -434,6 +426,7 @@ export default function SalesPage() {
     setModal(null); setEditItem(null);
     setMsg('success'); setTimeout(() => setMsg(''), 2500);
     setForm(blankForm());
+    setHouseAccounts([]);
     setActiveTab('r1');
     setFieldErrors({});
     setModalError('');
@@ -468,12 +461,6 @@ export default function SalesPage() {
 
   // Open the edit modal with form pre-filled from a sales row.
   const openEditRow = (r) => {
-    const nm = (r.r1_house_account_name || '').trim();
-    let choice = '';
-    let customName = '';
-    if (nm.toLowerCase() === 'billy') choice = 'billy';
-    else if (nm.toLowerCase() === 'elias') choice = 'elias';
-    else if (nm) { choice = 'other'; customName = nm; }
     setForm({
       date: r.date,
       r1_gross: r.r1_gross ?? r.gross_sales ?? '',
@@ -484,14 +471,33 @@ export default function SalesPage() {
       r1_canceled_basket: r.r1_canceled_basket ?? '',
       r1_safe_drop: r.r1_safe_drop ?? '',
       r1_sales_tax: r.r1_sales_tax ?? r.tax_collected ?? '',
-      r1_house_account_choice: choice,
-      r1_house_account_custom: customName,
-      r1_house_account_amount: r.r1_house_account_amount ?? r.credits ?? '',
       r2_net: r.r2_net ?? '',
       register2_cash: r.register2_cash ?? '',
       r2_safe_drop: r.r2_safe_drop ?? '',
       notes: r.notes || '',
     });
+    // Populate house accounts from JSON array or legacy single fields
+    if (Array.isArray(r.house_accounts) && r.house_accounts.length) {
+      setHouseAccounts(r.house_accounts.map(e => {
+        const nm = (e.name || '').trim();
+        let choice = '';
+        let customName = '';
+        if (nm.toLowerCase() === 'billy') choice = 'billy';
+        else if (nm.toLowerCase() === 'elias') choice = 'elias';
+        else if (nm) { choice = 'other'; customName = nm; }
+        return { choice, customName, amount: String(e.amount ?? '') };
+      }));
+    } else if ((r.r1_house_account_amount ?? r.credits ?? 0) > 0) {
+      const nm = (r.r1_house_account_name || '').trim();
+      let choice = '';
+      let customName = '';
+      if (nm.toLowerCase() === 'billy') choice = 'billy';
+      else if (nm.toLowerCase() === 'elias') choice = 'elias';
+      else if (nm) { choice = 'other'; customName = nm; }
+      setHouseAccounts([{ choice, customName, amount: String(r.r1_house_account_amount ?? r.credits ?? '') }]);
+    } else {
+      setHouseAccounts([]);
+    }
     setEditItem(r);
     setActiveTab('r1');
     setFieldErrors({});
@@ -535,10 +541,8 @@ export default function SalesPage() {
   const r1CancelBasket = num(form.r1_canceled_basket);
   const r1SafeDrop     = num(form.r1_safe_drop);
   const r1SalesTax     = num(form.r1_sales_tax);
-  const r1HouseAmount  = num(form.r1_house_account_amount);
-  const r1HouseName    = resolvedHouseAccountName();
-  // Legacy alias used by the table display code.
-  const r1Credits      = r1HouseAmount;
+  const r1HouseAmount  = haTotal;
+  const r1Credits      = haTotal;
 
   const r2Net          = num(form.r2_net);
   const r2Cash         = num(form.register2_cash);
@@ -649,41 +653,69 @@ export default function SalesPage() {
               </Field>
             </div>
 
-            {/* House Account — dropdown + amount */}
+            {/* House Account — multi-entry */}
             <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-3">
-              <div className="text-sw-sub text-[10px] font-bold uppercase mb-1.5">House Account</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Field label="Name">
-                  <select
-                    value={form.r1_house_account_choice}
-                    onChange={(e) => setForm({ ...form, r1_house_account_choice: e.target.value, r1_house_account_custom: e.target.value === 'other' ? form.r1_house_account_custom : '' })}
-                    className={errCls('r1_house_account_choice')}
-                  >
-                    <option value="">Select name…</option>
-                    <option value="billy">Billy</option>
-                    <option value="elias">Elias</option>
-                    <option value="other">Other…</option>
-                  </select>
-                  {fieldErrors.r1_house_account_choice && (
-                    <p className="text-sw-red text-[10px] mt-0.5">Required when amount is entered</p>
-                  )}
-                </Field>
-                <Field label="Amount">
-                  <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r1_house_account_amount} onChange={onNum('r1_house_account_amount')} />
-                </Field>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-sw-sub text-[10px] font-bold uppercase">House Account</div>
+                {haTotal > 0 && <div className="text-sw-text text-[11px] font-mono font-bold">Total: {fmt(haTotal)}</div>}
               </div>
-              {form.r1_house_account_choice === 'other' && (
-                <Field label="Custom Name">
-                  <input
-                    type="text"
-                    placeholder="Enter name"
-                    value={form.r1_house_account_custom}
-                    onChange={(e) => setForm({ ...form, r1_house_account_custom: e.target.value })}
-                    className={errCls('r1_house_account_custom')}
-                  />
-                  {errHint('r1_house_account_custom')}
-                </Field>
+              {houseAccounts.length === 0 && (
+                <p className="text-sw-dim text-[11px] italic mb-2">No house accounts — add below if needed</p>
               )}
+              <div className="space-y-2 mb-2">
+                {houseAccounts.map((entry, i) => (
+                  <div key={i} className="flex gap-1.5 items-start flex-wrap sm:flex-nowrap">
+                    <div className="flex-1 min-w-[120px]">
+                      <select
+                        value={entry.choice}
+                        onChange={e => updateHA(i, { choice: e.target.value, customName: e.target.value === 'other' ? entry.customName : '' })}
+                        className={fieldErrors[`ha_name_${i}`] ? '!border-sw-red' : ''}
+                      >
+                        <option value="">Select name…</option>
+                        <option value="billy">Billy</option>
+                        <option value="elias">Elias</option>
+                        <option value="other">Other…</option>
+                      </select>
+                      {fieldErrors[`ha_name_${i}`] && <p className="text-sw-red text-[10px] mt-0.5">Name required</p>}
+                    </div>
+                    {entry.choice === 'other' && (
+                      <div className="flex-1 min-w-[100px]">
+                        <input
+                          type="text"
+                          placeholder="Name"
+                          value={entry.customName}
+                          onChange={e => updateHA(i, { customName: e.target.value })}
+                        />
+                      </div>
+                    )}
+                    <div className="w-[100px] flex-shrink-0">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={entry.amount}
+                        onChange={e => updateHA(i, { amount: e.target.value.replace(/^-/, '') })}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeHA(i)}
+                      className="w-8 h-[44px] rounded-md bg-sw-redD text-sw-red border border-sw-red/30 flex items-center justify-center flex-shrink-0"
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addHA}
+                className="text-sw-blue text-[11px] font-semibold border border-sw-blue/30 rounded px-2 py-1 bg-sw-blueD hover:bg-sw-blue/20"
+              >
+                + Add House Account
+              </button>
             </div>
 
             {/* Live R1 short/over preview — Cash Sales − (Safe Drop + House Account). */}
@@ -692,7 +724,7 @@ export default function SalesPage() {
                 <span className="text-sw-sub text-[11px] font-semibold uppercase">R1 Short/Over</span>
                 {(() => {
                   const v = (parseFloat(form.cash_sales) || 0)
-                          - ((parseFloat(form.r1_safe_drop) || 0) + (parseFloat(form.r1_house_account_amount) || 0));
+                          - ((parseFloat(form.r1_safe_drop) || 0) + haTotal);
                   if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
                   if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
                   return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
@@ -860,8 +892,8 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(r1SalesTax)}</div>
                 <div className="text-sw-sub">House Account</div>
                 <div className="text-right font-mono">
-                  {r1HouseAmount > 0
-                    ? <span className="text-sw-text">{r1HouseName || 'Unnamed'} · {fmt(r1HouseAmount)}</span>
+                  {haTotal > 0
+                    ? <span className="text-sw-text">{fmt(haTotal)} ({houseAccounts.filter(e => (parseFloat(e.amount)||0) > 0).length})</span>
                     : <span className="text-sw-dim">None · {fmt(0)}</span>}
                 </div>
                 <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
@@ -1002,11 +1034,13 @@ export default function SalesPage() {
                 <div className="text-sw-sub">Sales Tax</div><div className="text-right font-mono text-sw-cyan">{fmt(todayEntry.r1_sales_tax ?? todayEntry.tax_collected ?? 0)}</div>
                 <div className="text-sw-sub">House Account</div>
                 <div className="text-right font-mono">
-                  {Number(todayEntry.r1_house_account_amount ?? todayEntry.credits ?? 0) > 0 ? (
-                    <span className="text-sw-text">{todayEntry.r1_house_account_name || 'Unnamed'} · {fmt(todayEntry.r1_house_account_amount ?? todayEntry.credits)}</span>
-                  ) : (
-                    <span className="text-sw-dim">None · {fmt(0)}</span>
-                  )}
+                  {(() => {
+                    const entries = Array.isArray(todayEntry.house_accounts) ? todayEntry.house_accounts : [];
+                    const amt = entries.length ? entries.reduce((s,e) => s + (e.amount||0), 0) : Number(todayEntry.r1_house_account_amount ?? todayEntry.credits ?? 0);
+                    if (amt <= 0) return <span className="text-sw-dim">None · {fmt(0)}</span>;
+                    const label = entries.length > 1 ? `${entries.length} entries` : (entries[0]?.name || todayEntry.r1_house_account_name || 'Unnamed');
+                    return <span className="text-sw-text">{label} · {fmt(amt)}</span>;
+                  })()}
                 </div>
                 <div className="text-sw-sub col-span-2 border-t border-sw-border pt-1 mt-1 flex justify-between">
                   <span>R1 Short/Over</span>
@@ -1154,6 +1188,7 @@ export default function SalesPage() {
 
   const tryOpenAdd = () => {
     setForm(blankForm());
+    setHouseAccounts([]);
     setFormStoreId(effectiveStoreId || null);
     setFormError('');
     setActiveTab('r1');
@@ -1274,10 +1309,13 @@ export default function SalesPage() {
             render: (_, r) => {
               const amt = Number(r.r1_house_account_amount ?? r.credits ?? 0);
               if (amt === 0) return <span className="text-sw-dim">{fmt(0)}</span>;
-              const nm = r.r1_house_account_name;
+              const entries = Array.isArray(r.house_accounts) ? r.house_accounts : [];
+              const tooltip = entries.length > 0
+                ? entries.map(e => `${e.name}: ${fmt(e.amount)}`).join(', ')
+                : r.r1_house_account_name || '';
               return (
-                <span className="text-sw-text">
-                  {fmt(amt)}{nm ? <span className="text-sw-sub text-[10px]"> ({nm})</span> : null}
+                <span className="text-sw-text" title={tooltip}>
+                  {fmt(amt)}{entries.length > 1 ? <span className="text-sw-sub text-[10px]"> ({entries.length})</span> : (r.r1_house_account_name ? <span className="text-sw-sub text-[10px]"> ({r.r1_house_account_name})</span> : null)}
                 </span>
               );
             } },
