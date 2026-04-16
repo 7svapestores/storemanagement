@@ -296,13 +296,19 @@ export default function CashPage() {
     </div>
 
     {/* Stat cards — fed by filtered rows */}
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
-      <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} sub="Collected so far" icon="💰" color="#60A5FA" />
-      <StatCard label="Total Short" value={fmt(totalShort)} sub={`${shortRows.length} record${shortRows.length === 1 ? '' : 's'} short`} icon="🔴" color="#F87171" />
-      <StatCard label="Total Over" value={`+${fmt(totalOver)}`} sub={`${overRows.length} record${overRows.length === 1 ? '' : 's'} over`} icon="🟢" color="#34D399" />
-      <StatCard label="Pending" value={`${pendingRows.length} / ${fmt(pendingExpected)}`} sub={`${pendingRows.length} pending · Expected to collect`} icon="⏳" color="#FBBF24" />
-      <StatCard label="Matched" value={`${matchedRows.length} / ${fmt(matchedCollected)}`} sub={`${matchedRows.length} matched · Reconciled`} icon="✅" color="#34D399" />
-    </div>
+    {(() => {
+      const netShortOver = totalShort + totalOver;
+      const netColor = Math.abs(netShortOver) < 0.01 ? '#64748B' : netShortOver > 0 ? '#34D399' : '#F87171';
+      const netValue = Math.abs(netShortOver) < 0.01 ? fmt(0) : netShortOver > 0 ? `+${fmt(netShortOver)}` : fmt(netShortOver);
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
+          <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} sub="Collected so far" icon="💰" color="#60A5FA" />
+          <StatCard label="Net Short/Over" value={netValue} sub={`${shortRows.length} short · ${overRows.length} over`} icon="📊" color={netColor} />
+          <StatCard label="Pending" value={`${pendingRows.length} / ${fmt(pendingExpected)}`} sub={`${pendingRows.length} pending · Expected to collect`} icon="⏳" color="#FBBF24" />
+          <StatCard label="Matched" value={`${matchedRows.length} / ${fmt(matchedCollected)}`} sub={`${matchedRows.length} matched · Reconciled`} icon="✅" color="#34D399" />
+        </div>
+      );
+    })()}
 
     <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
       <DataTable
