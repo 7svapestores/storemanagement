@@ -372,10 +372,25 @@ export default function SalesPage() {
       if (eoErr) console.warn('[sales] employee_shortover upsert failed:', eoErr);
     };
 
+    // Sync cash_collections: upsert a row with expected = safe drops.
+    // Preserves any existing collected amount; only updates expected.
+    const syncCashCollection = async () => {
+      const expected = (data.r1_safe_drop || 0) + (data.r2_safe_drop || 0);
+      const { error: ccErr } = await supabase
+        .from('cash_collections')
+        .upsert({
+          store_id: data.store_id,
+          date: data.date,
+          expected_amount: expected,
+        }, { onConflict: 'store_id,date', ignoreDuplicates: false });
+      if (ccErr) console.warn('[sales] cash_collection sync failed (non-fatal):', ccErr);
+    };
+
     if (modal === 'edit' && editItem) {
       const { error } = await supabase.from('daily_sales').update(data).eq('id', editItem.id);
       if (error) { setMsg(error.message); return; }
       await upsertShortOver(editItem.id);
+      await syncCashCollection();
       await logActivity(supabase, profile, {
         action: 'update',
         entityType: 'daily_sales',
@@ -413,6 +428,7 @@ export default function SalesPage() {
         return;
       }
       if (inserted?.id) await upsertShortOver(inserted.id);
+      await syncCashCollection();
       await logActivity(supabase, profile, {
         action: 'create',
         entityType: 'daily_sales',
@@ -444,6 +460,15 @@ export default function SalesPage() {
   const confirmDeleteSale = async () => {
     const row = confirmDelete;
     if (!row) return;
+    // Delete linked cash collection first (keyed on store_id + date)
+    const { error: ccErr } = await supabase
+      .from('cash_collections')
+      .delete()
+      .eq('store_id', row.store_id)
+      .eq('date', row.date);
+    if (ccErr) console.warn('[sales] cash_collection cleanup failed (non-fatal):', ccErr);
+    // Delete linked employee short/over
+    await supabase.from('employee_shortover').delete().eq('sales_id', row.id);
     const { error } = await supabase.from('daily_sales').delete().eq('id', row.id);
     if (error) { setMsg(error.message); setConfirmDelete(null); return; }
     const storeName = row.stores?.name || stores.find(s => s.id === row.store_id)?.name;
