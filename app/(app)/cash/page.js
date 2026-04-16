@@ -344,7 +344,6 @@ export default function CashPage() {
             <div className="flex gap-4 items-center">
               <span className="text-sw-sub text-[11px]">Expected: <span className="text-sw-text font-mono font-bold">{fmt(totalExpected)}</span></span>
               <span className="text-sw-sub text-[11px]">Collected: <span className="text-sw-blue font-mono font-bold">{fmt(totalCollected)}</span></span>
-              <span className="text-sw-sub text-[11px]">Net: <span className={`font-mono font-bold ${totalCollected - totalExpected >= 0 ? 'text-sw-green' : 'text-sw-red'}`}>{totalCollected - totalExpected >= 0 ? '+' : ''}{fmt(totalCollected - totalExpected)}</span></span>
             </div>
           </div>
         </div>
