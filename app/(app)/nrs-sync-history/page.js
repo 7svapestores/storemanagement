@@ -81,7 +81,7 @@ export default function NRSSyncHistoryPage() {
 
   return (
     <div>
-      <PageHeader title="NRS Sync History" subtitle={`${filtered.length} records`}>
+      <PageHeader title="🤖 7S Agent Logs" subtitle={`${filtered.length} sync records`}>
         <Button variant="secondary" onClick={load} className="!text-[11px]">Refresh</Button>
         <Button onClick={manualRun} disabled={running}>
           {running ? 'Running…' : 'Run Sync Now'}

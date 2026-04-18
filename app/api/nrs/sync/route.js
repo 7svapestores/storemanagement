@@ -59,7 +59,7 @@ export async function POST(req) {
       action: existing ? 'update' : 'create',
       entity_type: 'daily_sales',
       entity_id: result.id,
-      description: `${profile?.name || 'Owner'} synced daily sale from NRS for ${store.name} on ${date}`,
+      description: `7S Agent synced daily sales for ${store.name} on ${date} ($${parsed.r1_net} net) — triggered by ${profile?.name || 'Owner'}`,
       user_id: user.id,
       user_name: profile?.name,
       user_role: profile?.role,

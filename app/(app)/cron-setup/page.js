@@ -43,7 +43,7 @@ export default function CronSetupPage() {
 
   return (
     <div>
-      <PageHeader title="Cron Setup" subtitle="Configure automated NRS sync" />
+      <PageHeader title="🤖 7S Agent Setup" subtitle="Configure automated NRS sync" />
 
       {testError && <Alert type="error">{testError}</Alert>}
       {testResult && (
@@ -53,7 +53,7 @@ export default function CronSetupPage() {
       )}
 
       <div className="bg-sw-card rounded-xl border border-sw-border p-5 mb-4">
-        <h3 className="text-sw-text text-[15px] font-bold mb-3">Setting up Automated Daily Sync</h3>
+        <h3 className="text-sw-text text-[15px] font-bold mb-3">Setting up 7S Agent (Automated Daily Sync)</h3>
         <p className="text-sw-sub text-[12px] mb-4">
           Use cron-job.org (free) to call the sync endpoint every night. This automatically imports yesterday's sales from NRS POS for all 5 stores.
         </p>

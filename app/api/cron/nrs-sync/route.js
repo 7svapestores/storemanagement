@@ -64,6 +64,16 @@ async function runSync(supabase, targetDate) {
         created_daily_sales_id: inserted.id,
       });
 
+      await supabase.from('activity_log').insert({
+        action: 'create',
+        entity_type: 'daily_sales',
+        entity_id: inserted.id,
+        description: `7S Agent synced daily sales for ${store.name} on ${targetDate} ($${parsed.r1_net} net)`,
+        user_name: '7S Agent',
+        user_role: 'system',
+        store_name: store.name,
+      }).catch(() => {});
+
       results.push({ store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null });
       created++;
       console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross})`);

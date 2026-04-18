@@ -1177,16 +1177,24 @@ export default function SalesPage() {
   // Unique employees from loaded data for the filter dropdown
   const employeeOptions = (() => {
     const map = {};
+    let has7sAgent = false;
     sales.forEach(r => {
+      if (r.sync_source === '7s_agent') { has7sAgent = true; return; }
       const p = r.profiles;
       if (p?.id) map[p.id] = p.name || p.username || 'Unknown';
     });
-    return Object.entries(map).map(([id, name]) => ({ value: id, label: name }));
+    const opts = Object.entries(map).map(([id, name]) => ({ value: id, label: name }));
+    if (has7sAgent) opts.unshift({ value: '7s_agent', label: '🤖 7S Agent' });
+    return opts;
   })();
 
   // Client-side filtering
   const filteredSales = sales.filter(r => {
-    if (employeeFilter.length && !employeeFilter.includes(r.entered_by)) return false;
+    if (employeeFilter.length) {
+      const isAgent = r.sync_source === '7s_agent';
+      if (isAgent && !employeeFilter.includes('7s_agent')) return false;
+      if (!isAgent && !employeeFilter.includes(r.entered_by)) return false;
+    }
     if (mismatchFilter) {
       const st = stores.find(s => s.id === r.store_id);
       const usesR2 = !!st?.has_register2;
@@ -1394,8 +1402,18 @@ export default function SalesPage() {
             );
           } },
           { key: 'entered_by', label: 'By',
-            sortValue: (r) => r.profiles?.name || r.profiles?.username || '',
-            render: (v, r) => <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span> },
+            sortValue: (r) => r.sync_source === '7s_agent' ? '0_agent' : (r.profiles?.name || r.profiles?.username || 'zzz'),
+            render: (v, r) => {
+              if (r.sync_source === '7s_agent') {
+                const via = r.profiles?.name;
+                return (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(168,85,247,0.15)', color: '#C084FC' }}>
+                    🤖 7S Agent{via ? <span className="font-normal text-sw-dim"> via {via}</span> : ''}
+                  </span>
+                );
+              }
+              return <span className="text-sw-sub text-[11px]">{r.profiles?.name || r.profiles?.username || 'Unknown'}</span>;
+            } },
           ...(isOwner ? [{
             key: '_actions', label: '', align: 'right', sortable: false, render: (_, r) => (
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">

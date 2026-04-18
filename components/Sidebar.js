@@ -31,8 +31,8 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/team',             icon: '👤', label: 'Admin' },
     { path: '/email',            icon: '📧', label: 'Email Reports' },
     { path: '/nrs-backfill',       icon: '⚡', label: 'NRS Backfill' },
-    { path: '/nrs-sync-history',  icon: '🕐', label: 'Sync History' },
-    { path: '/cron-setup',        icon: '🔄', label: 'Cron Setup' },
+    { path: '/nrs-sync-history',  icon: '🤖', label: '7S Agent Logs' },
+    { path: '/cron-setup',        icon: '🔄', label: '7S Agent Setup' },
     { path: '/settings',         icon: '⚙️', label: 'Settings' },
   ] : [
     { path: '/sales',     icon: '💰', label: 'Enter Sales' },
