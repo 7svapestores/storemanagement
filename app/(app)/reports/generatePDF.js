@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 const $ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
@@ -183,7 +183,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   doc.setFont('helvetica', 'normal');
 
   if (storeRows?.length) {
-    doc.autoTable({
+    autoTable(doc, {
       startY: 28,
       head: [['#', 'Store', 'Revenue', 'COGS', 'Expenses', 'Profit', 'Margin']],
       body: storeRows.map((s, i) => [
@@ -204,7 +204,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     });
 
     // Revenue bars
-    let by = doc.lastAutoTable.finalY + 15;
+    let by = (doc.lastAutoTable?.finalY || 100) + 15;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.text('Revenue by Store', 20, by);
@@ -229,7 +229,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   doc.setFont('helvetica', 'normal');
 
   if (expenseRows?.length) {
-    doc.autoTable({
+    autoTable(doc, {
       startY: 28,
       head: [['Category', 'This Period', 'Previous', 'Change']],
       body: expenseRows.map(r => [
@@ -249,7 +249,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     doc.text('Top Vendors (COGS)', 20, vy);
     doc.setFont('helvetica', 'normal');
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: vy + 5,
       head: [['Vendor', 'Amount', '% of Total']],
       body: byVendor.slice(0, 10).map(v => {
@@ -317,7 +317,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
       doc.text('Top Expenses', 20, sy);
       doc.setFont('helvetica', 'normal');
       sy += 5;
-      doc.autoTable({
+      autoTable(doc, {
         startY: sy,
         head: [['Category', 'Amount']],
         body: stCats.map(([cat, amt]) => [cat, $(amt)]),
@@ -340,7 +340,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
       doc.setFont('helvetica', 'bold');
       doc.text('Top Vendors', 20, vy2);
       doc.setFont('helvetica', 'normal');
-      doc.autoTable({
+      autoTable(doc, {
         startY: vy2 + 5,
         head: [['Vendor', 'Amount']],
         body: stVends.map(([v, amt]) => [v, $(amt)]),
