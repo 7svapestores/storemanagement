@@ -1,6 +1,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,8 @@ async function syncOneStore(supabase, store, targetDate) {
     store_name: store.name,
   });
   if (actErr) console.warn(`[nrs-cron] activity_log insert failed for ${store.name}:`, actErr.message);
+
+  await extractShiftsFromNRS(supabase, nrsData, store.id, targetDate, inserted.id);
 
   console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross}) [${Date.now() - t0}ms]`);
   return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0 };

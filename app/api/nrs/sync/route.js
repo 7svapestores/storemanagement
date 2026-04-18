@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 
 export async function POST(req) {
   try {
@@ -65,6 +66,8 @@ export async function POST(req) {
       user_role: profile?.role,
       store_name: store.name,
     });
+
+    await extractShiftsFromNRS(admin, nrsData, store_id, date, result.id);
 
     return NextResponse.json({ sale: result, synced: true });
   } catch (e) {

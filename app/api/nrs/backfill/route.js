@@ -1,5 +1,6 @@
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -92,6 +93,7 @@ export async function POST(req) {
           });
           if (logErr) console.warn('[backfill] sync_log insert failed:', logErr.message);
 
+          await extractShiftsFromNRS(admin, nrsData, store.id, date, inserted.id);
           created++;
           send('progress', { current: i + 1, total: tasks.length, store: store.name, date, status: 'created', gross: parsed.r1_gross, duration_ms: Date.now() - taskStart });
         } catch (e) {
