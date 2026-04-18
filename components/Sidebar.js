@@ -2,6 +2,7 @@
 import { useAuth } from './AuthProvider';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import ThemeToggle from './ThemeToggle';
 
 export default function Sidebar({ selectedStore, onStoreChange }) {
   const { profile, signOut, isOwner, supabase } = useAuth();
@@ -106,6 +107,9 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
               <div className="text-sw-text text-[11px] font-semibold truncate">{profile?.name}</div>
               <div className="text-sw-dim text-[9px] capitalize">{profile?.role}</div>
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <ThemeToggle />
           </div>
           <button
             onClick={signOut}

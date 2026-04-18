@@ -1,5 +1,6 @@
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 export const metadata = {
   title: '7S Stores — Store Management System',
@@ -35,11 +36,13 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

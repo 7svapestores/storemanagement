@@ -4,9 +4,26 @@ module.exports = {
     './app/**/*.{js,jsx}',
     './components/**/*.{js,jsx}',
   ],
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
+        // Design System v2 — CSS variable-based
+        'v2-bg': 'var(--bg-base)',
+        'v2-elevated': 'var(--bg-elevated)',
+        'v2-card': 'var(--bg-card)',
+        'v2-hover': 'var(--bg-hover)',
+        'v2-border': 'var(--border-subtle)',
+        'v2-border-d': 'var(--border-default)',
+        'v2-text': 'var(--text-primary)',
+        'v2-sub': 'var(--text-secondary)',
+        'v2-muted': 'var(--text-muted)',
+        'v2-brand': 'var(--brand-primary)',
+        'v2-success': 'var(--color-success)',
+        'v2-warning': 'var(--color-warning)',
+        'v2-danger': 'var(--color-danger)',
+        'v2-info': 'var(--color-info)',
+        // Existing sw-* colors preserved
         sw: {
           bg: '#060A10',
           card: '#0C1219',

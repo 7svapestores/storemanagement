@@ -2,6 +2,92 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══ Design System v2 — CSS Variables ═══ */
+/* Dark mode is default; existing hardcoded colors still work alongside these vars */
+
+:root, [data-theme='dark'] {
+  --bg-base: #060A10;
+  --bg-elevated: #0C1219;
+  --bg-card: #131C28;
+  --bg-hover: #1A2536;
+  --border-subtle: #1A2536;
+  --border-default: #263A54;
+  --border-strong: #3a3b3f;
+  --text-primary: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-muted: #475569;
+  --text-disabled: #334155;
+  --brand-primary: #39FF14;
+  --brand-primary-hover: #4dff33;
+  --color-success: #34D399;
+  --color-success-bg: rgba(52,211,153,0.10);
+  --color-warning: #FBBF24;
+  --color-warning-bg: rgba(251,191,36,0.10);
+  --color-danger: #F87171;
+  --color-danger-bg: rgba(248,113,113,0.10);
+  --color-info: #3b82f6;
+  --color-info-bg: rgba(59,130,246,0.10);
+}
+
+[data-theme='light'] {
+  --bg-base: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-disabled: #cbd5e1;
+  --brand-primary: #16a34a;
+  --brand-primary-hover: #15803d;
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-warning: #ca8a04;
+  --color-warning-bg: #fefce8;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-info: #2563eb;
+  --color-info-bg: #eff6ff;
+}
+
+/* Light mode overrides for hardcoded dark-theme elements */
+[data-theme='light'] body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+[data-theme='light'] input:not([type]),
+[data-theme='light'] input[type="text"],
+[data-theme='light'] input[type="number"],
+[data-theme='light'] input[type="date"],
+[data-theme='light'] input[type="month"],
+[data-theme='light'] input[type="email"],
+[data-theme='light'] input[type="password"],
+[data-theme='light'] input[type="search"],
+[data-theme='light'] input[type="tel"],
+[data-theme='light'] input[type="url"],
+[data-theme='light'] select,
+[data-theme='light'] textarea {
+  background: var(--bg-card);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+[data-theme='light'] input:focus,
+[data-theme='light'] select:focus,
+[data-theme='light'] textarea:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+}
+[data-theme='light'] th { color: var(--text-muted); border-color: var(--border-default); }
+[data-theme='light'] td { color: var(--text-primary); }
+[data-theme='light'] tr:hover td { background: var(--bg-hover); }
+[data-theme='light'] ::-webkit-scrollbar-thumb { background: var(--border-default); }
+
+.tabular-nums { font-variant-numeric: tabular-nums; }
+/* ═══ End Design System v2 ═══ */
+
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
