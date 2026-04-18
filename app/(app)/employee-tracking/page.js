@@ -46,12 +46,12 @@ export default function EmployeeTrackingPage() {
     })();
   }, [range.start, range.end]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
-  if (loading) return <Loading />;
+  const employeeOptions = useMemo(
+    () => [...new Set(shifts.map(s => s.employee_name))].sort().map(n => ({ value: n, label: n })),
+    [shifts]
+  );
 
-  const employeeOptions = [...new Set(shifts.map(s => s.employee_name))].sort().map(n => ({ value: n, label: n }));
-
-  const filtered = shifts.filter(s => {
+  const filtered = useMemo(() => shifts.filter(s => {
     if (storeFilter.length && !storeFilter.includes(s.store_id)) return false;
     if (employeeFilter.length && !employeeFilter.includes(s.employee_name)) return false;
     if (search) {
@@ -59,15 +59,19 @@ export default function EmployeeTrackingPage() {
       if (!(s.employee_name || '').toLowerCase().includes(q) && !(s.stores?.name || '').toLowerCase().includes(q)) return false;
     }
     return true;
-  });
+  }), [shifts, storeFilter, employeeFilter, search]);
 
   const stats = useMemo(() => {
-    const totalHours = filtered.reduce((s, r) => s + (r.total_hours || 0), 0);
+    const totalHours = filtered.reduce((s, r) => s + (Number(r.total_hours) || 0), 0);
     const uniqueEmployees = new Set(filtered.map(r => r.employee_name)).size;
-    const withHours = filtered.filter(r => r.total_hours > 0);
-    const avgShift = withHours.length ? (withHours.reduce((s, r) => s + r.total_hours, 0) / withHours.length).toFixed(1) : '0';
+    const withHours = filtered.filter(r => Number(r.total_hours) > 0);
+    const avgShift = withHours.length ? (withHours.reduce((s, r) => s + Number(r.total_hours), 0) / withHours.length).toFixed(1) : '0';
     return { totalHours: totalHours.toFixed(1), uniqueEmployees, avgShift };
   }, [filtered]);
+
+  // All hooks are above — safe to do early returns now
+  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (loading) return <Loading />;
 
   const exportCSV = () => {
     downloadCSV('employee-shifts.csv', ['Date', 'Employee', 'Store', 'Opened', 'Closed', 'Hours'],
@@ -102,7 +106,7 @@ export default function EmployeeTrackingPage() {
         <DataTable
           sortState={sortState}
           onSortChange={setSortState}
-          emptyMessage="No shifts found. Run 7S Agent sync or extract from existing data."
+          emptyMessage="No shifts recorded yet. Run the backfill or wait for tomorrow's 7S Agent sync."
           columns={[
             { key: 'shift_date', label: 'Date', render: v => dayLabel(v) },
             { key: 'employee_name', label: 'Employee', render: v => <span className="text-sw-text font-semibold">{v}</span> },
