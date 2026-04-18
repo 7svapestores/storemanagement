@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/weekly-report",
       "schedule": "0 7 * * 1"
+    },
+    {
+      "path": "/api/cron/nrs-sync",
+      "schedule": "0 9 * * *"
     }
   ]
 }

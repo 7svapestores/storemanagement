@@ -30,7 +30,8 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/employee-shorts',  icon: '💸', label: 'Employee Shorts' },
     { path: '/team',             icon: '👤', label: 'Admin' },
     { path: '/email',            icon: '📧', label: 'Email Reports' },
-    { path: '/nrs-backfill',     icon: '⚡', label: 'NRS Backfill' },
+    { path: '/nrs-backfill',       icon: '⚡', label: 'NRS Backfill' },
+    { path: '/nrs-sync-history',  icon: '🕐', label: 'Sync History' },
     { path: '/settings',         icon: '⚙️', label: 'Settings' },
   ] : [
     { path: '/sales',     icon: '💰', label: 'Enter Sales' },

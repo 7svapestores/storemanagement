@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [todaySales, setTodaySales] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [nrsStatus, setNrsStatus] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
 
   // Dashboard honors the sidebar store selector. Employees are always scoped
   // to their own store via effectiveStoreId in AuthProvider.
@@ -31,8 +32,16 @@ export default function DashboardPage() {
       const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
       setStores(storeData || []);
 
-      // Check NRS connection (non-blocking)
+      // Check NRS connection + last sync (non-blocking)
       fetch('/api/nrs/validate').then(r => r.json()).then(d => setNrsStatus(d?.valid === true)).catch(() => setNrsStatus(false));
+      supabase.from('nrs_sync_log').select('sync_date, status, created_at').order('created_at', { ascending: false }).limit(10)
+        .then(({ data: syncLogs }) => {
+          if (!syncLogs?.length) return;
+          const latest = syncLogs[0];
+          const successCount = syncLogs.filter(l => l.status === 'success' && l.sync_date === latest.sync_date).length;
+          const failCount = syncLogs.filter(l => l.status === 'failed' && l.sync_date === latest.sync_date).length;
+          setLastSync({ date: latest.sync_date, time: latest.created_at, success: successCount, failed: failCount });
+        });
 
       // Sales — pull all the numeric columns we need for dashboard totals.
       let salesQ = supabase.from('daily_sales')
@@ -127,8 +136,14 @@ export default function DashboardPage() {
 
       {loadError && <Alert type="error">{loadError}</Alert>}
       {isOwner && nrsStatus !== null && (
-        <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold flex items-center gap-2 ${nrsStatus ? 'bg-sw-greenD text-sw-green border border-sw-green/30' : 'bg-sw-redD text-sw-red border border-sw-red/30'}`}>
-          {nrsStatus ? '✓ NRS Connected' : '✕ NRS Token Invalid — update NRS_USER_TOKEN in Vercel env vars'}
+        <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold flex items-center justify-between flex-wrap gap-2 ${nrsStatus ? 'bg-sw-greenD text-sw-green border border-sw-green/30' : 'bg-sw-redD text-sw-red border border-sw-red/30'}`}>
+          <span>{nrsStatus ? '✓ NRS Connected' : '✕ NRS Token Invalid — update NRS_USER_TOKEN in Vercel env vars'}</span>
+          {lastSync && (
+            <span className="text-sw-sub text-[10px] font-normal">
+              Last sync: {lastSync.date} — {lastSync.success} synced{lastSync.failed > 0 ? <span className="text-sw-red"> · {lastSync.failed} failed</span> : ''}
+              {' · '}{(() => { const ms = Date.now() - new Date(lastSync.time).getTime(); const h = Math.floor(ms/3600000); return h < 1 ? '<1h ago' : `${h}h ago`; })()}
+            </span>
+          )}
         </div>
       )}
       {lowStock > 0 && <Alert type="warning"><b>{lowStock}</b> items below reorder level</Alert>}
