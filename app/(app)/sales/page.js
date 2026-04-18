@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown, MultiSelect } from '@/components/UI';
+import { Card, V2StatCard, Badge } from '@/components/ui';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
@@ -1139,7 +1140,7 @@ export default function SalesPage() {
           </div>
         )}
 
-        <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
           <div className="px-3 py-2 border-b border-sw-border"><h3 className="text-sw-text text-xs font-bold">Recent Entries (read-only)</h3></div>
           <DataTable columns={[
             { key: 'date', label: 'Date', render: v => dayLabel(v) },
@@ -1242,13 +1243,33 @@ export default function SalesPage() {
     resetReceipts();
   };
 
+  const totalNetSales = filteredSales.reduce((s, r) => s + (r.net_sales ?? r.total_sales ?? 0), 0);
+  const agentCount = filteredSales.filter(r => r.sync_source === '7s_agent').length;
+  const avgPerDay = (() => { const days = new Set(filteredSales.map(r => r.date)).size; return days > 0 ? totalNetSales / days : 0; })();
+
   return (
     <div>
-      <PageHeader title="Daily Sales" subtitle={`${hasStore ? storeName : 'All Stores'} · ${sales.length} entries`}>
-        <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
-        {isOwner && <Button variant="secondary" onClick={() => setNrsSyncOpen(true)} className="!text-[11px]">☁️ Sync NRS</Button>}
-        {isOwner && <Button onClick={tryOpenAdd}>+ Add</Button>}
-      </PageHeader>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Sales</p>
+          <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Daily Sales</h1>
+          <p className="text-[var(--text-secondary)] text-[12px]">{hasStore ? storeName : 'All Stores'} · {filteredSales.length} entries</p>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
+          {isOwner && <Button variant="secondary" onClick={() => setNrsSyncOpen(true)} className="!text-[11px]">🤖 Sync NRS</Button>}
+          {isOwner && <Button onClick={tryOpenAdd}>+ Add</Button>}
+        </div>
+      </div>
+
+      {/* Stats bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <V2StatCard label="Total Sales" value={fK(totalNetSales)} variant="success" icon="💰" />
+        <V2StatCard label="Entries" value={filteredSales.length} icon="📋" />
+        <V2StatCard label="Avg / Day" value={fK(avgPerDay)} icon="📊" />
+        <V2StatCard label="7S Agent" value={`${agentCount} of ${filteredSales.length}`} icon="🤖" sub={agentCount === filteredSales.length ? 'All auto-synced' : `${filteredSales.length - agentCount} manual`} />
+      </div>
 
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
@@ -1256,7 +1277,7 @@ export default function SalesPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
         <MultiSelect
           label="Store"
           placeholder="All Stores"
@@ -1300,7 +1321,7 @@ export default function SalesPage() {
         )}
       </div>
 
-      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
         <DataTable
           sortState={sortState}
           onSortChange={setSortState}

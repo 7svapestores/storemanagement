@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, StatCard, Loading, StoreBadge, Alert, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, Modal, Field, Button, Loading, StoreBadge, Alert, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { V2StatCard } from '@/components/ui';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 
@@ -183,7 +184,7 @@ export default function CashPage() {
   };
 
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   // Client-side filters: status + search
@@ -241,14 +242,20 @@ export default function CashPage() {
   };
 
   return (<div>
-    <PageHeader title="🏦 Cash Collection" subtitle={singleStoreId ? `${storeName} · Auto short/over vs safe drops` : 'All Stores · Auto short/over vs safe drops'}>
+    {/* Header */}
+    <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+      <div>
+        <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Cash</p>
+        <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Cash Collection</h1>
+        <p className="text-[var(--text-secondary)] text-[12px]">{singleStoreId ? storeName : 'All Stores'} · Auto short/over vs safe drops</p>
+      </div>
       <Button onClick={tryOpenCollect}>+ Collect</Button>
-    </PageHeader>
+    </div>
     {loadError && <Alert type="error">{loadError}</Alert>}
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Filter bar */}
-    <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+    <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
       <MultiSelect
         label="Store"
         placeholder="All Stores"
@@ -274,27 +281,27 @@ export default function CashPage() {
         className="!w-full sm:!flex-1 sm:!min-w-[240px] !py-1.5 !text-[11px]"
       />
       {(storeFilter.length > 0 || statusFilter.length > 0 || search) && (
-        <button onClick={() => { setStoreFilter([]); setStatusFilter([]); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+        <button onClick={() => { setStoreFilter([]); setStatusFilter([]); setSearch(''); }} className="text-[var(--text-muted)] text-[10px] underline">clear</button>
       )}
     </div>
 
     {/* Stat cards — fed by filtered rows */}
     {(() => {
       const netShortOver = totalShort + totalOver;
-      const netColor = Math.abs(netShortOver) < 0.01 ? '#64748B' : netShortOver > 0 ? '#34D399' : '#F87171';
+      const netVariant = Math.abs(netShortOver) < 0.01 ? 'default' : netShortOver > 0 ? 'success' : 'danger';
       const netValue = Math.abs(netShortOver) < 0.01 ? fmt(0) : netShortOver > 0 ? `+${fmt(netShortOver)}` : fmt(netShortOver);
       return (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
-          <StatCard label="Expected Cash" value={fmt(totalExpected)} sub="Total expected from all days" icon="💵" color="#FBBF24" />
-          <StatCard label="Cash in Hand" value={fmt(totalCashInHand)} sub="Collected so far" icon="💰" color="#60A5FA" />
-          <StatCard label="Net Short/Over" value={netValue} sub={`${shortRows.length} short · ${overRows.length} over`} icon="📊" color={netColor} />
-          <StatCard label="Pending" value={`${pendingRows.length} / ${fmt(pendingExpected)}`} sub={`${pendingRows.length} pending · Expected to collect`} icon="⏳" color="#FBBF24" />
-          <StatCard label="Matched" value={`${matchedRows.length} / ${fmt(matchedCollected)}`} sub={`${matchedRows.length} matched · Reconciled`} icon="✅" color="#34D399" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+          <V2StatCard label="Expected Cash" value={fK(totalExpected)} sub="Total expected" icon="💵" variant="warning" />
+          <V2StatCard label="Cash in Hand" value={fK(totalCashInHand)} sub="Collected so far" icon="💰" variant="info" />
+          <V2StatCard label="Net Short/Over" value={netValue} sub={`${shortRows.length} short · ${overRows.length} over`} icon="📊" variant={netVariant} />
+          <V2StatCard label="Pending" value={`${pendingRows.length} / ${fK(pendingExpected)}`} sub={`${pendingRows.length} pending`} icon="⏳" variant="warning" />
+          <V2StatCard label="Matched" value={`${matchedRows.length} / ${fK(matchedCollected)}`} sub={`${matchedRows.length} reconciled`} icon="✅" variant="success" />
         </div>
       );
     })()}
 
-    <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       <DataTable
         sortState={sortState}
         onSortChange={setSortState}
@@ -309,14 +316,14 @@ export default function CashPage() {
             ),
             sortValue: r => Number(r.expected || 0),
           },
-          { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-sw-blue font-semibold">{fmt(v)}</span> : <span className="text-sw-dim">—</span>, sortValue: r => Number(r.cash_collected || 0) },
-          { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-sw-amber text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span>, sortValue: r => Number(r.short_over || 0) },
+          { key: 'cash_collected', label: 'Collected', align: 'right', mono: true, render: v => v ? <span className="text-[var(--color-info)] font-semibold">{fmt(v)}</span> : <span className="text-[var(--text-muted)]">—</span>, sortValue: r => Number(r.cash_collected || 0) },
+          { key: 'short_over', label: 'Short/Over', align: 'right', mono: true, render: (v,r) => r.status === 'pending' ? <span className="text-[var(--color-warning)] text-[10px]">PENDING</span> : <span className={v >= 0 ? 'text-[var(--color-success)] font-bold' : 'text-[var(--color-danger)] font-bold'}>{v >= 0 ? '+' : ''}{fmt(v)}</span>, sortValue: r => Number(r.short_over || 0) },
           { key: 'status', label: 'Status', align: 'center', render: v => statusBadge(v), sortValue: r => ({ pending: 1, short: 2, over: 3, matched: 4 })[r.status] || 99 },
           ...(isOwner ? [{ key: '_action', label: '', align: 'right', sortable: false, render: (_, r) => (
             r.status === 'pending' ? (
               <button
                 onClick={() => openEdit(r)}
-                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-greenD border border-sw-green/30 text-sw-green text-[12px] font-semibold"
+                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-greenD border border-sw-green/30 text-[var(--color-success)] text-[12px] font-semibold"
                 style={{ minHeight: 32 }}
               >
                 💰 Collect
@@ -324,7 +331,7 @@ export default function CashPage() {
             ) : (
               <button
                 onClick={() => openEdit(r)}
-                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold"
+                className="inline-flex items-center gap-1 px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-[var(--color-info)] text-[12px] font-semibold"
                 style={{ minHeight: 32 }}
               >
                 ✏️ Edit
@@ -336,14 +343,14 @@ export default function CashPage() {
         isOwner={false}
       />
       {visibleRows.length > 0 && (
-        <div className="px-3 py-2 border-t border-sw-border bg-sw-card2">
+        <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-card)]">
           <div className="flex justify-between items-center flex-wrap gap-2">
-            <span className="text-sw-sub text-[11px] font-bold uppercase tracking-wide">
+            <span className="text-[var(--text-secondary)] text-[11px] font-bold uppercase tracking-wide">
               Showing {visibleRows.length} of {recon.length} records
             </span>
             <div className="flex gap-4 items-center">
-              <span className="text-sw-sub text-[11px]">Expected: <span className="text-sw-text font-mono font-bold">{fmt(totalExpected)}</span></span>
-              <span className="text-sw-sub text-[11px]">Collected: <span className="text-sw-blue font-mono font-bold">{fmt(totalCollected)}</span></span>
+              <span className="text-[var(--text-secondary)] text-[11px]">Expected: <span className="text-[var(--text-primary)] font-mono font-bold">{fmt(totalExpected)}</span></span>
+              <span className="text-[var(--text-secondary)] text-[11px]">Collected: <span className="text-[var(--color-info)] font-mono font-bold">{fmt(totalCollected)}</span></span>
             </div>
           </div>
         </div>
@@ -361,28 +368,28 @@ export default function CashPage() {
           <option value="">Select store…</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        {!formStoreId && <div className="text-sw-red text-[11px] font-semibold mt-1">Please select a store</div>}
+        {!formStoreId && <div className="text-[var(--color-danger)] text-[11px] font-semibold mt-1">Please select a store</div>}
       </Field>
       <Field label="Date"><SmartDatePicker value={form.date} onChange={v => setForm({...form, date: v})} /></Field>
 
       {/* Expected breakdown */}
       {expectedBreakdown.total > 0 && (
         <div className="bg-sw-card2 rounded-lg p-3 mb-3 border border-sw-border">
-          <div className="text-sw-sub text-[10px] font-bold uppercase mb-2">Expected Cash</div>
+          <div className="text-[var(--text-secondary)] text-[10px] font-bold uppercase mb-2">Expected Cash</div>
           <div className="space-y-1 text-[12px]">
             <div className="flex justify-between">
-              <span className="text-sw-sub">R1 Safe Drop</span>
-              <span className="text-sw-text font-mono font-semibold">{fmt(expectedBreakdown.r1)}</span>
+              <span className="text-[var(--text-secondary)]">R1 Safe Drop</span>
+              <span className="text-[var(--text-primary)] font-mono font-semibold">{fmt(expectedBreakdown.r1)}</span>
             </div>
             {(modalStore?.has_register2 && expectedBreakdown.r2 > 0) && (
               <div className="flex justify-between">
-                <span className="text-sw-sub">R2 Safe Drop</span>
-                <span className="text-sw-text font-mono font-semibold">{fmt(expectedBreakdown.r2)}</span>
+                <span className="text-[var(--text-secondary)]">R2 Safe Drop</span>
+                <span className="text-[var(--text-primary)] font-mono font-semibold">{fmt(expectedBreakdown.r2)}</span>
               </div>
             )}
-            <div className="border-t border-sw-border pt-1 mt-1 flex justify-between">
-              <span className="text-sw-text font-bold">Total Expected</span>
-              <span className="text-sw-text font-mono font-extrabold text-[14px]">{fmt(expectedBreakdown.total)}</span>
+            <div className="border-t border-[var(--border-subtle)] pt-1 mt-1 flex justify-between">
+              <span className="text-[var(--text-primary)] font-bold">Total Expected</span>
+              <span className="text-[var(--text-primary)] font-mono font-extrabold text-[14px]">{fmt(expectedBreakdown.total)}</span>
             </div>
           </div>
         </div>
@@ -400,9 +407,9 @@ export default function CashPage() {
       {/* Live short/over indicator */}
       {modalDiff !== null && (
         <div className={`rounded-lg p-2.5 mb-3 border text-[12px] font-bold font-mono text-center ${
-          Math.abs(modalDiff) < 0.01 ? 'bg-sw-blueD text-sw-blue border-sw-blue/30'
-          : modalDiff > 0 ? 'bg-sw-greenD text-sw-green border-sw-green/30'
-          : 'bg-sw-redD text-sw-red border-sw-red/30'
+          Math.abs(modalDiff) < 0.01 ? 'bg-sw-blueD text-[var(--color-info)] border-sw-blue/30'
+          : modalDiff > 0 ? 'bg-sw-greenD text-[var(--color-success)] border-sw-green/30'
+          : 'bg-sw-redD text-[var(--color-danger)] border-sw-red/30'
         }`}>
           {Math.abs(modalDiff) < 0.01 ? '✓ MATCHED' : modalDiff > 0 ? `OVER +${fmt(modalDiff)}` : `SHORT ${fmt(modalDiff)}`}
         </div>
