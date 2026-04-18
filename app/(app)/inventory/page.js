@@ -13,7 +13,7 @@ const DEPT_ICONS = {
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
-const inputClass = 'w-full px-3 py-3 bg-sw-card2 border border-sw-border rounded-lg text-sw-text text-[15px] focus:outline-none focus:border-sw-blue min-h-[48px]';
+const inputClass = 'w-full px-3 py-3 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg text-[var(--text-primary)] text-[15px] focus:outline-none focus:border-sw-blue min-h-[48px]';
 
 export default function InventoryPage() {
   const { supabase, isOwner, isEmployee, profile, effectiveStoreId } = useAuth();
@@ -249,7 +249,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
       </PageHeader>
 
       {count && lastTs && (
-        <div className="text-[11px] text-sw-sub mb-2">
+        <div className="text-[11px] text-[var(--text-secondary)] mb-2">
           Last updated {new Date(lastTs).toLocaleString()}
           {isOwner && <span className="ml-2 italic">(viewing as owner — edits allowed)</span>}
         </div>
@@ -259,10 +259,10 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
       {msg && <Alert type="success">{msg}</Alert>}
 
       {!count && (
-        <div className="bg-sw-card border border-sw-border rounded-xl p-6 text-center mb-4">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-6 text-center mb-4">
           <div className="text-4xl mb-3">📋</div>
-          <div className="text-sw-text font-bold mb-1">Ready to count inventory?</div>
-          <div className="text-sw-sub text-sm mb-4">Walk through the store, pick a department, and add what you see.</div>
+          <div className="text-[var(--text-primary)] font-bold mb-1">Ready to count inventory?</div>
+          <div className="text-[var(--text-secondary)] text-sm mb-4">Walk through the store, pick a department, and add what you see.</div>
           <Button onClick={startCount} disabled={busy}>{busy ? 'Starting…' : 'Start Count'}</Button>
         </div>
       )}
@@ -282,7 +282,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
                 <button
                   key={d.id}
                   onClick={() => setActiveDeptId(d.id)}
-                  className={`flex-shrink-0 px-4 py-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors min-h-[48px] ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue' : 'bg-sw-card text-sw-sub border-sw-border'}`}
+                  className={`flex-shrink-0 px-4 py-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors min-h-[48px] ${active ? 'bg-sw-blueD text-[var(--color-info)] border-sw-blue' : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)]'}`}
                 >
                   <span className="mr-1">{DEPT_ICONS[d.name] || '📦'}</span>
                   {d.name}
@@ -317,16 +317,16 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
 
       {pastCounts.length > 0 && (
         <div className="mt-8">
-          <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mb-2">Previous Counts</div>
+          <div className="text-[var(--text-secondary)] text-[10px] font-bold uppercase tracking-wider mb-2">Previous Counts</div>
           <div className="space-y-2">
             {pastCounts.map(pc => (
               <button
                 key={pc.id}
                 onClick={() => setViewingPast(pc)}
-                className="w-full text-left bg-sw-card border border-sw-border rounded-lg p-3 flex justify-between items-center hover:border-sw-blue transition-colors"
+                className="w-full text-left bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-3 flex justify-between items-center hover:border-sw-blue transition-colors"
               >
-                <span className="text-sw-text text-sm">{fmtDate(pc.count_date)}</span>
-                <span className="text-xs text-sw-sub">
+                <span className="text-[var(--text-primary)] text-sm">{fmtDate(pc.count_date)}</span>
+                <span className="text-xs text-[var(--text-secondary)]">
                   {pc.status === 'submitted' ? '✅ Submitted' : pc.status === 'draft' ? '📝 Draft' : pc.status}
                 </span>
               </button>
@@ -362,9 +362,9 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
   };
 
   return (
-    <div className="bg-sw-card border border-sw-border rounded-xl p-4">
+    <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
       <div className="flex justify-between items-center mb-3">
-        <div className="text-sw-text font-bold text-sm uppercase tracking-wide">
+        <div className="text-[var(--text-primary)] font-bold text-sm uppercase tracking-wide">
           {DEPT_ICONS[dept.name] || '📦'} {dept.name}
         </div>
         {!readonly && !showForm && !editingId && (
@@ -389,26 +389,26 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
           ) : (
             <div
               key={it.id}
-              className="bg-sw-card2 border border-sw-border rounded-lg p-3 flex justify-between items-start gap-3"
+              className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg p-3 flex justify-between items-start gap-3"
             >
               <button
                 className="flex-1 text-left"
                 disabled={readonly}
                 onClick={() => !readonly && setEditingId(it.id)}
               >
-                <div className="text-sw-text text-sm">
-                  <span className="text-sw-sub">{idx + 1}.</span> <span className="font-semibold">{it.brand}</span>
-                  {it.flavor && <span className="text-sw-sub"> · {it.flavor}</span>}
+                <div className="text-[var(--text-primary)] text-sm">
+                  <span className="text-[var(--text-secondary)]">{idx + 1}.</span> <span className="font-semibold">{it.brand}</span>
+                  {it.flavor && <span className="text-[var(--text-secondary)]"> · {it.flavor}</span>}
                 </div>
-                <div className="text-xs text-sw-sub mt-0.5">
-                  Qty: <span className="text-sw-text font-semibold">{it.in_stock}</span>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Qty: <span className="text-[var(--text-primary)] font-semibold">{it.in_stock}</span>
                   {it.need_to_order > 0 && (
-                    <span className="ml-3">→ Need to order: <span className="text-sw-amber font-semibold">{it.need_to_order}</span></span>
+                    <span className="ml-3">→ Need to order: <span className="text-[var(--color-warning)] font-semibold">{it.need_to_order}</span></span>
                   )}
                 </div>
-                {it.notes && <div className="text-[11px] text-sw-sub mt-1 italic">{it.notes}</div>}
+                {it.notes && <div className="text-[11px] text-[var(--text-secondary)] mt-1 italic">{it.notes}</div>}
                 {it.created_by && profileMap[it.created_by] && (
-                  <div className="text-[10px] text-sw-sub mt-1">
+                  <div className="text-[10px] text-[var(--text-secondary)] mt-1">
                     added by {profileMap[it.created_by].name || 'Unknown'}
                     {profileMap[it.created_by].role && <span className="opacity-70"> ({profileMap[it.created_by].role})</span>}
                   </div>
@@ -417,7 +417,7 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
               {!readonly && (
                 <button
                   onClick={() => onDelete(it.id)}
-                  className="text-sw-red text-lg px-2 min-h-[40px]"
+                  className="text-[var(--color-danger)] text-lg px-2 min-h-[40px]"
                   aria-label="Delete"
                 >✕</button>
               )}
@@ -454,7 +454,7 @@ function ItemForm({ initial, onSave, onCancel, busy }) {
   const canSave = form.brand.trim().length > 0;
 
   return (
-    <div className="bg-sw-card2 border border-sw-blue rounded-lg p-3">
+    <div className="bg-[var(--bg-card)] border border-sw-blue rounded-lg p-3">
       <Field label="Brand">
         <input
           className={inputClass}
@@ -540,14 +540,14 @@ function PastCountView({ supabase, count, departments, onBack }) {
         const di = byDept(d.id);
         if (di.length === 0) return null;
         return (
-          <div key={d.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-3">
-            <div className="text-sw-text font-bold text-sm mb-2">{DEPT_ICONS[d.name] || '📦'} {d.name}</div>
+          <div key={d.id} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4 mb-3">
+            <div className="text-[var(--text-primary)] font-bold text-sm mb-2">{DEPT_ICONS[d.name] || '📦'} {d.name}</div>
             {di.map((it, idx) => (
-              <div key={it.id} className="text-sm text-sw-text py-1">
-                <span className="text-sw-sub">{idx + 1}.</span> {it.brand}
-                {it.flavor && <span className="text-sw-sub"> · {it.flavor}</span>}
-                <span className="text-sw-sub"> · Qty: {it.in_stock}</span>
-                {it.need_to_order > 0 && <span className="text-sw-amber"> · Order: {it.need_to_order}</span>}
+              <div key={it.id} className="text-sm text-[var(--text-primary)] py-1">
+                <span className="text-[var(--text-secondary)]">{idx + 1}.</span> {it.brand}
+                {it.flavor && <span className="text-[var(--text-secondary)]"> · {it.flavor}</span>}
+                <span className="text-[var(--text-secondary)]"> · Qty: {it.in_stock}</span>
+                {it.need_to_order > 0 && <span className="text-[var(--color-warning)]"> · Order: {it.need_to_order}</span>}
               </div>
             ))}
           </div>
@@ -638,17 +638,17 @@ function OwnerView({ supabase, stores, departments }) {
           const statusIcon = !c ? '⚠️' : c.status === 'draft' ? '📝' : '✅';
           const statusText = !c ? 'No count yet' : c.status === 'draft' ? 'Draft in progress' : `Submitted ${fmtDate(c.count_date)}`;
           return (
-            <div key={s.id} className="bg-sw-card border border-sw-border rounded-xl p-4">
+            <div key={s.id} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-3 h-3 rounded-full" style={{ background: s.color || '#39FF14' }} />
-                <span className="text-sw-text font-bold">{s.name}</span>
+                <span className="text-[var(--text-primary)] font-bold">{s.name}</span>
               </div>
-              <div className="text-sw-sub text-xs mb-1">{statusIcon} {statusText}</div>
-              {entry && <div className="text-sw-sub text-xs mb-3">{entry.itemCount} items counted</div>}
+              <div className="text-[var(--text-secondary)] text-xs mb-1">{statusIcon} {statusText}</div>
+              {entry && <div className="text-[var(--text-secondary)] text-xs mb-3">{entry.itemCount} items counted</div>}
               {c ? (
                 <Button variant="secondary" onClick={() => setViewing(c)} className="w-full">View</Button>
               ) : (
-                <div className="text-sw-sub text-xs italic">Waiting on employee</div>
+                <div className="text-[var(--text-secondary)] text-xs italic">Waiting on employee</div>
               )}
             </div>
           );
@@ -746,14 +746,14 @@ function OwnerCountView({ supabase, count, store, departments, onBack }) {
       )}
 
       {grouped.map(({ dept, rows }) => (
-        <div key={dept.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-4">
-          <div className="text-sw-text font-bold text-sm mb-3">
+        <div key={dept.id} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4 mb-4">
+          <div className="text-[var(--text-primary)] font-bold text-sm mb-3">
             {DEPT_ICONS[dept.name] || '📦'} {dept.name.toUpperCase()} ({rows.length} {mode === 'order' ? 'to order' : 'items'})
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-sw-sub text-[10px] uppercase tracking-wider text-left border-b border-sw-border">
+                <tr className="text-[var(--text-secondary)] text-[10px] uppercase tracking-wider text-left border-b border-[var(--border-subtle)]">
                   <th className="py-2 pr-2">Brand</th>
                   <th className="py-2 pr-2">Flavor</th>
                   <th className="py-2 pr-2 text-right">Stock</th>
@@ -762,11 +762,11 @@ function OwnerCountView({ supabase, count, store, departments, onBack }) {
               </thead>
               <tbody>
                 {rows.map(it => (
-                  <tr key={it.id} className="border-b border-sw-border/50">
-                    <td className="py-2 pr-2 text-sw-text font-semibold">{it.brand}</td>
-                    <td className="py-2 pr-2 text-sw-sub">{it.flavor}</td>
-                    <td className="py-2 pr-2 text-right text-sw-text">{it.in_stock}</td>
-                    <td className="py-2 pr-2 text-right text-sw-amber font-bold">{it.need_to_order || '—'}</td>
+                  <tr key={it.id} className="border-b border-[var(--border-subtle)]/50">
+                    <td className="py-2 pr-2 text-[var(--text-primary)] font-semibold">{it.brand}</td>
+                    <td className="py-2 pr-2 text-[var(--text-secondary)]">{it.flavor}</td>
+                    <td className="py-2 pr-2 text-right text-[var(--text-primary)]">{it.in_stock}</td>
+                    <td className="py-2 pr-2 text-right text-[var(--color-warning)] font-bold">{it.need_to_order || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -900,12 +900,12 @@ function CombinedOrderView({ supabase, stores, departments, onBack }) {
       ) : (
         <>
           {grouped.map(({ dept, rows: rs }) => (
-            <div key={dept.id} className="bg-sw-card border border-sw-border rounded-xl p-4 mb-4">
-              <div className="text-sw-text font-bold text-sm mb-3">{DEPT_ICONS[dept.name] || '📦'} {dept.name.toUpperCase()}</div>
+            <div key={dept.id} className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4 mb-4">
+              <div className="text-[var(--text-primary)] font-bold text-sm mb-3">{DEPT_ICONS[dept.name] || '📦'} {dept.name.toUpperCase()}</div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-sw-sub text-[10px] uppercase tracking-wider text-left border-b border-sw-border">
+                    <tr className="text-[var(--text-secondary)] text-[10px] uppercase tracking-wider text-left border-b border-[var(--border-subtle)]">
                       <th className="py-2 pr-2">Brand</th>
                       <th className="py-2 pr-2">Flavor</th>
                       {stores.map(s => <th key={s.id} className="py-2 pr-2 text-right">{s.name}</th>)}
@@ -914,13 +914,13 @@ function CombinedOrderView({ supabase, stores, departments, onBack }) {
                   </thead>
                   <tbody>
                     {rs.map((r, i) => (
-                      <tr key={i} className="border-b border-sw-border/50">
-                        <td className="py-2 pr-2 text-sw-text font-semibold">{r.brand}</td>
-                        <td className="py-2 pr-2 text-sw-sub">{r.flavor}</td>
+                      <tr key={i} className="border-b border-[var(--border-subtle)]/50">
+                        <td className="py-2 pr-2 text-[var(--text-primary)] font-semibold">{r.brand}</td>
+                        <td className="py-2 pr-2 text-[var(--text-secondary)]">{r.flavor}</td>
                         {stores.map(s => (
-                          <td key={s.id} className="py-2 pr-2 text-right text-sw-text">{r.byStore[s.name] || '—'}</td>
+                          <td key={s.id} className="py-2 pr-2 text-right text-[var(--text-primary)]">{r.byStore[s.name] || '—'}</td>
                         ))}
-                        <td className="py-2 pr-2 text-right text-sw-blue font-bold">{r.total}</td>
+                        <td className="py-2 pr-2 text-right text-[var(--color-info)] font-bold">{r.total}</td>
                       </tr>
                     ))}
                   </tbody>

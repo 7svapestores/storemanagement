@@ -13,19 +13,19 @@ export default function VendorsPage() {
   const load = async () => { setLoading(true); const { data } = await supabase.from('vendors').select('*').order('name'); setVendors(data||[]); setLoading(false); };
   useEffect(() => { load(); }, []);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   return (<div>
     <PageHeader title="🤝 Vendors"><Button onClick={() => setModal(true)}>+ Add</Button></PageHeader>
     <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-      {vendors.map(v => (<div key={v.id} className="bg-sw-card rounded-xl p-4 border border-sw-border">
-        <div className="text-sw-text text-[15px] font-bold mb-1">{v.name}</div>
-        <div className="text-sw-sub text-xs mb-2.5">{v.category}</div>
+      {vendors.map(v => (<div key={v.id} className="bg-[var(--bg-elevated)] rounded-xl p-4 border border-[var(--border-subtle)]">
+        <div className="text-[var(--text-primary)] text-[15px] font-bold mb-1">{v.name}</div>
+        <div className="text-[var(--text-secondary)] text-xs mb-2.5">{v.category}</div>
         <div className="flex flex-col gap-1 text-xs">
-          <div className="flex justify-between"><span className="text-sw-dim">Contact</span><span className="text-sw-text">{v.contact}</span></div>
-          <div className="flex justify-between"><span className="text-sw-dim">Phone</span><span className="text-sw-text font-mono">{v.phone}</span></div>
-          <div className="flex justify-between"><span className="text-sw-dim">Email</span><span className="text-sw-blue">{v.email}</span></div>
+          <div className="flex justify-between"><span className="text-[var(--text-muted)]">Contact</span><span className="text-[var(--text-primary)]">{v.contact}</span></div>
+          <div className="flex justify-between"><span className="text-[var(--text-muted)]">Phone</span><span className="text-[var(--text-primary)] font-mono">{v.phone}</span></div>
+          <div className="flex justify-between"><span className="text-[var(--text-muted)]">Email</span><span className="text-[var(--color-info)]">{v.email}</span></div>
         </div>
       </div>))}
     </div>

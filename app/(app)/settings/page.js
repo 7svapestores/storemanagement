@@ -6,10 +6,10 @@ import { PageHeader, Field, Button, Loading, Modal } from '@/components/UI';
 const COLORS = ['#F87171','#60A5FA','#34D399','#FBBF24','#C084FC','#FB7185','#FB923C','#38BDF8','#4ADE80','#E879F9'];
 
 const Toggle = ({ value, onChange, label, hint }) => (
-  <div className="flex items-center justify-between py-3 px-1 border-b border-sw-border">
+  <div className="flex items-center justify-between py-3 px-1 border-b border-[var(--border-subtle)]">
     <div>
-      <div className="text-sw-text text-[13px] font-semibold">{label}</div>
-      {hint && <div className="text-sw-dim text-[10px]">{hint}</div>}
+      <div className="text-[var(--text-primary)] text-[13px] font-semibold">{label}</div>
+      {hint && <div className="text-[var(--text-muted)] text-[10px]">{hint}</div>}
     </div>
     <button
       type="button"
@@ -95,7 +95,7 @@ export default function SettingsPage() {
     load();
   };
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const showModal = editStore || addOpen;
@@ -107,7 +107,7 @@ export default function SettingsPage() {
       </PageHeader>
 
       {msg && (
-        <div className={`mb-3 rounded-lg px-3 py-2 text-[12px] font-semibold ${msg === 'Saved!' ? 'bg-sw-greenD text-sw-green border border-sw-green/30' : 'bg-sw-redD text-sw-red border border-sw-red/30'}`}>
+        <div className={`mb-3 rounded-lg px-3 py-2 text-[12px] font-semibold ${msg === 'Saved!' ? 'bg-sw-greenD text-[var(--color-success)] border border-sw-green/30' : 'bg-sw-redD text-[var(--color-danger)] border border-sw-red/30'}`}>
           {msg}
         </div>
       )}
@@ -116,41 +116,41 @@ export default function SettingsPage() {
         {stores.map(s => (
           <div
             key={s.id}
-            className={`bg-sw-card rounded-xl border p-4 ${s.is_active === false ? 'border-sw-border/40 opacity-60' : 'border-sw-border'}`}
+            className={`bg-[var(--bg-elevated)] rounded-xl border p-4 ${s.is_active === false ? 'border-[var(--border-subtle)]/40 opacity-60' : 'border-[var(--border-subtle)]'}`}
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <div className="w-4 h-4 rounded" style={{ background: s.color }} />
                 <div>
-                  <div className="text-sw-text text-[14px] font-bold">{s.name}</div>
-                  {s.email && <div className="text-sw-dim text-[11px]">{s.email}</div>}
+                  <div className="text-[var(--text-primary)] text-[14px] font-bold">{s.name}</div>
+                  {s.email && <div className="text-[var(--text-muted)] text-[11px]">{s.email}</div>}
                 </div>
               </div>
               <Button variant="secondary" onClick={() => openEdit(s)} className="!text-[11px] !px-3 !py-1.5">Edit</Button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
               <div>
-                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Register 2</div>
-                <div className={s.has_register2 ? 'text-sw-green font-semibold' : 'text-sw-dim'}>
+                <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Register 2</div>
+                <div className={s.has_register2 ? 'text-[var(--color-success)] font-semibold' : 'text-[var(--text-muted)]'}>
                   {s.has_register2 ? 'Enabled' : 'Disabled'}
                 </div>
               </div>
               <div>
-                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Tax Rate</div>
-                <div className="text-sw-text font-mono">{s.tax_rate ?? '8.25'}%</div>
+                <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Tax Rate</div>
+                <div className="text-[var(--text-primary)] font-mono">{s.tax_rate ?? '8.25'}%</div>
               </div>
               <div>
-                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Status</div>
-                <div className={s.is_active === false ? 'text-sw-red font-semibold' : 'text-sw-green font-semibold'}>
+                <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Status</div>
+                <div className={s.is_active === false ? 'text-[var(--color-danger)] font-semibold' : 'text-[var(--color-success)] font-semibold'}>
                   {s.is_active === false ? 'Inactive' : 'Active'}
                 </div>
               </div>
               <div>
-                <div className="text-sw-sub font-bold uppercase text-[9px] mb-0.5">Phone</div>
-                <div className="text-sw-dim truncate">{s.phone || '—'}</div>
+                <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Phone</div>
+                <div className="text-[var(--text-muted)] truncate">{s.phone || '—'}</div>
               </div>
             </div>
-            {s.address && <div className="text-sw-dim text-[10px] mt-2">{s.address}</div>}
+            {s.address && <div className="text-[var(--text-muted)] text-[10px] mt-2">{s.address}</div>}
           </div>
         ))}
       </div>

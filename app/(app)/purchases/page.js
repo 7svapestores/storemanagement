@@ -292,7 +292,7 @@ export default function PurchasesPage() {
     load();
   };
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const hasStore = !!pageStoreId;
@@ -343,7 +343,7 @@ export default function PurchasesPage() {
 
   return (<div>
     {toast && (
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-sw-greenD text-sw-green border border-sw-green/40 rounded-lg px-4 py-2 text-[12px] font-semibold shadow-lg">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-sw-greenD text-[var(--color-success)] border border-sw-green/40 rounded-lg px-4 py-2 text-[12px] font-semibold shadow-lg">
         ✓ {toast}
       </div>
     )}
@@ -361,7 +361,7 @@ export default function PurchasesPage() {
     >
       +
     </button>
-    <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+    <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
       <MultiSelect
         label="Store"
         placeholder="All Stores"
@@ -374,7 +374,7 @@ export default function PurchasesPage() {
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Vendor filter + search */}
-    <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+    <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
       <SortDropdown options={purchaseSortOptions} value={sortState} onChange={setSortState} />
       <MultiSelect
         label="Vendor"
@@ -392,10 +392,10 @@ export default function PurchasesPage() {
         className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
       />
       {(vendorFilter.length || search) && (
-        <button onClick={() => { setVendorFilter([]); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+        <button onClick={() => { setVendorFilter([]); setSearch(''); }} className="text-[var(--text-muted)] text-[10px] underline">clear</button>
       )}
     </div>
-    <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       <DataTable
         sortState={sortState}
         onSortChange={setSortState}
@@ -403,7 +403,7 @@ export default function PurchasesPage() {
         columns={[
           { key: 'week_of', label: 'Date', render: v => weekLabel(v) },
           ...(!pageStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
-          { key: 'supplier', label: 'Vendor', render: v => <span className="text-sw-text font-bold">{v || '—'}</span> },
+          { key: 'supplier', label: 'Vendor', render: v => <span className="text-[var(--text-primary)] font-bold">{v || '—'}</span> },
           { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: (v, r) => {
             const invs = invoiceByPurchase[r.id] || [];
             return (
@@ -412,43 +412,43 @@ export default function PurchasesPage() {
                   <button
                     onClick={(e) => { e.stopPropagation(); setGalleryImages(invs.map(i => ({ image_url: i.image_url, caption: `${i.vendor_name || ''} · ${i.date || ''}`, downloadName: `invoice-${i.vendor_name || 'purchase'}-${i.date || ''}.jpg` }))); }}
                     title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
-                    className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-sm relative"
+                    className="md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md bg-sw-blueD text-[var(--color-info)] border border-sw-blue/30 text-sm relative"
                   >
                     📷{invs.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[9px] rounded-full px-1 font-bold">{invs.length}</span>}
                   </button>
                 )}
-                <span className="text-sw-amber text-[14px] font-extrabold">{fmt(v)}</span>
+                <span className="text-[var(--color-warning)] text-[14px] font-extrabold">{fmt(v)}</span>
               </span>
             );
           } },
           { key: '_invoice', label: 'Invoice', align: 'center', hideOnMobile: true, render: (_, r) => {
             const invs = invoiceByPurchase[r.id] || [];
-            if (!invs.length) return <span className="text-sw-dim text-base">—</span>;
+            if (!invs.length) return <span className="text-[var(--text-muted)] text-base">—</span>;
             return (
               <button
                 onClick={() => setGalleryImages(invs.map(i => ({ image_url: i.image_url, caption: `${i.vendor_name || ''} · ${i.date || ''}`, downloadName: `invoice-${i.vendor_name || 'purchase'}-${i.date || ''}.jpg` })))}
                 title={invs.length > 1 ? `View invoice (${invs.length})` : 'View invoice'}
-                className="relative inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-sw-blue border border-sw-blue/30 text-xl"
+                className="relative inline-flex items-center justify-center w-11 h-11 rounded-lg bg-sw-blueD text-[var(--color-info)] border border-sw-blue/30 text-xl"
               >
                 📷
                 {invs.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[10px] rounded-full px-1.5 font-bold">{invs.length}</span>}
               </button>
             );
           } },
-          { key: 'notes', label: 'Notes', hideOnMobile: true, render: v => <span className="text-sw-sub text-[11px]">{v || '—'}</span> },
+          { key: 'notes', label: 'Notes', hideOnMobile: true, render: v => <span className="text-[var(--text-secondary)] text-[11px]">{v || '—'}</span> },
           ...(isOwner ? [{
             key: '_actions', label: '', align: 'right', render: (_, r) => (
               <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                 <button
                   onClick={() => openEdit(r)}
-                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-sw-blue text-[12px] font-semibold"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-blueD border border-sw-blue/30 text-[var(--color-info)] text-[12px] font-semibold"
                   style={{ minHeight: 32 }}
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => setConfirmDelete(r)}
-                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-redD border border-sw-red/30 text-sw-red text-[12px] font-semibold"
+                  className="inline-flex items-center justify-center px-3 rounded-md bg-sw-redD border border-sw-red/30 text-[var(--color-danger)] text-[12px] font-semibold"
                   style={{ minHeight: 32 }}
                 >
                   Delete
@@ -461,11 +461,11 @@ export default function PurchasesPage() {
         isOwner={false}
       />
       {visibleItems.length > 0 && (
-        <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center">
-          <span className="text-sw-sub text-[11px] font-bold uppercase tracking-wide">
+        <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-card)] flex justify-between items-center">
+          <span className="text-[var(--text-secondary)] text-[11px] font-bold uppercase tracking-wide">
             Total{vendorFilter ? ` (${vendorFilter})` : ''}
           </span>
-          <span className="text-sw-amber text-[16px] font-extrabold font-mono">{fmt(visibleTotal)}</span>
+          <span className="text-[var(--color-warning)] text-[16px] font-extrabold font-mono">{fmt(visibleTotal)}</span>
         </div>
       )}
     </div>
@@ -480,7 +480,7 @@ export default function PurchasesPage() {
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         {formError && (
-          <div className="text-sw-red text-[11px] font-semibold mt-1">{formError}</div>
+          <div className="text-[var(--color-danger)] text-[11px] font-semibold mt-1">{formError}</div>
         )}
       </Field>
 
@@ -511,7 +511,7 @@ export default function PurchasesPage() {
           placeholder="0.00"
           value={form.amount}
           onChange={e => setForm({...form, amount: e.target.value.replace(/^-/, '')})}
-          className="!text-[22px] !font-mono !font-extrabold !py-3 !text-sw-green"
+          className="!text-[22px] !font-mono !font-extrabold !py-3 !text-[var(--color-success)]"
         />
       </Field>
 
@@ -520,14 +520,14 @@ export default function PurchasesPage() {
           <button
             type="button"
             onClick={() => invoiceCameraRef.current?.click()}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-[var(--color-info)] text-[13px] font-semibold min-h-[44px]"
           >
             <span className="text-lg">📷</span><span>Take Photo</span>
           </button>
           <button
             type="button"
             onClick={() => invoiceLibraryRef.current?.click()}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-[var(--color-info)] text-[13px] font-semibold min-h-[44px]"
           >
             <span className="text-lg">📁</span><span>From Library</span>
           </button>
@@ -542,7 +542,7 @@ export default function PurchasesPage() {
                 <button
                   type="button"
                   onClick={() => setViewInvoice(inv)}
-                  className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                  className="block w-full aspect-square rounded-lg overflow-hidden border border-[var(--border-subtle)] bg-black/20"
                 >
                   <img src={inv.image_url} alt="Invoice" className="w-full h-full object-cover" />
                 </button>
@@ -550,7 +550,7 @@ export default function PurchasesPage() {
                   type="button"
                   onClick={() => setConfirmRemoveExisting(inv)}
                   title="Delete this invoice image"
-                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-[var(--color-danger)] text-sm flex items-center justify-center"
                 >
                   ✕
                 </button>
@@ -565,12 +565,12 @@ export default function PurchasesPage() {
                 >
                   <img src={p.preview} alt="Pending" className="w-full h-full object-cover" />
                 </button>
-                <span className="absolute top-1 left-1 bg-sw-blueD text-sw-blue border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
+                <span className="absolute top-1 left-1 bg-sw-blueD text-[var(--color-info)] border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
                 <button
                   type="button"
                   onClick={() => removePendingInvoice(p.id)}
                   title="Remove"
-                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                  className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-[var(--color-danger)] text-sm flex items-center justify-center"
                 >
                   ✕
                 </button>

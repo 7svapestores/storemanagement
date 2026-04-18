@@ -34,7 +34,7 @@ export default function TeamPage() {
   };
   useEffect(() => { load(); }, []);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   // ── Add ─────────────────────────────────────────
@@ -180,61 +180,61 @@ export default function TeamPage() {
           const storeColor = u.stores?.color;
           const storeName = u.stores?.name;
           return (
-            <div key={u.id} className="bg-sw-card rounded-xl p-4 border border-sw-border">
+            <div key={u.id} className="bg-[var(--bg-elevated)] rounded-xl p-4 border border-[var(--border-subtle)]">
               <div className="flex items-center gap-2 mb-2">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-[14px] font-bold
-                  ${u.role === 'owner' ? 'bg-sw-blue text-black' : active ? 'bg-sw-blueD text-sw-blue' : 'bg-sw-card2 text-sw-dim'}`}>
+                  ${u.role === 'owner' ? 'bg-sw-blue text-black' : active ? 'bg-sw-blueD text-[var(--color-info)]' : 'bg-[var(--bg-card)] text-[var(--text-muted)]'}`}>
                   {u.name?.[0] || '?'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sw-text text-[14px] font-bold truncate">{u.name}</div>
-                  <div className="text-sw-dim text-[10px] capitalize">{u.role}</div>
+                  <div className="text-[var(--text-primary)] text-[14px] font-bold truncate">{u.name}</div>
+                  <div className="text-[var(--text-muted)] text-[10px] capitalize">{u.role}</div>
                 </div>
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase flex-shrink-0
-                  ${active ? 'bg-sw-greenD text-sw-green' : 'bg-sw-redD text-sw-red'}`}>
+                  ${active ? 'bg-sw-greenD text-[var(--color-success)]' : 'bg-sw-redD text-[var(--color-danger)]'}`}>
                   {active ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <div className="text-[11px] text-sw-sub mb-1 flex items-center gap-1.5">
+              <div className="text-[11px] text-[var(--text-secondary)] mb-1 flex items-center gap-1.5">
                 {storeColor && <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: storeColor }} />}
                 <span className="truncate">{storeName || (u.role === 'owner' ? 'All stores' : '—')}</span>
               </div>
-              <div className="text-[10px] text-sw-dim mb-3 font-mono truncate">{u.username}</div>
+              <div className="text-[10px] text-[var(--text-muted)] mb-3 font-mono truncate">{u.username}</div>
 
               {/* Actions — hide on the current user and on owner rows */}
               {!isSelf(u) && (
                 <div className="flex gap-1.5 flex-wrap">
                   <button
                     onClick={() => openEdit(u)}
-                    className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 px-2"
+                    className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-blueD text-[var(--color-info)] border border-sw-blue/30 px-2"
                   >
                     Edit
                   </button>
                   {active ? (
                     <button
                       onClick={() => setConfirmDeactivate(u)}
-                      className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-amberD text-sw-amber border border-sw-amber/30 px-2"
+                      className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-amberD text-[var(--color-warning)] border border-sw-amber/30 px-2"
                     >
                       Deactivate
                     </button>
                   ) : (
                     <button
                       onClick={() => toggleActive(u, true)}
-                      className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-greenD text-sw-green border border-sw-green/30 px-2"
+                      className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-greenD text-[var(--color-success)] border border-sw-green/30 px-2"
                     >
                       Reactivate
                     </button>
                   )}
                   <button
                     onClick={() => setConfirmDelete(u)}
-                    className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-redD text-sw-red border border-sw-red/30 px-2"
+                    className="flex-1 min-h-[34px] text-[11px] font-semibold rounded-md bg-sw-redD text-[var(--color-danger)] border border-sw-red/30 px-2"
                   >
                     Delete
                   </button>
                 </div>
               )}
               {isSelf(u) && (
-                <div className="text-[10px] text-sw-dim italic">This is you — can't modify your own account here.</div>
+                <div className="text-[10px] text-[var(--text-muted)] italic">This is you — can't modify your own account here.</div>
               )}
             </div>
           );
@@ -285,7 +285,7 @@ export default function TeamPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(true)}
-                className="text-sw-blue text-[11px] font-semibold underline"
+                className="text-[var(--color-info)] text-[11px] font-semibold underline"
               >
                 Reset password…
               </button>
@@ -313,10 +313,10 @@ export default function TeamPage() {
           title={`Delete ${confirmDelete.name}?`}
           message={
             <>
-              <div className="mb-1"><span className="text-sw-sub">Email: </span><span className="text-sw-text font-semibold">{confirmDelete.username}</span></div>
-              {confirmDelete.stores?.name && <div className="mb-1"><span className="text-sw-sub">Store: </span><span className="text-sw-text font-semibold">{confirmDelete.stores.name}</span></div>}
-              <div className="mb-3"><span className="text-sw-sub">Role: </span><span className="text-sw-text font-semibold capitalize">{confirmDelete.role}</span></div>
-              <div className="text-sw-red text-[12px]">This will permanently remove the user from the database and cannot be undone.</div>
+              <div className="mb-1"><span className="text-[var(--text-secondary)]">Email: </span><span className="text-[var(--text-primary)] font-semibold">{confirmDelete.username}</span></div>
+              {confirmDelete.stores?.name && <div className="mb-1"><span className="text-[var(--text-secondary)]">Store: </span><span className="text-[var(--text-primary)] font-semibold">{confirmDelete.stores.name}</span></div>}
+              <div className="mb-3"><span className="text-[var(--text-secondary)]">Role: </span><span className="text-[var(--text-primary)] font-semibold capitalize">{confirmDelete.role}</span></div>
+              <div className="text-[var(--color-danger)] text-[12px]">This will permanently remove the user from the database and cannot be undone.</div>
             </>
           }
           confirmLabel="Yes, Delete"

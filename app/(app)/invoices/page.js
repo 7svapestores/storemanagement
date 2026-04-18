@@ -74,7 +74,7 @@ export default function InvoicesPage() {
       .sort((a, b) => b.list.length - a.list.length);
   }, [invoices]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const visible = invoices
@@ -147,7 +147,7 @@ export default function InvoicesPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
         <MultiSelect
           label="Store"
           placeholder="All Stores"
@@ -174,7 +174,7 @@ export default function InvoicesPage() {
         {selected.size > 0 && (
           <button
             onClick={() => setConfirmBulk(true)}
-            className="text-sw-red text-[11px] font-bold border border-sw-red/40 rounded px-3 py-1.5 bg-sw-redD"
+            className="text-[var(--color-danger)] text-[11px] font-bold border border-sw-red/40 rounded px-3 py-1.5 bg-sw-redD"
           >
             🗑 Delete Selected ({selected.size})
           </button>
@@ -182,21 +182,21 @@ export default function InvoicesPage() {
       </div>
 
       {invoices.length === 0 ? (
-        <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
           No invoices for this period. Upload invoices from the Product Buying page.
         </div>
       ) : (
         <div className="md:flex md:gap-3">
           {/* Vendor folders — sidebar on desktop, horizontal scroll on mobile */}
           <div className="md:w-[220px] md:flex-shrink-0 mb-3 md:mb-0">
-            <div className="md:bg-sw-card md:border md:border-sw-border md:rounded-xl md:p-2 md:space-y-1 flex md:flex-col gap-2 md:gap-1 overflow-x-auto md:overflow-visible">
+            <div className="md:bg-[var(--bg-elevated)] md:border md:border-[var(--border-subtle)] md:rounded-xl md:p-2 md:space-y-1 flex md:flex-col gap-2 md:gap-1 overflow-x-auto md:overflow-visible">
               <button
                 onClick={() => setVendorFilter([])}
                 className={`flex-shrink-0 md:flex-shrink text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg border min-h-[44px]
-                  ${vendorFilter.length === 0 ? 'bg-sw-blueD text-sw-blue border-sw-blue/30' : 'bg-sw-card2 text-sw-text border-sw-border hover:border-sw-blue/30'}`}
+                  ${vendorFilter.length === 0 ? 'bg-sw-blueD text-[var(--color-info)] border-sw-blue/30' : 'bg-[var(--bg-card)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:border-sw-blue/30'}`}
               >
                 <span className="text-[12px] font-semibold truncate">📁 All Vendors</span>
-                <span className="text-[10px] text-sw-sub flex-shrink-0">{invoices.length}</span>
+                <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0">{invoices.length}</span>
               </button>
               {vendorGroups.map(g => {
                 const active = vendorFilter.includes(g.name);
@@ -205,10 +205,10 @@ export default function InvoicesPage() {
                     key={g.name}
                     onClick={() => setVendorFilter(active ? vendorFilter.filter(v => v !== g.name) : [...vendorFilter, g.name])}
                     className={`flex-shrink-0 md:flex-shrink text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg border min-h-[44px]
-                      ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue/30' : 'bg-sw-card2 text-sw-text border-sw-border hover:border-sw-blue/30'}`}
+                      ${active ? 'bg-sw-blueD text-[var(--color-info)] border-sw-blue/30' : 'bg-[var(--bg-card)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:border-sw-blue/30'}`}
                   >
                     <span className="text-[12px] font-semibold truncate">📁 {g.name}</span>
-                    <span className="text-[10px] text-sw-sub flex-shrink-0">{g.list.length}</span>
+                    <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0">{g.list.length}</span>
                   </button>
                 );
               })}
@@ -218,7 +218,7 @@ export default function InvoicesPage() {
           {/* Image grid */}
           <div className="flex-1 min-w-0">
             {visible.length === 0 ? (
-              <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
                 No invoices match your filters.
               </div>
             ) : (
@@ -226,11 +226,11 @@ export default function InvoicesPage() {
                 {visible.map(inv => (
                   <div
                     key={inv.id}
-                    className={`relative bg-sw-card border rounded-lg overflow-hidden transition-colors ${selected.has(inv.id) ? 'border-sw-blue ring-2 ring-sw-blue/40' : 'border-sw-border hover:border-sw-blue/40'}`}
+                    className={`relative bg-[var(--bg-elevated)] border rounded-lg overflow-hidden transition-colors ${selected.has(inv.id) ? 'border-sw-blue ring-2 ring-sw-blue/40' : 'border-[var(--border-subtle)] hover:border-sw-blue/40'}`}
                   >
                     <label
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-md bg-sw-card2/90 border border-sw-border flex items-center justify-center cursor-pointer"
+                      className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-md bg-[var(--bg-card)]/90 border border-[var(--border-subtle)] flex items-center justify-center cursor-pointer"
                       title="Select"
                     >
                       <input
@@ -253,17 +253,17 @@ export default function InvoicesPage() {
                         />
                       </div>
                       <div className="p-2 space-y-0.5">
-                        <div className="text-sw-text text-[11px] font-bold truncate">{inv.vendor_name || 'Unknown'}</div>
-                        <div className="text-sw-dim text-[10px] truncate">{inv.stores?.name || '—'}</div>
-                        <div className="text-sw-sub text-[10px]">{utilDate(inv.date)}</div>
-                        <div className="text-sw-amber text-[11px] font-mono font-bold">{fmtMoney(inv.amount)}</div>
+                        <div className="text-[var(--text-primary)] text-[11px] font-bold truncate">{inv.vendor_name || 'Unknown'}</div>
+                        <div className="text-[var(--text-muted)] text-[10px] truncate">{inv.stores?.name || '—'}</div>
+                        <div className="text-[var(--text-secondary)] text-[10px]">{utilDate(inv.date)}</div>
+                        <div className="text-[var(--color-warning)] text-[11px] font-mono font-bold">{fmtMoney(inv.amount)}</div>
                       </div>
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmDelete(inv); }}
                       title="Delete invoice"
                       aria-label="Delete invoice"
-                      className="absolute top-1.5 right-1.5 w-8 h-8 rounded-md bg-sw-redD border border-sw-red/40 text-sw-red text-sm flex items-center justify-center"
+                      className="absolute top-1.5 right-1.5 w-8 h-8 rounded-md bg-sw-redD border border-sw-red/40 text-[var(--color-danger)] text-sm flex items-center justify-center"
                     >
                       🗑
                     </button>

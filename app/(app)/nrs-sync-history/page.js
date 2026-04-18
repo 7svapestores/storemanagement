@@ -5,10 +5,10 @@ import { PageHeader, Button, Loading, DateBar, useDateRange, Alert, StatCard } f
 import { dayLabel } from '@/lib/utils';
 
 const STATUS_STYLE = {
-  success: 'bg-sw-greenD text-sw-green',
-  failed: 'bg-sw-redD text-sw-red',
-  skipped: 'bg-sw-amberD text-sw-amber',
-  partial: 'bg-sw-amberD text-sw-amber',
+  success: 'bg-sw-greenD text-[var(--color-success)]',
+  failed: 'bg-sw-redD text-[var(--color-danger)]',
+  skipped: 'bg-sw-amberD text-[var(--color-warning)]',
+  partial: 'bg-sw-amberD text-[var(--color-warning)]',
 };
 
 export default function NRSSyncHistoryPage() {
@@ -72,7 +72,7 @@ export default function NRSSyncHistoryPage() {
     }
   };
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const byDate = {};
@@ -103,15 +103,15 @@ export default function NRSSyncHistoryPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
-        <label className="text-sw-sub text-[10px] font-bold uppercase">Status</label>
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
+        <label className="text-[var(--text-secondary)] text-[10px] font-bold uppercase">Status</label>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="!w-auto !min-w-[140px] !py-1.5 !text-[11px]">
           <option value="">All</option>
           <option value="success">Success</option>
           <option value="failed">Failed</option>
           <option value="skipped">Skipped</option>
         </select>
-        <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
+        <label className="text-[var(--text-secondary)] text-[10px] font-bold uppercase">Store</label>
         <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)} className="!w-auto !min-w-[160px] !py-1.5 !text-[11px]">
           <option value="">All Stores</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -119,42 +119,42 @@ export default function NRSSyncHistoryPage() {
       </div>
 
       {sortedDates.length === 0 ? (
-        <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">No sync records for this period.</div>
+        <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">No sync records for this period.</div>
       ) : (
         <div className="space-y-3">
           {sortedDates.map(date => (
-            <div key={date} className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
-              <div className="px-3 py-2 bg-sw-card2 border-b border-sw-border flex justify-between">
-                <span className="text-sw-text text-[13px] font-bold">{dayLabel(date)}</span>
-                <span className="text-sw-dim text-[11px]">{byDate[date].length} entries</span>
+            <div key={date} className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
+              <div className="px-3 py-2 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex justify-between">
+                <span className="text-[var(--text-primary)] text-[13px] font-bold">{dayLabel(date)}</span>
+                <span className="text-[var(--text-muted)] text-[11px]">{byDate[date].length} entries</span>
               </div>
               {byDate[date].map(l => (
-                <div key={l.id} className="px-3 py-2 border-b border-sw-border last:border-b-0">
+                <div key={l.id} className="px-3 py-2 border-b border-[var(--border-subtle)] last:border-b-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${STATUS_STYLE[l.status] || 'bg-sw-card2 text-sw-dim'}`}>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${STATUS_STYLE[l.status] || 'bg-[var(--bg-card)] text-[var(--text-muted)]'}`}>
                         {l.status}
                       </span>
-                      <span className="text-sw-text text-[12px] font-semibold truncate">{storeName(l.store_id)}</span>
+                      <span className="text-[var(--text-primary)] text-[12px] font-semibold truncate">{storeName(l.store_id)}</span>
                       {l.created_daily_sales_id && (
-                        <span className="text-sw-dim text-[10px]">ID: {l.created_daily_sales_id.slice(0, 8)}…</span>
+                        <span className="text-[var(--text-muted)] text-[10px]">ID: {l.created_daily_sales_id.slice(0, 8)}…</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-sw-dim text-[10px]">{new Date(l.created_at).toLocaleTimeString()}</span>
+                      <span className="text-[var(--text-muted)] text-[10px]">{new Date(l.created_at).toLocaleTimeString()}</span>
                       <button
                         onClick={() => setExpanded(expanded === l.id ? null : l.id)}
-                        className="text-sw-blue text-[10px] underline"
+                        className="text-[var(--color-info)] text-[10px] underline"
                       >
                         {expanded === l.id ? 'Hide' : 'Details'}
                       </button>
                     </div>
                   </div>
-                  {l.error_message && <div className="text-sw-red text-[11px] mt-1">{l.error_message}</div>}
+                  {l.error_message && <div className="text-[var(--color-danger)] text-[11px] mt-1">{l.error_message}</div>}
                   {expanded === l.id && (
                     <div className="mt-2">
                       {l.nrs_response && (
-                        <pre className="p-2 bg-black/30 rounded text-[10px] text-sw-dim overflow-auto max-h-[300px]">
+                        <pre className="p-2 bg-black/30 rounded text-[10px] text-[var(--text-muted)] overflow-auto max-h-[300px]">
                           {JSON.stringify(l.nrs_response, null, 2)}
                         </pre>
                       )}

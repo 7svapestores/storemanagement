@@ -35,7 +35,7 @@ export default function NRSBackfillPage() {
     })();
   }, []);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const totalDays = (() => {
@@ -157,16 +157,16 @@ export default function NRSBackfillPage() {
     <div>
       <PageHeader title="🤖 7S Agent — Historical Backfill" subtitle="Import historical daily sales from NRS POS" />
 
-      <div className="bg-sw-card rounded-xl border border-sw-border p-5 mb-4">
-        <p className="text-sw-sub text-[12px] mb-4">
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-5 mb-4">
+        <p className="text-[var(--text-secondary)] text-[12px] mb-4">
           Streams results in real-time. Existing entries are automatically skipped. If the connection drops, click Resume — already-imported dates won't be duplicated.
         </p>
 
         <div className="mb-4">
-          <div className="text-sw-sub text-[10px] font-bold uppercase mb-2">Stores</div>
+          <div className="text-[var(--text-secondary)] text-[10px] font-bold uppercase mb-2">Stores</div>
           <div className="flex gap-2 flex-wrap">
             {stores.map(s => (
-              <label key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer min-h-[44px] ${selectedStores.includes(s.id) ? 'bg-sw-blueD border-sw-blue/30 text-sw-blue' : 'bg-sw-card2 border-sw-border text-sw-text'}`}>
+              <label key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer min-h-[44px] ${selectedStores.includes(s.id) ? 'bg-sw-blueD border-sw-blue/30 text-[var(--color-info)]' : 'bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]'}`}>
                 <input type="checkbox" checked={selectedStores.includes(s.id)} onChange={() => toggleStore(s.id)} disabled={running} className="!w-4 !h-4 !min-h-0" />
                 <span className="text-[12px] font-semibold">{s.name}</span>
               </label>
@@ -180,8 +180,8 @@ export default function NRSBackfillPage() {
         </div>
 
         {totalCalls > 0 && !running && (
-          <div className="bg-sw-card2 rounded-lg p-3 border border-sw-border mb-4 text-[12px] text-sw-sub">
-            {selectedStores.length} store{selectedStores.length === 1 ? '' : 's'} x {totalDays} day{totalDays === 1 ? '' : 's'} = <span className="text-sw-text font-bold">{totalCalls} tasks</span>
+          <div className="bg-[var(--bg-card)] rounded-lg p-3 border border-[var(--border-subtle)] mb-4 text-[12px] text-[var(--text-secondary)]">
+            {selectedStores.length} store{selectedStores.length === 1 ? '' : 's'} x {totalDays} day{totalDays === 1 ? '' : 's'} = <span className="text-[var(--text-primary)] font-bold">{totalCalls} tasks</span>
           </div>
         )}
 
@@ -189,37 +189,37 @@ export default function NRSBackfillPage() {
         {(running || (current > 0 && !done)) && (
           <div className="mb-4">
             <div className="flex justify-between text-[11px] mb-1">
-              <span className="text-sw-text font-semibold">
+              <span className="text-[var(--text-primary)] font-semibold">
                 {current} / {total || '?'} processed
-                {currentTask && <span className="text-sw-dim ml-2">— {currentTask}</span>}
+                {currentTask && <span className="text-[var(--text-muted)] ml-2">— {currentTask}</span>}
               </span>
-              <span className="text-sw-sub">
+              <span className="text-[var(--text-secondary)]">
                 {counts.created} created · {counts.skipped} skipped · {counts.failed} failed
               </span>
             </div>
-            <div className="w-full bg-sw-card2 rounded-full h-3 border border-sw-border">
+            <div className="w-full bg-[var(--bg-card)] rounded-full h-3 border border-[var(--border-subtle)]">
               <div
                 className="h-full rounded-full transition-all duration-200"
                 style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22C55E, #3B82F6)' }}
               />
             </div>
-            <div className="flex justify-between text-sw-dim text-[10px] mt-1">
+            <div className="flex justify-between text-[var(--text-muted)] text-[10px] mt-1">
               <span>{pct}%</span>
               {remaining > 0 && <span>~{remMin > 0 ? `${remMin}m ` : ''}{remSec}s remaining</span>}
             </div>
           </div>
         )}
 
-        {error && <div className="bg-sw-redD text-sw-red border border-sw-red/30 rounded-lg p-3 mb-3 text-[12px]">{error}</div>}
+        {error && <div className="bg-sw-redD text-[var(--color-danger)] border border-sw-red/30 rounded-lg p-3 mb-3 text-[12px]">{error}</div>}
 
         {interrupted && !running && (
-          <div className="bg-sw-amberD text-sw-amber border border-sw-amber/30 rounded-lg p-3 mb-3 text-[12px]">
+          <div className="bg-sw-amberD text-[var(--color-warning)] border border-sw-amber/30 rounded-lg p-3 mb-3 text-[12px]">
             Backfill interrupted at {current}/{total}. Click <strong>Resume</strong> to continue — already-imported dates will be skipped.
           </div>
         )}
 
         {done && !running && (
-          <div className="bg-sw-greenD text-sw-green border border-sw-green/30 rounded-lg p-3 mb-3 text-[13px] font-semibold">
+          <div className="bg-sw-greenD text-[var(--color-success)] border border-sw-green/30 rounded-lg p-3 mb-3 text-[13px] font-semibold">
             Backfill complete: {counts.created} created, {counts.skipped} skipped, {counts.failed} failed
           </div>
         )}
@@ -241,7 +241,7 @@ export default function NRSBackfillPage() {
 
       {/* Results table */}
       {results.length > 0 && (
-        <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
           <div className="max-h-[400px] overflow-auto">
             <table>
               <thead>
@@ -260,13 +260,13 @@ export default function NRSBackfillPage() {
                     <td className="text-[12px] font-mono">{r.date}</td>
                     <td>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                        r.status === 'created' ? 'bg-sw-greenD text-sw-green' :
-                        r.status === 'skipped' ? 'bg-sw-amberD text-sw-amber' :
-                        'bg-sw-redD text-sw-red'
+                        r.status === 'created' ? 'bg-sw-greenD text-[var(--color-success)]' :
+                        r.status === 'skipped' ? 'bg-sw-amberD text-[var(--color-warning)]' :
+                        'bg-sw-redD text-[var(--color-danger)]'
                       }`}>{r.status}</span>
                     </td>
-                    <td className="hidden sm:table-cell text-sw-dim text-[11px] font-mono">{r.gross ? `$${r.gross}` : '—'}</td>
-                    <td className="hidden sm:table-cell text-sw-dim text-[10px]">{r.duration_ms}ms</td>
+                    <td className="hidden sm:table-cell text-[var(--text-muted)] text-[11px] font-mono">{r.gross ? `$${r.gross}` : '—'}</td>
+                    <td className="hidden sm:table-cell text-[var(--text-muted)] text-[10px]">{r.duration_ms}ms</td>
                   </tr>
                 ))}
               </tbody>

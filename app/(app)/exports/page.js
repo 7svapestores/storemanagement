@@ -7,7 +7,7 @@ export default function ExportsPage() {
   const { supabase, isOwner } = useAuth();
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
 
   const exportData = async (type) => {
     if (type === 'sales') {
@@ -36,10 +36,10 @@ export default function ExportsPage() {
     <PageHeader title="📥 Export Data" subtitle="Download CSV for any date range" />
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
-      {cards.map(c => (<div key={c.type} className="bg-sw-card rounded-xl p-5 border border-sw-border">
+      {cards.map(c => (<div key={c.type} className="bg-[var(--bg-elevated)] rounded-xl p-5 border border-[var(--border-subtle)]">
         <div className="text-3xl mb-2.5">{c.icon}</div>
-        <h3 className="text-sw-text text-base font-bold mb-1">{c.title}</h3>
-        <p className="text-sw-sub text-xs mb-4">{c.desc}</p>
+        <h3 className="text-[var(--text-primary)] text-base font-bold mb-1">{c.title}</h3>
+        <p className="text-[var(--text-secondary)] text-xs mb-4">{c.desc}</p>
         <Button variant="secondary" onClick={() => exportData(c.type)} className="!text-[11px]">📥 Download CSV</Button>
       </div>))}
     </div>

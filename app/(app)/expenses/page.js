@@ -425,7 +425,7 @@ export default function ExpensesPage() {
     }
   };
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const selectedStoreName = stores.find(s => s.id === pageStoreId)?.name;
@@ -508,7 +508,7 @@ export default function ExpensesPage() {
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
 
       {/* Page-level store selector */}
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
         <MultiSelect
           label="Store"
           placeholder="All Stores"
@@ -522,7 +522,7 @@ export default function ExpensesPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {/* Type + search filter row */}
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
         <MultiSelect
           label="Type"
           placeholder="All Types"
@@ -543,11 +543,11 @@ export default function ExpensesPage() {
           className="!w-full sm:!flex-1 sm:!min-w-[260px] !py-1.5 !text-[11px]"
         />
         {(typeFilter.length || search) && (
-          <button onClick={() => { setTypeFilter([]); setSearch(''); }} className="text-sw-dim text-[10px] underline">clear</button>
+          <button onClick={() => { setTypeFilter([]); setSearch(''); }} className="text-[var(--text-muted)] text-[10px] underline">clear</button>
         )}
       </div>
 
-      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
         <DataTable
           emptyMessage="No expenses for this period. Use Fill Monthly to enter your bills quickly."
           sortState={sortState}
@@ -556,15 +556,15 @@ export default function ExpensesPage() {
             { key: 'month', label: 'Date', render: v => monthLabel(v), sortValue: r => r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
             { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
-            { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-sw-red">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
+            { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-[var(--color-danger)]">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
             { key: '_images', label: 'Image', align: 'center', sortable: false, render: (_, r) => {
               const urls = Array.isArray(r.image_urls) ? r.image_urls : [];
-              if (!urls.length) return <span className="text-sw-dim">—</span>;
+              if (!urls.length) return <span className="text-[var(--text-muted)]">—</span>;
               return (
                 <button
                   onClick={(e) => { e.stopPropagation(); setGalleryImages(urls.map((u, i) => ({ image_url: u, caption: `${r.stores?.name || ''} · ${r.month}`, downloadName: `receipt-${r.month}-${i+1}.jpg` }))); }}
                   title={urls.length > 1 ? `View receipts (${urls.length})` : 'View receipt'}
-                  className="relative inline-flex items-center justify-center w-10 h-10 rounded-md bg-sw-blueD text-sw-blue border border-sw-blue/30 text-base"
+                  className="relative inline-flex items-center justify-center w-10 h-10 rounded-md bg-sw-blueD text-[var(--color-info)] border border-sw-blue/30 text-base"
                 >
                   📷
                   {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-sw-blue text-black text-[9px] rounded-full px-1 font-bold">{urls.length}</span>}
@@ -579,11 +579,11 @@ export default function ExpensesPage() {
           onDelete={isOwner ? id => { const r = visibleItems.find(i => i.id === id); if (r) setConfirmDelete(r); } : undefined}
         />
         {visibleItems.length > 0 && (
-          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center flex-wrap gap-2">
-            <span className="text-sw-sub text-[11px] font-bold uppercase tracking-wide">
+          <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-card)] flex justify-between items-center flex-wrap gap-2">
+            <span className="text-[var(--text-secondary)] text-[11px] font-bold uppercase tracking-wide">
               Showing {visibleItems.length} of {items.length} expenses
             </span>
-            <span className="text-sw-red text-[16px] font-extrabold font-mono">
+            <span className="text-[var(--color-danger)] text-[16px] font-extrabold font-mono">
               TOTAL: {fmt(visibleTotal)}
             </span>
           </div>
@@ -602,11 +602,11 @@ export default function ExpensesPage() {
               <option value="">Select store…</option>
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            {errors.store_id && <p className="text-sw-red text-[11px] mt-1">{errors.store_id}</p>}
+            {errors.store_id && <p className="text-[var(--color-danger)] text-[11px] mt-1">{errors.store_id}</p>}
           </Field>
           <Field label="Date">
             <SmartDatePicker value={form.date} onChange={v => setForm({...form, date: v})} />
-            {errors.date && <p className="text-sw-red text-[11px] mt-1">{errors.date}</p>}
+            {errors.date && <p className="text-[var(--color-danger)] text-[11px] mt-1">{errors.date}</p>}
           </Field>
           <Field label="Category">
             <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className={errors.category ? '!border-sw-red' : ''}>
@@ -622,13 +622,13 @@ export default function ExpensesPage() {
                 onChange={e => setForm({...form, customCategory: e.target.value})}
               />
             )}
-            {errors.customCategory && <p className="text-sw-red text-[11px] mt-1">{errors.customCategory}</p>}
+            {errors.customCategory && <p className="text-[var(--color-danger)] text-[11px] mt-1">{errors.customCategory}</p>}
           </Field>
           <Field label="Amount">
             <input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount}
               onChange={e => setForm({...form, amount: e.target.value.replace(/^-/, '')})}
               className={errors.amount ? '!border-sw-red' : ''} />
-            {errors.amount && <p className="text-sw-red text-[11px] mt-1">{errors.amount}</p>}
+            {errors.amount && <p className="text-[var(--color-danger)] text-[11px] mt-1">{errors.amount}</p>}
           </Field>
           <Field label="Note"><input type="text" value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Optional" /></Field>
 
@@ -637,14 +637,14 @@ export default function ExpensesPage() {
               <button
                 type="button"
                 onClick={() => receiptCameraRef.current?.click()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-[var(--color-info)] text-[13px] font-semibold min-h-[44px]"
               >
                 <span className="text-lg">📷</span><span>Take Photo</span>
               </button>
               <button
                 type="button"
                 onClick={() => receiptLibraryRef.current?.click()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-sw-blue text-[13px] font-semibold min-h-[44px]"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg border-2 border-dashed border-sw-blue/40 bg-sw-blueD text-[var(--color-info)] text-[13px] font-semibold min-h-[44px]"
               >
                 <span className="text-lg">📁</span><span>From Library</span>
               </button>
@@ -658,7 +658,7 @@ export default function ExpensesPage() {
                     <button
                       type="button"
                       onClick={() => setGalleryImages([...existingReceipts, ...pendingReceipts.map(p => p.preview)].map(u => ({ image_url: u })))}
-                      className="block w-full aspect-square rounded-lg overflow-hidden border border-sw-border bg-black/20"
+                      className="block w-full aspect-square rounded-lg overflow-hidden border border-[var(--border-subtle)] bg-black/20"
                     >
                       <img src={url} alt="Receipt" className="w-full h-full object-cover" />
                     </button>
@@ -666,7 +666,7 @@ export default function ExpensesPage() {
                       type="button"
                       onClick={() => removeExistingReceipt(url)}
                       title="Remove"
-                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-[var(--color-danger)] text-sm flex items-center justify-center"
                     >
                       ✕
                     </button>
@@ -681,12 +681,12 @@ export default function ExpensesPage() {
                     >
                       <img src={p.preview} alt="New receipt" className="w-full h-full object-cover" />
                     </button>
-                    <span className="absolute top-1 left-1 bg-sw-blueD text-sw-blue border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
+                    <span className="absolute top-1 left-1 bg-sw-blueD text-[var(--color-info)] border border-sw-blue/40 text-[9px] font-bold px-1 rounded">NEW</span>
                     <button
                       type="button"
                       onClick={() => removePendingReceipt(p.id)}
                       title="Remove"
-                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-sw-red text-sm flex items-center justify-center"
+                      className="absolute top-1 right-1 w-7 h-7 rounded-md bg-sw-redD border border-sw-red/50 text-[var(--color-danger)] text-sm flex items-center justify-center"
                     >
                       ✕
                     </button>
@@ -709,7 +709,7 @@ export default function ExpensesPage() {
       {tplOpen && (
         <Modal title="Fill Monthly Expenses" onClose={() => setTplOpen(false)} wide>
           <div className="mb-3 flex items-center gap-2 flex-wrap">
-            <label className="text-sw-sub text-[11px] font-bold uppercase">Store</label>
+            <label className="text-[var(--text-secondary)] text-[11px] font-bold uppercase">Store</label>
             <select
               value={tplStoreId}
               onChange={e => setTplStoreId(e.target.value)}
@@ -718,25 +718,25 @@ export default function ExpensesPage() {
               <option value="">All Stores</option>
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <label className="text-sw-sub text-[11px] font-bold uppercase">Date</label>
+            <label className="text-[var(--text-secondary)] text-[11px] font-bold uppercase">Date</label>
             <SmartDatePicker value={tplDate} onChange={v => { setTplDate(v); if (v) setTplMonth(v.slice(0, 7)); }} />
-            <span className="text-sw-dim text-[11px]">Blank rows are skipped.</span>
+            <span className="text-[var(--text-muted)] text-[11px]">Blank rows are skipped.</span>
           </div>
 
           {tplLoading ? (
-            <div className="py-8 text-center text-sw-dim">Loading template…</div>
+            <div className="py-8 text-center text-[var(--text-muted)]">Loading template…</div>
           ) : (
             <div className="space-y-4 max-h-[60vh] overflow-auto pr-1">
               {templateStoresVisible.map(st => {
                 const total = storeTotal(st);
                 return (
-                  <div key={st.id} className="bg-sw-card2 rounded-lg border border-sw-border p-3">
+                  <div key={st.id} className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-subtle)] p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-sm" style={{ background: st.color }} />
-                        <span className="text-sw-text text-[13px] font-bold">{st.name}</span>
+                        <span className="text-[var(--text-primary)] text-[13px] font-bold">{st.name}</span>
                       </div>
-                      <span className="text-sw-green text-[12px] font-mono font-bold">{fmt(total)}</span>
+                      <span className="text-[var(--color-success)] text-[12px] font-mono font-bold">{fmt(total)}</span>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
@@ -744,7 +744,7 @@ export default function ExpensesPage() {
                         const key = `${st.id}:${cat.id}`;
                         return (
                           <div key={key}>
-                            <label className="block text-sw-sub text-[10px] font-semibold mb-0.5">
+                            <label className="block text-[var(--text-secondary)] text-[10px] font-semibold mb-0.5">
                               {cat.icon} {cat.label}
                             </label>
                             <input
@@ -758,10 +758,10 @@ export default function ExpensesPage() {
                       })}
                     </div>
 
-                    <div className="border-t border-sw-border pt-2">
-                      <div className="text-sw-sub text-[10px] font-bold uppercase tracking-wide mb-1.5">Custom Expenses</div>
+                    <div className="border-t border-[var(--border-subtle)] pt-2">
+                      <div className="text-[var(--text-secondary)] text-[10px] font-bold uppercase tracking-wide mb-1.5">Custom Expenses</div>
                       {(tplCustom[st.id] || []).length === 0 && (
-                        <p className="text-sw-dim text-[11px] italic mb-1.5">No custom expenses — add below for items like camera repair, pest control, signage, etc.</p>
+                        <p className="text-[var(--text-muted)] text-[11px] italic mb-1.5">No custom expenses — add below for items like camera repair, pest control, signage, etc.</p>
                       )}
                       <div className="space-y-1.5 mb-2">
                         {(tplCustom[st.id] || []).map(row => (
@@ -782,7 +782,7 @@ export default function ExpensesPage() {
                             <button
                               type="button"
                               onClick={() => removeCustomRow(st.id, row.id)}
-                              className="w-8 h-8 rounded-md bg-sw-redD text-sw-red border border-sw-red/30 flex items-center justify-center flex-shrink-0"
+                              className="w-8 h-8 rounded-md bg-sw-redD text-[var(--color-danger)] border border-sw-red/30 flex items-center justify-center flex-shrink-0"
                               title="Remove"
                             >
                               ✕
@@ -793,7 +793,7 @@ export default function ExpensesPage() {
                       <button
                         type="button"
                         onClick={() => addCustomRow(st.id)}
-                        className="text-sw-blue text-[11px] font-semibold border border-sw-blue/30 rounded px-2 py-1 bg-sw-blueD hover:bg-sw-blue/20"
+                        className="text-[var(--color-info)] text-[11px] font-semibold border border-sw-blue/30 rounded px-2 py-1 bg-sw-blueD hover:bg-sw-blue/20"
                       >
                         + Add Custom Expense
                       </button>
@@ -804,9 +804,9 @@ export default function ExpensesPage() {
             </div>
           )}
 
-          <div className="flex justify-between items-center mt-4 sticky bottom-0 bg-sw-card pt-2 border-t border-sw-border">
-            <div className="text-[11px] text-sw-sub">
-              Grand total: <span className="text-sw-green font-mono font-bold text-[13px]">{fmt(grandTotal)}</span>
+          <div className="flex justify-between items-center mt-4 sticky bottom-0 bg-[var(--bg-elevated)] pt-2 border-t border-[var(--border-subtle)]">
+            <div className="text-[11px] text-[var(--text-secondary)]">
+              Grand total: <span className="text-[var(--color-success)] font-mono font-bold text-[13px]">{fmt(grandTotal)}</span>
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setTplOpen(false)}>Cancel</Button>

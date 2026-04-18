@@ -15,9 +15,9 @@ const ENTITY_LABEL = {
 };
 
 const ACTION_STYLE = {
-  create: { bg: 'bg-sw-greenD', text: 'text-sw-green', label: 'CREATE', icon: '➕' },
-  update: { bg: 'bg-sw-blueD',  text: 'text-sw-blue',  label: 'UPDATE', icon: '✎'  },
-  delete: { bg: 'bg-sw-redD',   text: 'text-sw-red',   label: 'DELETE', icon: '✕'  },
+  create: { bg: 'bg-sw-greenD', text: 'text-[var(--color-success)]', label: 'CREATE', icon: '➕' },
+  update: { bg: 'bg-sw-blueD',  text: 'text-[var(--color-info)]',  label: 'UPDATE', icon: '✎'  },
+  delete: { bg: 'bg-sw-redD',   text: 'text-[var(--color-danger)]',   label: 'DELETE', icon: '✕'  },
 };
 
 function fmtTime(ts) {
@@ -73,7 +73,7 @@ export default function ActivityPage() {
     load();
   }, [range.start, range.end, actionFilter.join(','), entityFilter.join(','), storeFilter.join(',')]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const counts = {
@@ -97,7 +97,7 @@ export default function ActivityPage() {
         onStartChange={setStart} onEndChange={setEnd}
       />
 
-      <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
         <MultiSelect
           label="Action"
           placeholder="All Actions"
@@ -126,7 +126,7 @@ export default function ActivityPage() {
       </div>
 
       {rows.length === 0 ? (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-8 text-center text-sw-dim">
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-8 text-center text-[var(--text-muted)]">
           No activity recorded for this period.
         </div>
       ) : (
@@ -136,7 +136,7 @@ export default function ActivityPage() {
             const isOpen = expanded === r.id;
             const hasMeta = r.metadata && Object.keys(r.metadata).length > 0;
             return (
-              <div key={r.id} className="bg-sw-card rounded-xl border border-sw-border p-3">
+              <div key={r.id} className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-3">
                 <div className="flex items-start gap-3">
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${style.bg} ${style.text} text-base font-bold flex-shrink-0`}>
                     {style.icon}
@@ -146,31 +146,31 @@ export default function ActivityPage() {
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${style.bg} ${style.text} uppercase tracking-wide`}>
                         {style.label}
                       </span>
-                      <span className="text-sw-sub text-[10px] font-semibold uppercase tracking-wide">
+                      <span className="text-[var(--text-secondary)] text-[10px] font-semibold uppercase tracking-wide">
                         {ENTITY_LABEL[r.entity_type] || r.entity_type}
                       </span>
                       {r.store_name && (
-                        <span className="text-sw-dim text-[10px]">· {r.store_name}</span>
+                        <span className="text-[var(--text-muted)] text-[10px]">· {r.store_name}</span>
                       )}
                     </div>
-                    <div className="text-sw-text text-[13px] font-medium break-words">
+                    <div className="text-[var(--text-primary)] text-[13px] font-medium break-words">
                       {r.description}
                     </div>
-                    <div className="text-sw-dim text-[11px] mt-1">
-                      <span className="text-sw-sub font-semibold">{r.user_name}</span>
+                    <div className="text-[var(--text-muted)] text-[11px] mt-1">
+                      <span className="text-[var(--text-secondary)] font-semibold">{r.user_name}</span>
                       <span className="capitalize"> ({r.user_role})</span>
                       <span> · {fmtTime(r.created_at)}</span>
                     </div>
                     {hasMeta && (
                       <button
                         onClick={() => setExpanded(isOpen ? null : r.id)}
-                        className="mt-2 text-sw-blue text-[11px] underline"
+                        className="mt-2 text-[var(--color-info)] text-[11px] underline"
                       >
                         {isOpen ? 'Hide details' : 'Show deleted data'}
                       </button>
                     )}
                     {hasMeta && isOpen && (
-                      <pre className="mt-2 text-[10px] bg-sw-card2 border border-sw-border rounded-lg p-2 overflow-auto text-sw-sub max-h-60">
+                      <pre className="mt-2 text-[10px] bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg p-2 overflow-auto text-[var(--text-secondary)] max-h-60">
 {JSON.stringify(r.metadata, null, 2)}
                       </pre>
                     )}
