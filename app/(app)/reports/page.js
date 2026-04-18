@@ -471,6 +471,41 @@ export default function ReportsPage() {
   const maxCatCurrent = Math.max(1, ...expenseRows.map(r => r.current));
   const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total));
 
+  // ── Auto-generated insights ──
+  const insights = [];
+  if (summary) {
+    if (summary.revenueChange != null) {
+      if (summary.revenueChange >= 5) insights.push({ type: 'good', text: `Revenue up ${summary.revenueChange.toFixed(1)}% vs previous period — strong growth` });
+      else if (summary.revenueChange <= -5) insights.push({ type: 'bad', text: `Revenue down ${Math.abs(summary.revenueChange).toFixed(1)}% vs previous period — investigate` });
+      else insights.push({ type: 'info', text: `Revenue roughly flat (${summary.revenueChange >= 0 ? '+' : ''}${summary.revenueChange.toFixed(1)}%) vs previous period` });
+    }
+    if (storeRows.length > 1) {
+      const top = storeRows[0];
+      if (top) insights.push({ type: 'good', text: `${top.name} is the top performer with ${top.margin.toFixed(1)}% profit margin` });
+      const bottom = storeRows[storeRows.length - 1];
+      if (bottom && bottom.margin < 10) insights.push({ type: 'warn', text: `${bottom.name} has only ${bottom.margin.toFixed(1)}% margin — needs attention` });
+    }
+    const expRatio = summary.totalRevenue > 0 ? (summary.totalExpenses / summary.totalRevenue) * 100 : 0;
+    if (expRatio > 35) insights.push({ type: 'warn', text: `Operating expenses at ${expRatio.toFixed(0)}% of revenue (target: <30%)` });
+    if (summary.netProfit > 0 && trendStats?.dayCount) {
+      const dailyProfit = summary.netProfit / trendStats.dayCount;
+      insights.push({ type: 'info', text: `On track for ~${fK(dailyProfit * 30)}/month net profit` });
+    }
+    expenseRows.forEach(r => {
+      if (r.previous > 100 && r.change > 30) insights.push({ type: 'warn', text: `${r.label} expenses up ${r.change.toFixed(0)}% vs previous period` });
+    });
+  }
+
+  // ── Watchouts ──
+  const watchouts = [];
+  if (cashRecon) {
+    if (Math.abs(cashRecon.diff) > 50) watchouts.push({ sev: 'red', text: `Cash reconciliation off by ${fmt(Math.abs(cashRecon.diff))}`, link: '/cash' });
+    if (cashRecon.pendingDays > 3) watchouts.push({ sev: 'yellow', text: `${cashRecon.pendingDays} days pending cash collection`, link: '/cash' });
+  }
+  storeRows.forEach(s => {
+    if (s.margin < 20 && s.revenue > 100) watchouts.push({ sev: 'yellow', text: `${s.name}: profit margin only ${s.margin.toFixed(1)}%`, link: '/reports' });
+  });
+
   return (
     <div className="print:bg-white print:text-black">
       <PageHeader title="📑 P&L Report" subtitle={`${range.start} to ${range.end}`}>
@@ -501,6 +536,21 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* ── Key Insights ─────────────────────────── */}
+      {insights.length > 0 && (
+        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
+          <h3 className="text-sw-text text-xs font-bold mb-2">Key Insights</h3>
+          <div className="space-y-1.5">
+            {insights.map((ins, i) => (
+              <div key={i} className="flex items-start gap-2 text-[12px]">
+                <span className="flex-shrink-0">{ins.type === 'good' ? '✅' : ins.type === 'bad' ? '🔴' : ins.type === 'warn' ? '⚠️' : '📈'}</span>
+                <span className="text-sw-text">{ins.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Section 2 — Store breakdown ─────────────── */}
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden mb-4">
         <div className="px-3 py-2 border-b border-sw-border">
@@ -509,7 +559,10 @@ export default function ReportsPage() {
         <DataTable
           emptyMessage="No sales in this period yet."
           columns={[
-            { key: 'name', label: 'Store', render: (v, r) => <StoreBadge name={v} color={r.color} /> },
+            { key: 'name', label: 'Store', render: (v, r) => {
+              const rank = storeRows.findIndex(s => s.id === r.id);
+              return <span className="flex items-center gap-1.5">{rank === 0 ? '🏆' : ''}<StoreBadge name={v} color={r.color} /></span>;
+            } },
             { key: 'revenue', label: 'Revenue', align: 'right', mono: true, render: v => <span className="text-sw-green">{fmt(v)}</span> },
             { key: 'purchases', label: 'Purchases', align: 'right', mono: true, render: v => fmt(v) },
             { key: 'expenses', label: 'Expenses', align: 'right', mono: true, render: v => fmt(v) },
@@ -619,6 +672,67 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      {/* ── P&L Waterfall ─────────────────────────── */}
+      {summary && summary.totalRevenue > 0 && (
+        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
+          <h3 className="text-sw-text text-xs font-bold mb-3">P&L Waterfall</h3>
+          {(() => {
+            const rev = summary.totalRevenue;
+            const grossPct = rev > 0 ? ((summary.grossProfit / rev) * 100).toFixed(1) : '0';
+            const expPct = rev > 0 ? ((summary.totalExpenses / rev) * 100).toFixed(1) : '0';
+            const netPct = rev > 0 ? ((summary.netProfit / rev) * 100).toFixed(1) : '0';
+            const cogsPct = rev > 0 ? ((summary.totalPurchases / rev) * 100).toFixed(1) : '0';
+            const lines = [
+              { label: 'Revenue', amount: rev, pct: '100', color: '#34D399', bold: true },
+              { label: '− COGS (Purchases)', amount: -summary.totalPurchases, pct: cogsPct, color: '#FBBF24' },
+              { label: '= Gross Profit', amount: summary.grossProfit, pct: grossPct, color: summary.grossProfit >= 0 ? '#34D399' : '#F87171', bold: true },
+              { label: '− Operating Expenses', amount: -summary.totalExpenses, pct: expPct, color: '#F87171' },
+              { label: '= Net Profit', amount: summary.netProfit, pct: netPct, color: summary.netProfit >= 0 ? '#34D399' : '#F87171', bold: true },
+            ];
+            return (
+              <div className="space-y-2">
+                {lines.map((l, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-44 text-[12px]" style={{ fontWeight: l.bold ? 700 : 400, color: l.bold ? '#E2E8F0' : '#94A3B8' }}>{l.label}</div>
+                    <div className="flex-1 bg-sw-card2 rounded h-6 relative overflow-hidden">
+                      <div className="h-full rounded" style={{ width: `${Math.min(100, Math.abs(Number(l.pct)))}%`, background: l.color + '55' }} />
+                    </div>
+                    <div className="w-28 text-right font-mono text-[13px]" style={{ color: l.color, fontWeight: l.bold ? 800 : 600 }}>
+                      {l.amount >= 0 ? '' : '−'}{fmt(Math.abs(l.amount))}
+                    </div>
+                    <div className="w-12 text-right text-[10px] text-sw-dim">{l.pct}%</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          {summary.netProfit > 0 && (
+            <div className="mt-4 pt-3 border-t border-sw-border text-[12px] text-sw-sub">
+              Available to distribute: <span className="text-sw-green font-mono font-bold text-[14px]">{fmt(summary.netProfit)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Watchouts ─────────────────────────── */}
+      {watchouts.length > 0 ? (
+        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
+          <h3 className="text-sw-text text-xs font-bold mb-2">Watchouts</h3>
+          <div className="space-y-1.5">
+            {watchouts.map((w, i) => (
+              <a key={i} href={w.link} className="flex items-center gap-2 text-[12px] hover:underline">
+                <span>{w.sev === 'red' ? '🔴' : '🟡'}</span>
+                <span className="text-sw-text">{w.text}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : summary && (
+        <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-4 mb-4 text-sw-green text-[12px] font-semibold text-center">
+          ✅ All metrics look healthy — no watchouts this period
+        </div>
+      )}
 
       {/* ── Section 5 — Daily trend ─────────────────── */}
       <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
