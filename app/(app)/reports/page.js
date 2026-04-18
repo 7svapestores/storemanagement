@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/components/AuthProvider';
 import { generatePDF } from './generatePDF';
-import { DataTable, DateBar, useDateRange, PageHeader, StatCard, Loading, StoreBadge, Alert, Button } from '@/components/UI';
+import { DateBar, useDateRange, Loading } from '@/components/UI';
+import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
 import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
 
 export default function ReportsPage() {
@@ -464,7 +465,7 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, `${fileTag()}.xlsx`);
   };
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const totals = storeRows.reduce((a, s) => ({
@@ -477,7 +478,20 @@ export default function ReportsPage() {
   }), { revenue: 0, purchases: 0, expenses: 0, tax: 0, gross: 0, net: 0 });
 
   const maxCatCurrent = Math.max(1, ...expenseRows.map(r => r.current));
+  const soColor = (v) => Math.abs(v) < 0.01 ? 'var(--text-muted)' : v >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
+
+  // Selected store detail
+  const ss = selectedStoreId ? storeRows.find(s => s.id === selectedStoreId) : null;
+  const ssExp = ss ? rawExp.filter(r => r.store_id === ss.id) : [];
+  const ssPurch = ss ? rawPurch.filter(r => r.store_id === ss.id) : [];
+  const ssExpByCat = {};
+  ssExp.forEach(r => { ssExpByCat[r.category] = (ssExpByCat[r.category] || 0) + (r.amount || 0); });
+  const ssExpCats = Object.entries(ssExpByCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const ssVendMap = {};
+  ssPurch.forEach(r => { ssVendMap[r.supplier || 'Unknown'] = (ssVendMap[r.supplier || 'Unknown'] || 0) + (r.total_cost || r.unit_cost || 0); });
+  const ssVendors = Object.entries(ssVendMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total));
+  const maxVendor = Math.max(1, ...byVendor.map(v => v.total));
 
   // ── Auto-generated insights ──
   const insights = [];
@@ -514,21 +528,33 @@ export default function ReportsPage() {
     if (s.margin < 20 && s.revenue > 100) watchouts.push({ sev: 'yellow', text: `${s.name}: profit margin only ${s.margin.toFixed(1)}%`, link: '/reports' });
   });
 
+  const handlePDF = () => {
+    try {
+      const pdf = generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores }, range);
+      pdf.save(`7S-Stores-Report-${range.start}-to-${range.end}.pdf`);
+    } catch (e) { console.error('PDF generation failed:', e); alert('PDF generation failed: ' + e.message); }
+  };
+
   return (
     <div className="print:bg-white print:text-black">
-      <PageHeader title="📑 P&L Report" subtitle={`${range.start} to ${range.end}`}>
-        <Button variant="secondary" onClick={() => {
-          const pdf = generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores }, range);
-          pdf.save(`7S-Stores-Report-${range.start}-to-${range.end}.pdf`);
-        }} className="!text-[11px]">📄 PDF</Button>
-        <Button variant="secondary" onClick={handleExportExcel} className="!text-[11px]">📊 Excel</Button>
-        <Button variant="secondary" onClick={handleExportCSV} className="!text-[11px]">📥 CSV</Button>
-        <Button variant="secondary" onClick={() => typeof window !== 'undefined' && window.print()} className="!text-[11px]">🖨️ Print</Button>
-      </PageHeader>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Reports / P&L</p>
+          <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Business Performance Report</h1>
+          <p className="text-[var(--text-secondary)] text-[12px]">{range.start} to {range.end} · {storeRows.length} stores</p>
+        </div>
+        <div className="flex gap-1.5 flex-wrap print:hidden">
+          <button onClick={handlePDF} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white" style={{ background: 'var(--brand-primary)' }}>Export PDF</button>
+          <button onClick={handleExportExcel} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">Excel</button>
+          <button onClick={handleExportCSV} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">CSV</button>
+          <button onClick={() => window.print()} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">Print</button>
+        </div>
+      </div>
 
-      {loadError && <Alert type="error">{loadError}</Alert>}
+      {loadError && <V2Alert type="danger" className="mb-3">{loadError}</V2Alert>}
       {summary && (
-        <div className="text-sw-dim text-[10px] mb-2">
+        <div className="text-[var(--text-muted)] text-[10px] mb-2 print:hidden">
           Data: {rawSales.length} sales ({fmt(summary.totalRevenue)}) · {rawPurch.length} purchases ({fmt(summary.totalPurchases)}) · {rawExp.length} expenses ({fmt(summary.totalExpenses)})
         </div>
       )}
@@ -536,11 +562,11 @@ export default function ReportsPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {/* Tabs */}
-      <div className="flex gap-1.5 overflow-x-auto mb-4 pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex gap-1 overflow-x-auto mb-5 pb-1 print:hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
         {[
           { id: 'overview', label: '📊 Overview' },
-          { id: 'stores', label: '🏪 By Store' },
-          { id: 'store-detail', label: '📍 Store Detail' },
+          { id: 'stores', label: '🏪 Stores' },
+          { id: 'store-detail', label: '📍 Detail' },
           { id: 'expenses', label: '💸 Expenses' },
           { id: 'purchases', label: '📦 COGS' },
           { id: 'watchouts', label: '⚠️ Watchouts' },
@@ -548,8 +574,12 @@ export default function ReportsPage() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors flex-shrink-0
-              ${activeTab === t.id ? 'bg-sw-blue text-black shadow' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}
+            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+              activeTab === t.id
+                ? 'text-white shadow-sm'
+                : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+            }`}
+            style={activeTab === t.id ? { background: 'var(--brand-primary)' } : undefined}
           >
             {t.label}
           </button>
@@ -559,36 +589,52 @@ export default function ReportsPage() {
       {/* ── TAB: OVERVIEW ─────────────────────── */}
       {activeTab === 'overview' && <>
 
-      {/* ── Section 1 — Summary ─────────────────────── */}
+      {/* ── Hero + Stats ─────────────────────── */}
       {summary && (
-        <div className="mb-4">
-          <h2 className="text-sw-sub text-[10px] font-bold uppercase tracking-wider mb-2">Summary</h2>
-          <div className="flex gap-2.5 flex-wrap">
-            <StatCard label="Total Revenue" value={fK(summary.totalRevenue)} icon="💰" color="#34D399"
-              sub={summary.revenueChange != null ? `${summary.revenueChange >= 0 ? '▲' : '▼'} ${Math.abs(summary.revenueChange).toFixed(1)}% vs prev` : 'no prior data'} />
-            <StatCard label="Purchases (COGS)" value={fK(summary.totalPurchases)} icon="🛒" color="#FBBF24" />
-            <StatCard label="Operating Expenses" value={fK(summary.totalExpenses)} icon="📋" color="#F87171" />
-            <StatCard label="Gross Profit" value={fK(summary.grossProfit)} icon="📈" color={summary.grossProfit >= 0 ? '#34D399' : '#F87171'} />
-            <StatCard label="Net Profit" value={fK(summary.netProfit)} icon={summary.netProfit >= 0 ? '✅' : '⚠️'} color={summary.netProfit >= 0 ? '#34D399' : '#F87171'} />
-            <StatCard label="Profit Margin" value={`${summary.margin.toFixed(1)}%`} icon="📊" color={summary.margin >= 20 ? '#34D399' : summary.margin >= 0 ? '#FBBF24' : '#F87171'} />
-            <StatCard label="Tax Collected" value={fK(summary.totalTax)} icon="🏛️" color="#22D3EE" />
-            <StatCard label="Cash / Card Mix" value={`${summary.cashPct.toFixed(0)}% / ${summary.cardPct.toFixed(0)}%`} icon="💳" color="#93C5FD" />
+        <>
+          <Card padding="lg" className="mb-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(99,91,255,0.12), rgba(124,58,237,0.06))' }}>
+            <div className="absolute top-0 right-0 w-40 h-40 opacity-10" style={{ background: 'radial-gradient(circle, var(--brand-primary), transparent 70%)', filter: 'blur(40px)' }} />
+            <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Net Profit · {range.start} to {range.end}</p>
+            <p className={`text-[36px] font-bold tracking-tight tabular-nums ${summary.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+              {summary.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(summary.netProfit))}
+            </p>
+            {summary.revenueChange != null && (
+              <Badge variant={summary.revenueChange >= 0 ? 'success' : 'danger'} className="mt-1">
+                {summary.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(summary.revenueChange).toFixed(1)}% vs previous
+              </Badge>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(summary.totalRevenue)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">COGS</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(summary.totalPurchases)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fK(summary.totalExpenses)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p><p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[16px] font-bold tabular-nums">{summary.margin.toFixed(1)}%</p></div>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <V2StatCard label="Gross Sales" value={fK(summary.totalRevenue)} variant="success" icon="💰" />
+            <V2StatCard label="COGS" value={fK(summary.totalPurchases)} variant="warning" icon="📦" />
+            <V2StatCard label="Operating Expenses" value={fK(summary.totalExpenses)} variant="danger" icon="📋" />
+            <V2StatCard label="Tax Collected" value={fK(summary.totalTax)} variant="info" icon="🏛️" />
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Key Insights ─────────────────────────── */}
       {insights.length > 0 && (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">Key Insights</h3>
-          <div className="space-y-1.5">
-            {insights.map((ins, i) => (
-              <div key={i} className="flex items-start gap-2 text-[12px]">
-                <span className="flex-shrink-0">{ins.type === 'good' ? '✅' : ins.type === 'bad' ? '🔴' : ins.type === 'warn' ? '⚠️' : '📈'}</span>
-                <span className="text-sw-text">{ins.text}</span>
-              </div>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          {insights.slice(0, 3).map((ins, i) => {
+            const bg = { good: 'var(--color-success-bg)', bad: 'var(--color-danger-bg)', warn: 'var(--color-warning-bg)', info: 'var(--color-info-bg)' }[ins.type] || 'var(--bg-hover)';
+            const color = { good: 'var(--color-success)', bad: 'var(--color-danger)', warn: 'var(--color-warning)', info: 'var(--color-info)' }[ins.type] || 'var(--text-secondary)';
+            const icon = { good: '✅', bad: '🔴', warn: '⚠️', info: '📈' }[ins.type] || '📈';
+            const labels = ['GROWTH', 'INSIGHT', 'PROJECTION'];
+            return (
+              <Card key={i} padding="md" style={{ background: bg, borderColor: color + '33' }}>
+                <p className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color }}>{labels[i] || 'INSIGHT'}</p>
+                <p className="text-[var(--text-primary)] text-[13px] font-semibold">{icon} {ins.text}</p>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -597,39 +643,37 @@ export default function ReportsPage() {
       {/* ── TAB: BY STORE ─────────────────────── */}
       {(activeTab === 'stores' || activeTab === 'overview') && <>
 
-      {/* ── Section 2 — Store breakdown ─────────────── */}
-      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden mb-4">
-        <div className="px-3 py-2 border-b border-sw-border">
-          <h3 className="text-sw-text text-xs font-bold">Store-by-Store Breakdown</h3>
+      {/* ── Store Performance ─────────────── */}
+      <Card padding="md" className="mb-5 overflow-hidden">
+        <SectionHeader title="Store Performance" />
+        <div className="overflow-x-auto">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>COGS</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr>
+            </thead>
+            <tbody>
+              {storeRows.map((s, i) => (
+                <tr key={s.id} style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined} className="cursor-pointer" onClick={() => { setSelectedStoreId(s.id); setActiveTab('store-detail'); }}>
+                  <td className="text-[var(--text-muted)] text-center">{i === 0 ? '🏆' : i + 1}</td>
+                  <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold">{s.name}</span></span></td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-success)] font-semibold">{fmt(s.revenue)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--text-secondary)]">{fmt(s.purchases)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--text-secondary)]">{fmt(s.expenses)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className={`font-bold ${s.net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmt(s.net)}</td>
+                  <td style={{ textAlign: 'right' }} className={`font-semibold ${s.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}`}>{s.margin.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <DataTable
-          emptyMessage="No sales in this period yet."
-          columns={[
-            { key: 'name', label: 'Store', render: (v, r) => {
-              const rank = storeRows.findIndex(s => s.id === r.id);
-              return <span className="flex items-center gap-1.5">{rank === 0 ? '🏆' : ''}<StoreBadge name={v} color={r.color} /></span>;
-            } },
-            { key: 'revenue', label: 'Revenue', align: 'right', mono: true, render: v => <span className="text-sw-green">{fmt(v)}</span> },
-            { key: 'purchases', label: 'Purchases', align: 'right', mono: true, render: v => fmt(v) },
-            { key: 'expenses', label: 'Expenses', align: 'right', mono: true, render: v => fmt(v) },
-            { key: 'gross', label: 'Gross', align: 'right', mono: true, render: v => <span className={v >= 0 ? 'text-sw-green' : 'text-sw-red'}>{fmt(v)}</span> },
-            { key: 'net', label: 'Net Profit', align: 'right', mono: true, render: v => <span className={v >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{fmt(v)}</span> },
-            { key: 'margin', label: 'Margin', align: 'right', mono: true, render: v => <span className={v >= 20 ? 'text-sw-green' : v >= 0 ? 'text-sw-amber' : 'text-sw-red'}>{v.toFixed(1)}%</span> },
-            { key: 'tax', label: 'Tax', align: 'right', mono: true, render: v => <span className="text-sw-cyan">{fmt(v)}</span> },
-          ]}
-          rows={storeRows}
-          isOwner={false}
-        />
         {storeRows.length > 0 && (
-          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 text-[12px] font-mono flex flex-wrap gap-x-5 gap-y-1">
-            <span className="text-sw-sub">TOTALS</span>
-            <span>Rev <span className="text-sw-green font-bold">{fmt(totals.revenue)}</span></span>
-            <span>Purch {fmt(totals.purchases)}</span>
-            <span>Exp {fmt(totals.expenses)}</span>
-            <span>Net <span className={totals.net >= 0 ? 'text-sw-green font-bold' : 'text-sw-red font-bold'}>{fmt(totals.net)}</span></span>
+          <div className="px-3 py-2 border-t border-[var(--border-subtle)] text-[12px] font-mono flex flex-wrap gap-x-5 gap-y-1 text-[var(--text-muted)]">
+            <span className="font-bold">TOTAL</span>
+            <span>Revenue <span className="text-[var(--color-success)] font-bold">{fmt(totals.revenue)}</span></span>
+            <span>Net <span style={{ color: soColor(totals.net) }} className="font-bold">{fmt(totals.net)}</span></span>
           </div>
         )}
-      </div>
+      </Card>
 
       </>}
 
@@ -637,22 +681,22 @@ export default function ReportsPage() {
       {(activeTab === 'expenses' || activeTab === 'overview') && <>
 
       {/* ── Section 3 — Expenses by category ───────────── */}
-      <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-        <h3 className="text-sw-text text-xs font-bold mb-3">Expense Breakdown</h3>
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
+        <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Expense Breakdown</h3>
         {expenseRows.length === 0 ? (
-          <div className="text-sw-dim text-xs text-center py-6">No expenses in this period.</div>
+          <div className="text-[var(--text-muted)] text-xs text-center py-6">No expenses in this period.</div>
         ) : (
           <>
             <div className="space-y-1.5 mb-4">
               {expenseRows.map(r => (
                 <div key={r.id} className="flex items-center gap-2">
-                  <div className="w-32 flex items-center gap-1 text-sw-sub text-[11px] flex-shrink-0">
+                  <div className="w-32 flex items-center gap-1 text-[var(--text-secondary)] text-[11px] flex-shrink-0">
                     <span>{r.icon}</span><span className="truncate">{r.label}</span>
                   </div>
-                  <div className="flex-1 bg-sw-card2 rounded h-4 relative overflow-hidden">
-                    <div className="h-full bg-sw-red/40" style={{ width: `${(r.current / maxCatCurrent) * 100}%` }} />
+                  <div className="flex-1 bg-[var(--bg-card)] rounded h-4 relative overflow-hidden">
+                    <div className="h-full bg-[var(--color-danger)]/40" style={{ width: `${(r.current / maxCatCurrent) * 100}%` }} />
                   </div>
-                  <span className="w-20 text-right text-sw-text font-mono text-[11px]">{fmt(r.current)}</span>
+                  <span className="w-20 text-right text-[var(--text-primary)] font-mono text-[11px]">{fmt(r.current)}</span>
                 </div>
               ))}
             </div>
@@ -665,13 +709,13 @@ export default function ReportsPage() {
                   <tr key={r.id}>
                     <td>{r.icon} {r.label}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }}>{fmt(r.current)}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }} className="!text-sw-sub">{fmt(r.previous)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }} className="!text-[var(--text-secondary)]">{fmt(r.previous)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }}>
                       {r.previous > 0 ? (
-                        <span className={r.change > 0 ? 'text-sw-red' : 'text-sw-green'}>
+                        <span className={r.change > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}>
                           {r.change > 0 ? '▲' : '▼'} {Math.abs(r.change).toFixed(1)}%
                         </span>
-                      ) : <span className="text-sw-dim">—</span>}
+                      ) : <span className="text-[var(--text-muted)]">—</span>}
                     </td>
                   </tr>
                 ))}
@@ -688,40 +732,40 @@ export default function ReportsPage() {
 
       {/* ── Section 4 — Purchases breakdown ─────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">Top Items (by cost)</h3>
-          {topItems.length === 0 ? <p className="text-sw-dim text-xs">No purchases.</p> : (
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Items (by cost)</h3>
+          {topItems.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No purchases.</p> : (
             <ul className="space-y-1">
               {topItems.map((r, i) => (
                 <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-sw-text truncate mr-2">{i + 1}. {r.name}</span>
-                  <span className="text-sw-amber font-mono">{fmt(r.total)}</span>
+                  <span className="text-[var(--text-primary)] truncate mr-2">{i + 1}. {r.name}</span>
+                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">By Category</h3>
-          {byCategory.length === 0 ? <p className="text-sw-dim text-xs">No data.</p> : (
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">By Category</h3>
+          {byCategory.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No data.</p> : (
             <ul className="space-y-1">
               {byCategory.map((r, i) => (
                 <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-sw-text truncate mr-2">{r.name}</span>
-                  <span className="text-sw-amber font-mono">{fmt(r.total)}</span>
+                  <span className="text-[var(--text-primary)] truncate mr-2">{r.name}</span>
+                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">By Vendor</h3>
-          {byVendor.length === 0 ? <p className="text-sw-dim text-xs">No data.</p> : (
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">By Vendor</h3>
+          {byVendor.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No data.</p> : (
             <ul className="space-y-1">
               {byVendor.map((r, i) => (
                 <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-sw-text truncate mr-2">{r.name}</span>
-                  <span className="text-sw-amber font-mono">{fmt(r.total)}</span>
+                  <span className="text-[var(--text-primary)] truncate mr-2">{r.name}</span>
+                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
                 </li>
               ))}
             </ul>
@@ -731,8 +775,8 @@ export default function ReportsPage() {
 
       {/* ── P&L Waterfall ─────────────────────────── */}
       {summary && summary.totalRevenue > 0 && (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-          <h3 className="text-sw-text text-xs font-bold mb-3">P&L Waterfall</h3>
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">P&L Waterfall</h3>
           {(() => {
             const rev = summary.totalRevenue;
             const grossPct = rev > 0 ? ((summary.grossProfit / rev) * 100).toFixed(1) : '0';
@@ -751,21 +795,21 @@ export default function ReportsPage() {
                 {lines.map((l, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <div className="w-44 text-[12px]" style={{ fontWeight: l.bold ? 700 : 400, color: l.bold ? '#E2E8F0' : '#94A3B8' }}>{l.label}</div>
-                    <div className="flex-1 bg-sw-card2 rounded h-6 relative overflow-hidden">
+                    <div className="flex-1 bg-[var(--bg-card)] rounded h-6 relative overflow-hidden">
                       <div className="h-full rounded" style={{ width: `${Math.min(100, Math.abs(Number(l.pct)))}%`, background: l.color + '55' }} />
                     </div>
                     <div className="w-28 text-right font-mono text-[13px]" style={{ color: l.color, fontWeight: l.bold ? 800 : 600 }}>
                       {l.amount >= 0 ? '' : '−'}{fmt(Math.abs(l.amount))}
                     </div>
-                    <div className="w-12 text-right text-[10px] text-sw-dim">{l.pct}%</div>
+                    <div className="w-12 text-right text-[10px] text-[var(--text-muted)]">{l.pct}%</div>
                   </div>
                 ))}
               </div>
             );
           })()}
           {summary.netProfit > 0 && (
-            <div className="mt-4 pt-3 border-t border-sw-border text-[12px] text-sw-sub">
-              Available to distribute: <span className="text-sw-green font-mono font-bold text-[14px]">{fmt(summary.netProfit)}</span>
+            <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] text-[12px] text-[var(--text-secondary)]">
+              Available to distribute: <span className="text-[var(--color-success)] font-mono font-bold text-[14px]">{fmt(summary.netProfit)}</span>
             </div>
           )}
         </div>
@@ -773,19 +817,19 @@ export default function ReportsPage() {
 
       {/* ── Watchouts ─────────────────────────── */}
       {watchouts.length > 0 ? (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">Watchouts</h3>
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Watchouts</h3>
           <div className="space-y-1.5">
             {watchouts.map((w, i) => (
               <a key={i} href={w.link} className="flex items-center gap-2 text-[12px] hover:underline">
                 <span>{w.sev === 'red' ? '🔴' : '🟡'}</span>
-                <span className="text-sw-text">{w.text}</span>
+                <span className="text-[var(--text-primary)]">{w.text}</span>
               </a>
             ))}
           </div>
         </div>
       ) : summary && (
-        <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-4 mb-4 text-sw-green text-[12px] font-semibold text-center">
+        <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-4 mb-4 text-[var(--color-success)] text-[12px] font-semibold text-center">
           ✅ All metrics look healthy — no watchouts this period
         </div>
       )}
@@ -796,15 +840,15 @@ export default function ReportsPage() {
       {activeTab === 'overview' && <>
 
       {/* ── Section 5 — Daily trend ─────────────────── */}
-      <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-        <h3 className="text-sw-text text-xs font-bold mb-2">Sales Trend</h3>
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
+        <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Sales Trend</h3>
         {trendStats ? (
           <>
             <div className="flex flex-wrap gap-4 text-[11px] mb-3">
-              <span>Best day: <span className="text-sw-green font-mono font-bold">{fmt(trendStats.best.total)}</span> <span className="text-sw-sub">({trendStats.best.date})</span></span>
-              <span>Worst day: <span className="text-sw-red font-mono font-bold">{fmt(trendStats.worst.total)}</span> <span className="text-sw-sub">({trendStats.worst.date})</span></span>
-              <span>Daily avg: <span className="text-sw-text font-mono font-bold">{fmt(trendStats.avg)}</span></span>
-              <span className="text-sw-sub">{trendStats.dayCount} days tracked</span>
+              <span>Best day: <span className="text-[var(--color-success)] font-mono font-bold">{fmt(trendStats.best.total)}</span> <span className="text-[var(--text-secondary)]">({trendStats.best.date})</span></span>
+              <span>Worst day: <span className="text-[var(--color-danger)] font-mono font-bold">{fmt(trendStats.worst.total)}</span> <span className="text-[var(--text-secondary)]">({trendStats.worst.date})</span></span>
+              <span>Daily avg: <span className="text-[var(--text-primary)] font-mono font-bold">{fmt(trendStats.avg)}</span></span>
+              <span className="text-[var(--text-secondary)]">{trendStats.dayCount} days tracked</span>
             </div>
             <div className="overflow-x-auto">
               <div className="flex items-end gap-0.5 h-[120px]" style={{ minWidth: dailyTrend.length * 14 }}>
@@ -817,7 +861,7 @@ export default function ReportsPage() {
               </div>
             </div>
           </>
-        ) : <p className="text-sw-dim text-xs text-center py-4">No sales in this period.</p>}
+        ) : <p className="text-[var(--text-muted)] text-xs text-center py-4">No sales in this period.</p>}
       </div>
 
       </>}
@@ -827,19 +871,19 @@ export default function ReportsPage() {
 
       {/* ── Section 6 — Cash reconciliation ─────────────── */}
       {cashRecon && (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
-          <h3 className="text-sw-text text-xs font-bold mb-2">Cash Reconciliation</h3>
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
+          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Cash Reconciliation</h3>
           <div className="flex flex-wrap gap-4 text-[12px]">
             <span>Expected: <span className="font-mono font-bold">{fmt(cashRecon.expected)}</span></span>
             <span>Collected: <span className="font-mono font-bold">{fmt(cashRecon.collected)}</span></span>
             <span>
-              Net: <span className={`font-mono font-bold ${cashRecon.diff >= 0 ? 'text-sw-green' : 'text-sw-red'}`}>
+              Net: <span className={`font-mono font-bold ${cashRecon.diff >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                 {cashRecon.diff >= 0 ? '+' : ''}{fmt(cashRecon.diff)}
               </span>
             </span>
-            <span>Short days: <span className="text-sw-red font-bold">{cashRecon.shortDays}</span></span>
-            <span>Over days: <span className="text-sw-green font-bold">{cashRecon.overDays}</span></span>
-            <span>Pending: <span className="text-sw-amber font-bold">{cashRecon.pendingDays}</span></span>
+            <span>Short days: <span className="text-[var(--color-danger)] font-bold">{cashRecon.shortDays}</span></span>
+            <span>Over days: <span className="text-[var(--color-success)] font-bold">{cashRecon.overDays}</span></span>
+            <span>Pending: <span className="text-[var(--color-warning)] font-bold">{cashRecon.pendingDays}</span></span>
           </div>
         </div>
       )}
@@ -871,8 +915,8 @@ export default function ReportsPage() {
 
         return (
           <>
-            <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-4 flex gap-2 items-center flex-wrap">
-              <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
+            <div className="bg-sw-card rounded-lg p-2.5 border border-[var(--border-subtle)] mb-4 flex gap-2 items-center flex-wrap">
+              <label className="text-[var(--text-secondary)] text-[10px] font-bold uppercase">Store</label>
               <select value={selectedStoreId} onChange={e => setSelectedStoreId(e.target.value)} className="!w-auto !min-w-[200px] !py-1.5 !text-[11px]">
                 <option value="">Select a store…</option>
                 {storeRows.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -883,7 +927,7 @@ export default function ReportsPage() {
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-4 h-4 rounded" style={{ background: ss.color }} />
-                  <h2 className="text-sw-text text-[18px] font-bold">{ss.name}</h2>
+                  <h2 className="text-[var(--text-primary)] text-[18px] font-bold">{ss.name}</h2>
                   {storeRows.indexOf(ss) === 0 && <span className="text-[14px]">🏆</span>}
                 </div>
 
@@ -897,8 +941,8 @@ export default function ReportsPage() {
 
                 {/* Mini waterfall */}
                 {stRevenue > 0 && (
-                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-                    <h3 className="text-sw-text text-xs font-bold mb-2">P&L Breakdown</h3>
+                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">P&L Breakdown</h3>
                     <div className="space-y-1.5 text-[12px]">
                       {[
                         { label: 'Revenue', val: stRevenue, color: '#34D399' },
@@ -908,7 +952,7 @@ export default function ReportsPage() {
                         { label: '= Net Profit', val: stNet, color: stNet >= 0 ? '#34D399' : '#F87171' },
                       ].map((l, i) => (
                         <div key={i} className="flex justify-between">
-                          <span className="text-sw-sub">{l.label}</span>
+                          <span className="text-[var(--text-secondary)]">{l.label}</span>
                           <span className="font-mono font-bold" style={{ color: l.color }}>{l.val >= 0 ? '' : '−'}{fmt(Math.abs(l.val))}</span>
                         </div>
                       ))}
@@ -918,40 +962,40 @@ export default function ReportsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Top expense categories */}
-                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-                    <h3 className="text-sw-text text-xs font-bold mb-2">Top Expenses</h3>
+                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Expenses</h3>
                     <div className="space-y-1.5">
                       {stExpCats.map(([cat, amt]) => {
                         const meta = EXPENSE_CATEGORIES.find(c => c.id === cat);
                         return (
                           <div key={cat} className="flex items-center gap-2">
-                            <span className="w-24 text-sw-sub text-[11px] truncate">{meta?.icon || '📋'} {meta?.label || cat}</span>
-                            <div className="flex-1 bg-sw-card2 rounded h-3"><div className="h-full bg-sw-red/40 rounded" style={{ width: `${(amt / stExpMax) * 100}%` }} /></div>
-                            <span className="w-16 text-right font-mono text-[11px] text-sw-text">{fmt(amt)}</span>
+                            <span className="w-24 text-[var(--text-secondary)] text-[11px] truncate">{meta?.icon || '📋'} {meta?.label || cat}</span>
+                            <div className="flex-1 bg-[var(--bg-card)] rounded h-3"><div className="h-full bg-[var(--color-danger)]/40 rounded" style={{ width: `${(amt / stExpMax) * 100}%` }} /></div>
+                            <span className="w-16 text-right font-mono text-[11px] text-[var(--text-primary)]">{fmt(amt)}</span>
                           </div>
                         );
                       })}
-                      {stExpCats.length === 0 && <p className="text-sw-dim text-[11px]">No expenses</p>}
+                      {stExpCats.length === 0 && <p className="text-[var(--text-muted)] text-[11px]">No expenses</p>}
                     </div>
                   </div>
                   {/* Top vendors */}
-                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-                    <h3 className="text-sw-text text-xs font-bold mb-2">Top Vendors (COGS)</h3>
+                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Vendors (COGS)</h3>
                     <div className="space-y-1.5">
                       {stVendors.map(([vend, amt]) => (
                         <div key={vend} className="flex items-center gap-2">
-                          <span className="w-24 text-sw-sub text-[11px] truncate">{vend}</span>
-                          <div className="flex-1 bg-sw-card2 rounded h-3"><div className="h-full bg-sw-amber/40 rounded" style={{ width: `${(amt / stVendMax) * 100}%` }} /></div>
-                          <span className="w-16 text-right font-mono text-[11px] text-sw-text">{fmt(amt)}</span>
+                          <span className="w-24 text-[var(--text-secondary)] text-[11px] truncate">{vend}</span>
+                          <div className="flex-1 bg-[var(--bg-card)] rounded h-3"><div className="h-full bg-[var(--color-warning)]/40 rounded" style={{ width: `${(amt / stVendMax) * 100}%` }} /></div>
+                          <span className="w-16 text-right font-mono text-[11px] text-[var(--text-primary)]">{fmt(amt)}</span>
                         </div>
                       ))}
-                      {stVendors.length === 0 && <p className="text-sw-dim text-[11px]">No purchases</p>}
+                      {stVendors.length === 0 && <p className="text-[var(--text-muted)] text-[11px]">No purchases</p>}
                     </div>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+              <div className="bg-sw-card border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
                 Select a store above to see its detailed P&L breakdown.
               </div>
             )}
@@ -965,11 +1009,11 @@ export default function ReportsPage() {
           {watchouts.length > 0 ? (
             <div className="space-y-2">
               {watchouts.map((w, i) => (
-                <a key={i} href={w.link} className="bg-sw-card rounded-xl border border-sw-border p-4 flex items-start gap-3 hover:border-sw-blue/30 transition-colors block">
+                <a key={i} href={w.link} className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 flex items-start gap-3 hover:border-sw-blue/30 transition-colors block">
                   <span className="text-[18px] flex-shrink-0">{w.sev === 'red' ? '🔴' : '🟡'}</span>
                   <div>
-                    <div className="text-sw-text text-[13px] font-semibold">{w.text}</div>
-                    <div className="text-sw-dim text-[10px] mt-0.5">Click to investigate →</div>
+                    <div className="text-[var(--text-primary)] text-[13px] font-semibold">{w.text}</div>
+                    <div className="text-[var(--text-muted)] text-[10px] mt-0.5">Click to investigate →</div>
                   </div>
                 </a>
               ))}
@@ -977,18 +1021,18 @@ export default function ReportsPage() {
           ) : (
             <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-8 text-center">
               <div className="text-[28px] mb-2">✅</div>
-              <div className="text-sw-green text-[14px] font-bold">All metrics look healthy</div>
-              <div className="text-sw-dim text-[11px] mt-1">No watchouts this period</div>
+              <div className="text-[var(--color-success)] text-[14px] font-bold">All metrics look healthy</div>
+              <div className="text-[var(--text-muted)] text-[11px] mt-1">No watchouts this period</div>
             </div>
           )}
           {insights.length > 0 && (
-            <div className="bg-sw-card rounded-xl border border-sw-border p-4 mt-4">
-              <h3 className="text-sw-text text-xs font-bold mb-2">All Insights</h3>
+            <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mt-4">
+              <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">All Insights</h3>
               <div className="space-y-1.5">
                 {insights.map((ins, i) => (
                   <div key={i} className="flex items-start gap-2 text-[12px]">
                     <span className="flex-shrink-0">{ins.type === 'good' ? '✅' : ins.type === 'bad' ? '🔴' : ins.type === 'warn' ? '⚠️' : '📈'}</span>
-                    <span className="text-sw-text">{ins.text}</span>
+                    <span className="text-[var(--text-primary)]">{ins.text}</span>
                   </div>
                 ))}
               </div>
