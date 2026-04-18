@@ -25,6 +25,8 @@ export default function ReportsPage() {
   const [rawPurch, setRawPurch] = useState([]);
   const [rawExp, setRawExp] = useState([]);
   const [rawCash, setRawCash] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [selectedStoreId, setSelectedStoreId] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -60,13 +62,18 @@ export default function ReportsPage() {
         setRawPurch(purchCur || []);
         setRawExp(expCur || []);
         setRawCash(cashCur || []);
+        console.log('[P&L] data loaded:', {
+          sales: (salesCur||[]).length, purchases: (purchCur||[]).length, expenses: (expCur||[]).length,
+          samplePurch: purchCur?.[0] ? { total_cost: purchCur[0].total_cost, unit_cost: purchCur[0].unit_cost } : 'none',
+          sampleExp: expCur?.[0] ? { amount: expCur[0].amount, month: expCur[0].month } : 'none',
+        });
 
         // ── Section 1 — Summary ─────────────────────────
         const totalRevenue = (salesCur || []).reduce((s, r) => s + (r.total_sales || 0), 0);
         const totalCash = (salesCur || []).reduce((s, r) => s + (r.cash_sales || 0), 0);
         const totalCard = (salesCur || []).reduce((s, r) => s + (r.card_sales || 0), 0);
         const totalTax = (salesCur || []).reduce((s, r) => s + (r.tax_collected || 0), 0);
-        const totalPurchases = (purchCur || []).reduce((s, r) => s + (r.total_cost || 0), 0);
+        const totalPurchases = (purchCur || []).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
         const totalExpenses = (expCur || []).reduce((s, r) => s + (r.amount || 0), 0);
         const grossProfit = totalRevenue - totalPurchases;
         const netProfit = totalRevenue - totalPurchases - totalExpenses;
@@ -75,7 +82,7 @@ export default function ReportsPage() {
         const cardPct = totalRevenue > 0 ? (totalCard / totalRevenue) * 100 : 0;
 
         const prevRevenue = (salesPrev || []).reduce((s, r) => s + (r.total_sales || 0), 0);
-        const prevPurchases = (purchPrev || []).reduce((s, r) => s + (r.total_cost || 0), 0);
+        const prevPurchases = (purchPrev || []).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
         const prevExpenses = (expPrev || []).reduce((s, r) => s + (r.amount || 0), 0);
 
         setSummary({
@@ -89,7 +96,7 @@ export default function ReportsPage() {
         const rows = (st || []).map(s => {
           const rev = (salesCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.total_sales || 0), 0);
           const tax = (salesCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.tax_collected || 0), 0);
-          const pur = (purchCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.total_cost || 0), 0);
+          const pur = (purchCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.total_cost || r.unit_cost || 0), 0);
           const exp = (expCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.amount || 0), 0);
           const gross = rev - pur;
           const net = rev - pur - exp;
@@ -116,9 +123,9 @@ export default function ReportsPage() {
         const catAgg = {};
         const vendAgg = {};
         (purchCur || []).forEach(r => {
-          itemAgg[r.item] = (itemAgg[r.item] || 0) + (r.total_cost || 0);
-          if (r.category) catAgg[r.category] = (catAgg[r.category] || 0) + (r.total_cost || 0);
-          if (r.supplier) vendAgg[r.supplier] = (vendAgg[r.supplier] || 0) + (r.total_cost || 0);
+          itemAgg[r.item] = (itemAgg[r.item] || 0) + (r.total_cost || r.unit_cost || 0);
+          if (r.category) catAgg[r.category] = (catAgg[r.category] || 0) + (r.total_cost || r.unit_cost || 0);
+          if (r.supplier) vendAgg[r.supplier] = (vendAgg[r.supplier] || 0) + (r.total_cost || r.unit_cost || 0);
         });
         setTopItems(Object.entries(itemAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10));
         setByCategory(Object.entries(catAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
@@ -518,6 +525,30 @@ export default function ReportsPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
+      {/* Tabs */}
+      <div className="flex gap-1.5 overflow-x-auto mb-4 pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+        {[
+          { id: 'overview', label: '📊 Overview' },
+          { id: 'stores', label: '🏪 By Store' },
+          { id: 'store-detail', label: '📍 Store Detail' },
+          { id: 'expenses', label: '💸 Expenses' },
+          { id: 'purchases', label: '📦 COGS' },
+          { id: 'watchouts', label: '⚠️ Watchouts' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors flex-shrink-0
+              ${activeTab === t.id ? 'bg-sw-blue text-black shadow' : 'bg-sw-card2 text-sw-sub border border-sw-border hover:text-sw-text'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── TAB: OVERVIEW ─────────────────────── */}
+      {activeTab === 'overview' && <>
+
       {/* ── Section 1 — Summary ─────────────────────── */}
       {summary && (
         <div className="mb-4">
@@ -550,6 +581,11 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+
+      </>}
+
+      {/* ── TAB: BY STORE ─────────────────────── */}
+      {(activeTab === 'stores' || activeTab === 'overview') && <>
 
       {/* ── Section 2 — Store breakdown ─────────────── */}
       <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden mb-4">
@@ -584,6 +620,11 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+
+      </>}
+
+      {/* ── TAB: EXPENSES ─────────────────────── */}
+      {(activeTab === 'expenses' || activeTab === 'overview') && <>
 
       {/* ── Section 3 — Expenses by category ───────────── */}
       <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
@@ -629,6 +670,11 @@ export default function ReportsPage() {
           </>
         )}
       </div>
+
+      </>}
+
+      {/* ── TAB: PURCHASES/COGS ─────────────────────── */}
+      {(activeTab === 'purchases' || activeTab === 'overview') && <>
 
       {/* ── Section 4 — Purchases breakdown ─────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -734,6 +780,11 @@ export default function ReportsPage() {
         </div>
       )}
 
+      </>}
+
+      {/* ── TAB: OVERVIEW cont — trend ─────────────────── */}
+      {activeTab === 'overview' && <>
+
       {/* ── Section 5 — Daily trend ─────────────────── */}
       <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
         <h3 className="text-sw-text text-xs font-bold mb-2">Sales Trend</h3>
@@ -759,6 +810,11 @@ export default function ReportsPage() {
         ) : <p className="text-sw-dim text-xs text-center py-4">No sales in this period.</p>}
       </div>
 
+      </>}
+
+      {/* ── TAB: OVERVIEW cont — cash ─────────────────── */}
+      {activeTab === 'overview' && <>
+
       {/* ── Section 6 — Cash reconciliation ─────────────── */}
       {cashRecon && (
         <div className="bg-sw-card rounded-xl border border-sw-border p-4 mb-4">
@@ -776,6 +832,159 @@ export default function ReportsPage() {
             <span>Pending: <span className="text-sw-amber font-bold">{cashRecon.pendingDays}</span></span>
           </div>
         </div>
+      )}
+      </>}
+
+      {/* ── TAB: STORE DETAIL ─────────────────────── */}
+      {activeTab === 'store-detail' && (() => {
+        const ss = selectedStoreId ? storeRows.find(s => s.id === selectedStoreId) : null;
+        const stSales = ss ? rawSales.filter(r => r.store_id === ss.id) : [];
+        const stPurch = ss ? rawPurch.filter(r => r.store_id === ss.id) : [];
+        const stExp = ss ? rawExp.filter(r => r.store_id === ss.id) : [];
+        const stRevenue = stSales.reduce((s, r) => s + (r.total_sales || 0), 0);
+        const stCOGS = stPurch.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
+        const stExpenses = stExp.reduce((s, r) => s + (r.amount || 0), 0);
+        const stNet = stRevenue - stCOGS - stExpenses;
+        const stMargin = stRevenue > 0 ? (stNet / stRevenue * 100).toFixed(1) : '0';
+
+        // Top expense categories for this store
+        const stExpByCat = {};
+        stExp.forEach(r => { stExpByCat[r.category] = (stExpByCat[r.category] || 0) + (r.amount || 0); });
+        const stExpCats = Object.entries(stExpByCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const stExpMax = Math.max(1, ...stExpCats.map(([_, v]) => v));
+
+        // Top vendors for this store
+        const stVendMap = {};
+        stPurch.forEach(r => { stVendMap[r.supplier || 'Unknown'] = (stVendMap[r.supplier || 'Unknown'] || 0) + (r.total_cost || r.unit_cost || 0); });
+        const stVendors = Object.entries(stVendMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const stVendMax = Math.max(1, ...stVendors.map(([_, v]) => v));
+
+        return (
+          <>
+            <div className="bg-sw-card rounded-lg p-2.5 border border-sw-border mb-4 flex gap-2 items-center flex-wrap">
+              <label className="text-sw-sub text-[10px] font-bold uppercase">Store</label>
+              <select value={selectedStoreId} onChange={e => setSelectedStoreId(e.target.value)} className="!w-auto !min-w-[200px] !py-1.5 !text-[11px]">
+                <option value="">Select a store…</option>
+                {storeRows.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+
+            {ss ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-4 h-4 rounded" style={{ background: ss.color }} />
+                  <h2 className="text-sw-text text-[18px] font-bold">{ss.name}</h2>
+                  {storeRows.indexOf(ss) === 0 && <span className="text-[14px]">🏆</span>}
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+                  <StatCard label="Revenue" value={fK(stRevenue)} icon="💰" color="#34D399" />
+                  <StatCard label="COGS" value={fK(stCOGS)} icon="📦" color="#FBBF24" />
+                  <StatCard label="Expenses" value={fK(stExpenses)} icon="📋" color="#F87171" />
+                  <StatCard label="Net Profit" value={fK(stNet)} icon={stNet >= 0 ? '✅' : '⚠️'} color={stNet >= 0 ? '#34D399' : '#F87171'} />
+                  <StatCard label="Margin" value={`${stMargin}%`} icon="📊" color={Number(stMargin) >= 20 ? '#34D399' : '#FBBF24'} />
+                </div>
+
+                {/* Mini waterfall */}
+                {stRevenue > 0 && (
+                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
+                    <h3 className="text-sw-text text-xs font-bold mb-2">P&L Breakdown</h3>
+                    <div className="space-y-1.5 text-[12px]">
+                      {[
+                        { label: 'Revenue', val: stRevenue, color: '#34D399' },
+                        { label: '− COGS', val: -stCOGS, color: '#FBBF24' },
+                        { label: '= Gross Profit', val: stRevenue - stCOGS, color: '#34D399' },
+                        { label: '− Expenses', val: -stExpenses, color: '#F87171' },
+                        { label: '= Net Profit', val: stNet, color: stNet >= 0 ? '#34D399' : '#F87171' },
+                      ].map((l, i) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="text-sw-sub">{l.label}</span>
+                          <span className="font-mono font-bold" style={{ color: l.color }}>{l.val >= 0 ? '' : '−'}{fmt(Math.abs(l.val))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Top expense categories */}
+                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
+                    <h3 className="text-sw-text text-xs font-bold mb-2">Top Expenses</h3>
+                    <div className="space-y-1.5">
+                      {stExpCats.map(([cat, amt]) => {
+                        const meta = EXPENSE_CATEGORIES.find(c => c.id === cat);
+                        return (
+                          <div key={cat} className="flex items-center gap-2">
+                            <span className="w-24 text-sw-sub text-[11px] truncate">{meta?.icon || '📋'} {meta?.label || cat}</span>
+                            <div className="flex-1 bg-sw-card2 rounded h-3"><div className="h-full bg-sw-red/40 rounded" style={{ width: `${(amt / stExpMax) * 100}%` }} /></div>
+                            <span className="w-16 text-right font-mono text-[11px] text-sw-text">{fmt(amt)}</span>
+                          </div>
+                        );
+                      })}
+                      {stExpCats.length === 0 && <p className="text-sw-dim text-[11px]">No expenses</p>}
+                    </div>
+                  </div>
+                  {/* Top vendors */}
+                  <div className="bg-sw-card rounded-xl border border-sw-border p-4">
+                    <h3 className="text-sw-text text-xs font-bold mb-2">Top Vendors (COGS)</h3>
+                    <div className="space-y-1.5">
+                      {stVendors.map(([vend, amt]) => (
+                        <div key={vend} className="flex items-center gap-2">
+                          <span className="w-24 text-sw-sub text-[11px] truncate">{vend}</span>
+                          <div className="flex-1 bg-sw-card2 rounded h-3"><div className="h-full bg-sw-amber/40 rounded" style={{ width: `${(amt / stVendMax) * 100}%` }} /></div>
+                          <span className="w-16 text-right font-mono text-[11px] text-sw-text">{fmt(amt)}</span>
+                        </div>
+                      ))}
+                      {stVendors.length === 0 && <p className="text-sw-dim text-[11px]">No purchases</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+                Select a store above to see its detailed P&L breakdown.
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ── TAB: WATCHOUTS ─────────────────────── */}
+      {activeTab === 'watchouts' && (
+        <>
+          {watchouts.length > 0 ? (
+            <div className="space-y-2">
+              {watchouts.map((w, i) => (
+                <a key={i} href={w.link} className="bg-sw-card rounded-xl border border-sw-border p-4 flex items-start gap-3 hover:border-sw-blue/30 transition-colors block">
+                  <span className="text-[18px] flex-shrink-0">{w.sev === 'red' ? '🔴' : '🟡'}</span>
+                  <div>
+                    <div className="text-sw-text text-[13px] font-semibold">{w.text}</div>
+                    <div className="text-sw-dim text-[10px] mt-0.5">Click to investigate →</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-8 text-center">
+              <div className="text-[28px] mb-2">✅</div>
+              <div className="text-sw-green text-[14px] font-bold">All metrics look healthy</div>
+              <div className="text-sw-dim text-[11px] mt-1">No watchouts this period</div>
+            </div>
+          )}
+          {insights.length > 0 && (
+            <div className="bg-sw-card rounded-xl border border-sw-border p-4 mt-4">
+              <h3 className="text-sw-text text-xs font-bold mb-2">All Insights</h3>
+              <div className="space-y-1.5">
+                {insights.map((ins, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[12px]">
+                    <span className="flex-shrink-0">{ins.type === 'good' ? '✅' : ins.type === 'bad' ? '🔴' : ins.type === 'warn' ? '⚠️' : '📈'}</span>
+                    <span className="text-sw-text">{ins.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
