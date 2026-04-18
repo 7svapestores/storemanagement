@@ -5,6 +5,7 @@ import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Ale
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadReceipt, compressImage } from '@/lib/storage';
+import NRSSyncModal from '@/components/NRSSyncModal';
 
 export default function SalesPage() {
   const { supabase, isOwner, isEmployee, profile, effectiveStoreId } = useAuth();
@@ -18,6 +19,7 @@ export default function SalesPage() {
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [formError, setFormError] = useState('');
+  const [nrsSyncOpen, setNrsSyncOpen] = useState(false);
   const [sortState, setSortState] = useState({ key: 'date', dir: 'desc' });
   const salesSortOptions = [
     { label: 'Date (newest)', key: 'date', dir: 'desc' },
@@ -1236,6 +1238,7 @@ export default function SalesPage() {
     <div>
       <PageHeader title="Daily Sales" subtitle={`${hasStore ? storeName : 'All Stores'} · ${sales.length} entries`}>
         <Button variant="secondary" onClick={handleExport} className="!text-[11px]">📥 CSV</Button>
+        {isOwner && <Button variant="secondary" onClick={() => setNrsSyncOpen(true)} className="!text-[11px]">☁️ Sync NRS</Button>}
         {isOwner && <Button onClick={tryOpenAdd}>+ Add</Button>}
       </PageHeader>
 
@@ -1524,6 +1527,13 @@ export default function SalesPage() {
           confirmLabel="Yes, Delete"
           onCancel={() => setConfirmDelete(null)}
           onConfirm={confirmDeleteSale}
+        />
+      )}
+      {nrsSyncOpen && (
+        <NRSSyncModal
+          stores={stores}
+          onClose={() => setNrsSyncOpen(false)}
+          onSuccess={load}
         />
       )}
     </div>

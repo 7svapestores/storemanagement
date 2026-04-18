@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState('');
   const [todaySales, setTodaySales] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [nrsStatus, setNrsStatus] = useState(null);
 
   // Dashboard honors the sidebar store selector. Employees are always scoped
   // to their own store via effectiveStoreId in AuthProvider.
@@ -29,6 +30,9 @@ export default function DashboardPage() {
       // Get stores
       const { data: storeData } = await supabase.from('stores').select('*').order('created_at');
       setStores(storeData || []);
+
+      // Check NRS connection (non-blocking)
+      fetch('/api/nrs/validate').then(r => r.json()).then(d => setNrsStatus(d?.valid)).catch(() => setNrsStatus(false));
 
       // Sales — pull all the numeric columns we need for dashboard totals.
       let salesQ = supabase.from('daily_sales')
@@ -122,6 +126,11 @@ export default function DashboardPage() {
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {loadError && <Alert type="error">{loadError}</Alert>}
+      {isOwner && nrsStatus !== null && (
+        <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] font-semibold flex items-center gap-2 ${nrsStatus ? 'bg-sw-greenD text-sw-green border border-sw-green/30' : 'bg-sw-redD text-sw-red border border-sw-red/30'}`}>
+          {nrsStatus ? '✓ NRS Connected' : '✕ NRS Token Invalid — update NRS_USER_TOKEN in Vercel env vars'}
+        </div>
+      )}
       {lowStock > 0 && <Alert type="warning"><b>{lowStock}</b> items below reorder level</Alert>}
 
       {/* Today's snapshot — per-store */}
