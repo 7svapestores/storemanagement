@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/components/AuthProvider';
+import { generatePDF } from './generatePDF';
 import { DataTable, DateBar, useDateRange, PageHeader, StatCard, Loading, StoreBadge, Alert, Button } from '@/components/UI';
 import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
 
@@ -516,12 +517,21 @@ export default function ReportsPage() {
   return (
     <div className="print:bg-white print:text-black">
       <PageHeader title="📑 P&L Report" subtitle={`${range.start} to ${range.end}`}>
+        <Button variant="secondary" onClick={() => {
+          const pdf = generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores }, range);
+          pdf.save(`7S-Stores-Report-${range.start}-to-${range.end}.pdf`);
+        }} className="!text-[11px]">📄 PDF</Button>
         <Button variant="secondary" onClick={handleExportExcel} className="!text-[11px]">📊 Excel</Button>
         <Button variant="secondary" onClick={handleExportCSV} className="!text-[11px]">📥 CSV</Button>
         <Button variant="secondary" onClick={() => typeof window !== 'undefined' && window.print()} className="!text-[11px]">🖨️ Print</Button>
       </PageHeader>
 
       {loadError && <Alert type="error">{loadError}</Alert>}
+      {summary && (
+        <div className="text-sw-dim text-[10px] mb-2">
+          Data: {rawSales.length} sales ({fmt(summary.totalRevenue)}) · {rawPurch.length} purchases ({fmt(summary.totalPurchases)}) · {rawExp.length} expenses ({fmt(summary.totalExpenses)})
+        </div>
+      )}
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
