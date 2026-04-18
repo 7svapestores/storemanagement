@@ -4,10 +4,6 @@ import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client'
 
 export const dynamic = 'force-dynamic';
 
-// 9:00 AM UTC = ~3 AM CST / 4 AM CDT
-// vercel.json: { "path": "/api/cron/nrs-sync", "schedule": "0 9 * * *" }
-// Also callable from cron-job.org with Authorization: Bearer <CRON_SECRET>
-
 function yesterdayCentral() {
   const now = new Date();
   const central = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
@@ -18,79 +14,100 @@ function yesterdayCentral() {
   return `${y}-${m}-${d}`;
 }
 
+async function syncOneStore(supabase, store, targetDate) {
+  const t0 = Date.now();
+
+  const { data: existing } = await supabase
+    .from('daily_sales')
+    .select('id')
+    .eq('store_id', store.id)
+    .eq('date', targetDate)
+    .maybeSingle();
+
+  if (existing) {
+    console.log(`[nrs-cron] ${store.name} ${targetDate} — skipped (exists) [${Date.now() - t0}ms]`);
+    return { store_name: store.name, status: 'skipped', daily_sales_id: existing.id, error: null, ms: Date.now() - t0 };
+  }
+
+  const nrsData = await fetchNRSDailyStats(store.nrs_store_id, targetDate);
+  const parsed = parseNRSStatsToDailySales(nrsData, store.id, targetDate);
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('daily_sales')
+    .insert(parsed)
+    .select()
+    .single();
+  if (insertErr) throw insertErr;
+
+  const { error: logErr } = await supabase.from('nrs_sync_log').insert({
+    store_id: store.id,
+    sync_date: targetDate,
+    status: 'success',
+    nrs_response: nrsData,
+    created_daily_sales_id: inserted.id,
+  });
+  if (logErr) console.warn(`[nrs-cron] sync_log insert failed for ${store.name}:`, logErr.message);
+
+  const { error: actErr } = await supabase.from('activity_log').insert({
+    action: 'create',
+    entity_type: 'daily_sales',
+    entity_id: inserted.id,
+    description: `7S Agent synced daily sales for ${store.name} on ${targetDate} ($${parsed.r1_net} net)`,
+    user_name: '7S Agent',
+    user_role: 'system',
+    store_name: store.name,
+  });
+  if (actErr) console.warn(`[nrs-cron] activity_log insert failed for ${store.name}:`, actErr.message);
+
+  console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross}) [${Date.now() - t0}ms]`);
+  return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0 };
+}
+
 async function runSync(supabase, targetDate) {
   const startMs = Date.now();
   console.log('[nrs-cron] syncing date:', targetDate);
+
   const { data: stores } = await supabase
     .from('stores')
     .select('id, name, nrs_store_id')
     .not('nrs_store_id', 'is', null)
     .order('created_at');
 
+  if (!stores?.length) {
+    console.log('[nrs-cron] no stores with NRS IDs');
+    return { success: true, date_synced: targetDate, summary: { total_stores: 0, created: 0, skipped: 0, failed: 0 }, results: [], duration_ms: Date.now() - startMs };
+  }
+
+  // Run all stores in parallel
+  const settled = await Promise.allSettled(
+    stores.map(store => syncOneStore(supabase, store, targetDate))
+  );
+
   const results = [];
   let created = 0, skipped = 0, failed = 0;
 
-  for (const store of (stores || [])) {
-    try {
-      const { data: existing } = await supabase
-        .from('daily_sales')
-        .select('id')
-        .eq('store_id', store.id)
-        .eq('date', targetDate)
-        .maybeSingle();
-
-      if (existing) {
-        results.push({ store_name: store.name, status: 'skipped', daily_sales_id: existing.id, error: null });
-        skipped++;
-        console.log(`[nrs-cron] ${store.name} ${targetDate} — skipped (exists)`);
-        continue;
-      }
-
-      const nrsData = await fetchNRSDailyStats(store.nrs_store_id, targetDate);
-      const parsed = parseNRSStatsToDailySales(nrsData, store.id, targetDate);
-
-      const { data: inserted, error } = await supabase
-        .from('daily_sales')
-        .insert(parsed)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await supabase.from('nrs_sync_log').insert({
-        store_id: store.id,
-        sync_date: targetDate,
-        status: 'success',
-        nrs_response: nrsData,
-        created_daily_sales_id: inserted.id,
-      });
-
-      await supabase.from('activity_log').insert({
-        action: 'create',
-        entity_type: 'daily_sales',
-        entity_id: inserted.id,
-        description: `7S Agent synced daily sales for ${store.name} on ${targetDate} ($${parsed.r1_net} net)`,
-        user_name: '7S Agent',
-        user_role: 'system',
-        store_name: store.name,
-      }).catch(() => {});
-
-      results.push({ store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null });
-      created++;
-      console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross})`);
-    } catch (e) {
-      const msg = e.message || String(e);
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      const r = outcome.value;
+      results.push(r);
+      if (r.status === 'created') created++;
+      else if (r.status === 'skipped') skipped++;
+    } else {
+      const store = stores[i];
+      const msg = outcome.reason?.message || String(outcome.reason);
       results.push({ store_name: store.name, status: 'failed', daily_sales_id: null, error: msg });
       failed++;
       console.error(`[nrs-cron] ${store.name} ${targetDate} — FAILED:`, msg);
 
-      await supabase.from('nrs_sync_log').insert({
+      const { error: logErr } = await supabase.from('nrs_sync_log').insert({
         store_id: store.id,
         sync_date: targetDate,
         status: 'failed',
         error_message: msg,
-      }).catch(() => {});
+      });
+      if (logErr) console.warn(`[nrs-cron] sync_log (fail) insert failed:`, logErr.message);
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
   const durationMs = Date.now() - startMs;
@@ -104,7 +121,7 @@ async function runSync(supabase, targetDate) {
   return {
     success: failed === 0,
     date_synced: targetDate,
-    summary: { total_stores: (stores || []).length, created, skipped, failed },
+    summary: { total_stores: stores.length, created, skipped, failed },
     results,
     duration_ms: durationMs,
   };
@@ -131,7 +148,6 @@ async function sendFailureEmail(failedCount, failedResults, date) {
 }
 
 async function handleSync(request) {
-  // Auth: Bearer token OR Vercel Cron header OR logged-in owner
   const authHeader = request.headers.get('authorization');
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const isBearer = authHeader === `Bearer ${process.env.CRON_SECRET}`;

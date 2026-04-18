@@ -86,10 +86,11 @@ export async function POST(req) {
           const { data: inserted, error } = await admin.from('daily_sales').insert(parsed).select().single();
           if (error) throw error;
 
-          await admin.from('nrs_sync_log').insert({
+          const { error: logErr } = await admin.from('nrs_sync_log').insert({
             store_id: store.id, sync_date: date, status: 'success',
             nrs_response: nrsData, created_daily_sales_id: inserted.id, synced_by: userId,
-          }).catch(() => {});
+          });
+          if (logErr) console.warn('[backfill] sync_log insert failed:', logErr.message);
 
           created++;
           send('progress', { current: i + 1, total: tasks.length, store: store.name, date, status: 'created', gross: parsed.r1_gross, duration_ms: Date.now() - taskStart });
@@ -97,10 +98,11 @@ export async function POST(req) {
           failed++;
           send('progress', { current: i + 1, total: tasks.length, store: store.name, date, status: 'failed', error: e.message || 'Unknown', duration_ms: Date.now() - taskStart });
 
-          await admin.from('nrs_sync_log').insert({
+          const { error: fLogErr } = await admin.from('nrs_sync_log').insert({
             store_id: store.id, sync_date: date, status: 'failed',
             error_message: e.message, synced_by: userId,
-          }).catch(() => {});
+          });
+          if (fLogErr) console.warn('[backfill] sync_log (fail) insert failed:', fLogErr.message);
         }
 
         await new Promise(r => setTimeout(r, 100));
@@ -108,11 +110,12 @@ export async function POST(req) {
 
       send('complete', { total: tasks.length, created, skipped, failed });
 
-      await admin.from('activity_log').insert({
+      const { error: actErr } = await admin.from('activity_log').insert({
         action: 'create', entity_type: 'nrs_backfill',
         description: `7S Agent backfill: ${created} created, ${skipped} skipped, ${failed} failed (${start_date} to ${end_date})`,
         user_id: userId, user_name: profile.name, user_role: profile.role,
-      }).catch(() => {});
+      });
+      if (actErr) console.warn('[backfill] activity_log insert failed:', actErr.message);
 
       controller.close();
     },
