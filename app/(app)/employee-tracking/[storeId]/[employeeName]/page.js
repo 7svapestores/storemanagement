@@ -2,8 +2,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, StatCard, Loading, Button } from '@/components/UI';
-import { fmt, dayLabel, downloadCSV } from '@/lib/utils';
+import { DataTable, DateBar, useDateRange, Loading, Button } from '@/components/UI';
+import { V2StatCard, Card } from '@/components/ui';
+import { fmt, fK, dayLabel, downloadCSV } from '@/lib/utils';
 
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -94,7 +95,7 @@ export default function EmployeeDetailPage() {
     };
   }, [enriched]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const exportCSV = () => {
@@ -109,39 +110,39 @@ export default function EmployeeDetailPage() {
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-[11px] mb-3 flex-wrap">
-        <button onClick={() => router.push('/employee-tracking')} className="text-sw-blue hover:underline">Employee Tracking</button>
-        <span className="text-sw-dim">/</span>
-        <span className="text-sw-sub flex items-center gap-1">
+        <button onClick={() => router.push('/employee-tracking')} className="text-[var(--color-info)] hover:underline">Employee Tracking</button>
+        <span className="text-[var(--text-muted)]">/</span>
+        <span className="text-[var(--text-secondary)] flex items-center gap-1">
           <span className="w-2 h-2 rounded-sm inline-block" style={{ background: store?.color || '#64748B' }} />
           {store?.name || '—'}
         </span>
-        <span className="text-sw-dim">/</span>
-        <span className="text-sw-text font-semibold">{employeeName}</span>
+        <span className="text-[var(--text-muted)]">/</span>
+        <span className="text-[var(--text-primary)] font-semibold">{employeeName}</span>
       </div>
 
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h1 className="text-sw-text text-[20px] font-extrabold">{employeeName}</h1>
-          <div className="text-sw-sub text-[12px] flex items-center gap-1.5">
+          <h1 className="text-[var(--text-primary)] text-[20px] font-extrabold">{employeeName}</h1>
+          <div className="text-[var(--text-secondary)] text-[12px] flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ background: store?.color || '#64748B' }} />
             {store?.name || '—'}
-            {employeeName === 'User1' && <span className="text-sw-dim ml-2">· Generic POS login — set up individual accounts in NRS</span>}
+            {employeeName === 'User1' && <span className="text-[var(--text-muted)] ml-2">· Generic POS login — set up individual accounts in NRS</span>}
           </div>
         </div>
         <Button variant="secondary" onClick={exportCSV} className="!text-[11px]">CSV</Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
-        <StatCard label="Shifts" value={stats.totalShifts} icon="📋" color="#60A5FA" />
-        <StatCard label="Hours" value={`${stats.totalHours}h`} icon="🕐" color={Number(stats.totalHours) >= 40 ? '#34D399' : '#60A5FA'} />
-        <StatCard label="Sales Handled" value={fmt(Number(stats.totalSales))} icon="💵" color="#34D399" />
-        <StatCard label="Net Short/Over" value={`${Number(stats.totalSO) >= 0 ? '+' : ''}${fmt(Number(stats.totalSO))}`} icon="💰" color={soColor(Number(stats.totalSO))} />
-        <StatCard label="Longest Shift" value={stats.longest ? `${stats.longest.hours}h` : '—'} sub={stats.longest ? dayLabel(stats.longest.date) : ''} icon="🏆" color="#C084FC" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <V2StatCard label="Shifts" value={stats.totalShifts} icon="📋" variant="info" />
+        <V2StatCard label="Hours" value={`${stats.totalHours}h`} icon="🕐" variant={Number(stats.totalHours) >= 40 ? 'success' : 'default'} />
+        <V2StatCard label="Sales Handled" value={fK(Number(stats.totalSales))} icon="💵" variant="success" />
+        <V2StatCard label="Net Short/Over" value={`${Number(stats.totalSO) >= 0 ? '+' : ''}${fmt(Number(stats.totalSO))}`} icon="💰" variant={Number(stats.totalSO) < 0 ? 'danger' : 'success'} />
+        <V2StatCard label="Longest Shift" value={stats.longest ? `${stats.longest.hours}h` : '—'} sub={stats.longest ? dayLabel(stats.longest.date) : ''} icon="🏆" />
       </div>
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden mb-4">
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden mb-4">
         <DataTable
           sortState={sortState}
           onSortChange={setSortState}
@@ -149,18 +150,18 @@ export default function EmployeeDetailPage() {
           columns={[
             { key: 'shift_date', label: 'Date', render: v => dayLabel(v) },
             { key: '_dow', label: 'Day', sortable: true, sortValue: r => new Date(r.shift_date + 'T12:00:00').getDay(),
-              render: (_, r) => <span className="text-sw-sub text-[11px]">{DOW[new Date(r.shift_date + 'T12:00:00').getDay()]}</span> },
+              render: (_, r) => <span className="text-[var(--text-secondary)] text-[11px]">{DOW[new Date(r.shift_date + 'T12:00:00').getDay()]}</span> },
             { key: 'opened_at', label: 'Opened', render: v => <span className="font-mono text-[11px]">{fmtTime(v)}</span> },
             { key: 'closed_at', label: 'Closed', render: v => <span className="font-mono text-[11px]">{fmtTime(v)}</span> },
             { key: 'total_hours', label: 'Hours', align: 'right', mono: true, sortValue: r => Number(r.total_hours || 0),
-              render: v => v ? <span className={`font-bold ${v >= 8 ? 'text-sw-green' : v >= 4 ? 'text-sw-blue' : 'text-sw-amber'}`}>{Number(v).toFixed(1)}h</span> : <span className="text-sw-dim">—</span> },
+              render: v => v ? <span className={`font-bold ${v >= 8 ? 'text-[var(--color-success)]' : v >= 4 ? 'text-[var(--color-info)]' : 'text-[var(--color-warning)]'}`}>{Number(v).toFixed(1)}h</span> : <span className="text-[var(--text-muted)]">—</span> },
             { key: '_sales', label: 'Sales', align: 'right', mono: true, sortValue: r => r._sales,
-              render: (_, r) => r._sales > 0 ? <span className="text-sw-text">{fmt(r._sales)}</span> : <span className="text-sw-dim">—</span> },
+              render: (_, r) => r._sales > 0 ? <span className="text-[var(--text-primary)]">{fmt(r._sales)}</span> : <span className="text-[var(--text-muted)]">—</span> },
             { key: '_so', label: 'S/O', align: 'right', mono: true, sortable: true, sortValue: r => r._so,
               render: (_, r) => {
-                if (!r._isPrimary) return <span className="text-sw-dim">—</span>;
+                if (!r._isPrimary) return <span className="text-[var(--text-muted)]">—</span>;
                 const v = r._so;
-                if (Math.abs(v) < 0.01) return <span className="text-sw-dim">⚪ $0</span>;
+                if (Math.abs(v) < 0.01) return <span className="text-[var(--text-muted)]">⚪ $0</span>;
                 return <span style={{ color: soColor(v) }} className="font-bold">{v > 0 ? '🟢 +' : '🔴 '}{fmt(v)}</span>;
               } },
           ]}
@@ -168,8 +169,8 @@ export default function EmployeeDetailPage() {
           isOwner={false}
         />
         {enriched.length > 0 && (
-          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center flex-wrap gap-2 text-[11px]">
-            <span className="text-sw-sub font-bold uppercase">{enriched.length} shifts · {stats.maxConsec} max consecutive days</span>
+          <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-card)] flex justify-between items-center flex-wrap gap-2 text-[11px]">
+            <span className="text-[var(--text-secondary)] font-bold uppercase">{enriched.length} shifts · {stats.maxConsec} max consecutive days</span>
             <span className="font-mono font-bold" style={{ color: soColor(Number(stats.totalSO)) }}>
               Net S/O: {Number(stats.totalSO) >= 0 ? '+' : ''}{fmt(Number(stats.totalSO))}
             </span>
@@ -179,25 +180,25 @@ export default function EmployeeDetailPage() {
 
       {/* Payroll Impact */}
       {enriched.length > 0 && (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-4">
-          <div className="text-sw-text text-[13px] font-bold mb-2">💰 Payroll Impact</div>
+        <Card padding="md">
+          <div className="text-[var(--text-primary)] text-[13px] font-bold mb-2">💰 Payroll Impact</div>
           <div className="grid grid-cols-2 gap-y-1.5 text-[12px] max-w-sm">
-            <div className="text-sw-sub">Date Range</div>
-            <div className="text-right text-sw-text">{range.start} — {range.end}</div>
-            <div className="text-sw-sub">Total Hours Worked</div>
-            <div className="text-right text-sw-text font-mono font-bold">{stats.totalHours}h</div>
-            <div className="text-sw-sub">Sales Handled</div>
-            <div className="text-right text-sw-text font-mono">{fmt(Number(stats.totalSales))}</div>
-            <div className="text-sw-sub font-semibold">Cumulative Short/Over</div>
+            <div className="text-[var(--text-secondary)]">Date Range</div>
+            <div className="text-right text-[var(--text-primary)]">{range.start} — {range.end}</div>
+            <div className="text-[var(--text-secondary)]">Total Hours Worked</div>
+            <div className="text-right text-[var(--text-primary)] font-mono font-bold">{stats.totalHours}h</div>
+            <div className="text-[var(--text-secondary)]">Sales Handled</div>
+            <div className="text-right text-[var(--text-primary)] font-mono">{fmt(Number(stats.totalSales))}</div>
+            <div className="text-[var(--text-secondary)] font-semibold">Cumulative Short/Over</div>
             <div className="text-right font-mono font-bold" style={{ color: soColor(Number(stats.totalSO)) }}>
               {Number(stats.totalSO) >= 0 ? '+' : ''}{fmt(Number(stats.totalSO))}
             </div>
           </div>
-          <div className="text-sw-dim text-[10px] mt-3 space-y-0.5">
+          <div className="text-[var(--text-muted)] text-[10px] mt-3 space-y-0.5">
             <div>If negative: deduct from paycheck</div>
             <div>If positive: employee overage — goes to store</div>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -2,8 +2,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { DateBar, useDateRange, PageHeader, StatCard, Loading, Button } from '@/components/UI';
-import { fmt, dayLabel, downloadCSV } from '@/lib/utils';
+import { DateBar, useDateRange, Loading, Button } from '@/components/UI';
+import { V2StatCard } from '@/components/ui';
+import { fmt, fK, dayLabel, downloadCSV } from '@/lib/utils';
 
 export default function EmployeeTrackingPage() {
   const router = useRouter();
@@ -86,7 +87,7 @@ export default function EmployeeTrackingPage() {
     return { shifts: shiftsWithSO.length, hours: h.toFixed(1), employees: emps, so: so.toFixed(2) };
   }, [shiftsWithSO]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const exportCSV = () => {
@@ -102,33 +103,38 @@ export default function EmployeeTrackingPage() {
 
   return (
     <div>
-      <PageHeader title="Employee Tracking" subtitle={`${totals.shifts} shifts · ${totals.hours}h · ${totals.employees} employees`}>
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">People</p>
+          <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Employee Tracking</h1>
+          <p className="text-[var(--text-secondary)] text-[12px]">{totals.shifts} shifts · {totals.hours}h · {totals.employees} employees</p>
+        </div>
         <Button variant="secondary" onClick={exportCSV} className="!text-[11px]">CSV</Button>
-      </PageHeader>
+      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
-        <StatCard label="Total Shifts" value={totals.shifts} icon="📋" color="#60A5FA" />
-        <StatCard label="Total Hours" value={`${totals.hours}h`} icon="🕐" color="#34D399" />
-        <StatCard label="Employees" value={totals.employees} icon="👤" color="#C084FC" />
-        <StatCard label="Net Short/Over" value={`${Number(totals.so) >= 0 ? '+' : ''}${fmt(Number(totals.so))}`} icon="💰" color={soColor(Number(totals.so))} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <V2StatCard label="Total Shifts" value={totals.shifts} icon="📋" variant="info" />
+        <V2StatCard label="Total Hours" value={`${totals.hours}h`} icon="🕐" variant="success" />
+        <V2StatCard label="Employees" value={totals.employees} icon="👤" />
+        <V2StatCard label="Net Short/Over" value={`${Number(totals.so) >= 0 ? '+' : ''}${fmt(Number(totals.so))}`} icon="💰" variant={Number(totals.so) < 0 ? 'danger' : 'success'} />
       </div>
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {shifts.length === 0 ? (
-        <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+        <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-[var(--text-muted)]">
           No shifts recorded yet. Run the backfill or wait for tomorrow's 7S Agent sync.
         </div>
       ) : (
         <div className="space-y-4">
           {grouped.map(g => (
-            <div key={g.storeId} className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
-              <div className="px-4 py-3 bg-sw-card2 border-b border-sw-border flex items-center justify-between flex-wrap gap-2">
+            <div key={g.storeId} className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
+              <div className="px-4 py-3 bg-sw-card2 border-b border-[var(--border-subtle)] flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2.5">
                   <div className="w-3 h-3 rounded" style={{ background: g.storeColor || '#64748B' }} />
-                  <span className="text-sw-text text-[14px] font-bold">{g.storeName}</span>
+                  <span className="text-[var(--text-primary)] text-[14px] font-bold">{g.storeName}</span>
                 </div>
-                <div className="text-sw-sub text-[11px] flex gap-3">
+                <div className="text-[var(--text-secondary)] text-[11px] flex gap-3">
                   <span>{g.totalShifts} shifts</span>
                   <span>{g.totalHours}h</span>
                   <span>{g.employeeCount} emp</span>
@@ -142,27 +148,27 @@ export default function EmployeeTrackingPage() {
                   <button
                     key={emp.name}
                     onClick={() => goDetail(g.storeId, emp.name)}
-                    className="bg-sw-card2 border border-sw-border rounded-lg p-4 text-left hover:border-sw-blue/40 transition-colors group"
+                    className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg p-4 text-left hover:border-sw-blue/40 transition-colors group"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sw-text text-[14px] font-bold group-hover:text-sw-blue transition-colors">{emp.name}</span>
-                      {emp.name === 'User1' && <span className="text-sw-dim text-[9px]">Generic</span>}
+                      <span className="text-[var(--text-primary)] text-[14px] font-bold group-hover:text-[var(--color-info)] transition-colors">{emp.name}</span>
+                      {emp.name === 'User1' && <span className="text-[var(--text-muted)] text-[9px]">Generic</span>}
                     </div>
                     <div className="grid grid-cols-2 gap-y-1.5 text-[11px] mb-3">
-                      <div className="text-sw-sub">Shifts</div>
-                      <div className="text-right text-sw-text font-semibold">{emp.shiftCount}</div>
-                      <div className="text-sw-sub">Hours</div>
+                      <div className="text-[var(--text-secondary)]">Shifts</div>
+                      <div className="text-right text-[var(--text-primary)] font-semibold">{emp.shiftCount}</div>
+                      <div className="text-[var(--text-secondary)]">Hours</div>
                       <div className="text-right font-mono font-bold" style={{ color: emp.totalHours >= 40 ? '#34D399' : '#60A5FA' }}>{emp.totalHours}h</div>
-                      <div className="text-sw-sub">Avg / Shift</div>
-                      <div className="text-right font-mono text-sw-text">{emp.avgHours}h</div>
-                      <div className="text-sw-sub">Sales Handled</div>
-                      <div className="text-right font-mono text-sw-text">{fmt(emp.totalSales)}</div>
-                      <div className="text-sw-sub font-semibold">Short/Over</div>
+                      <div className="text-[var(--text-secondary)]">Avg / Shift</div>
+                      <div className="text-right font-mono text-[var(--text-primary)]">{emp.avgHours}h</div>
+                      <div className="text-[var(--text-secondary)]">Sales Handled</div>
+                      <div className="text-right font-mono text-[var(--text-primary)]">{fmt(emp.totalSales)}</div>
+                      <div className="text-[var(--text-secondary)] font-semibold">Short/Over</div>
                       <div className="text-right font-mono font-bold" style={{ color: soColor(emp.totalSO) }}>
                         {emp.totalSO >= 0 ? '+' : ''}{fmt(emp.totalSO)}
                       </div>
                     </div>
-                    <div className="text-sw-blue text-[11px] font-semibold group-hover:underline">View Details →</div>
+                    <div className="text-[var(--color-info)] text-[11px] font-semibold group-hover:underline">View Details →</div>
                   </button>
                 ))}
               </div>

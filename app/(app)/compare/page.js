@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DateBar, useDateRange, PageHeader, Loading, Alert } from '@/components/UI';
+import { DateBar, useDateRange, Loading, Alert } from '@/components/UI';
+import { V2StatCard } from '@/components/ui';
 import { fmt, fK } from '@/lib/utils';
 
 export default function ComparePage() {
@@ -44,7 +45,7 @@ export default function ComparePage() {
     load();
   }, [range.start, range.end]);
 
-  if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
+  if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const maxRev = Math.max(1, ...rows.map(r => r.revenue));
@@ -54,21 +55,25 @@ export default function ComparePage() {
   const worst = rows.length ? rows[rows.length - 1] : null;
 
   const Bar = ({ value, max, color, negative }) => (
-    <div className="bg-sw-card2 rounded h-3 overflow-hidden relative">
+    <div className="bg-[var(--bg-card)] rounded h-3 overflow-hidden relative">
       <div className="h-full absolute left-0 top-0" style={{ width: `${(Math.abs(value) / max) * 100}%`, background: negative ? '#F87171aa' : color }} />
     </div>
   );
 
   return (
     <div>
-      <PageHeader title="📊 Compare Stores" subtitle={`${range.start} to ${range.end}`} />
+      <div className="mb-4">
+        <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Analytics</p>
+        <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Compare Stores</h1>
+        <p className="text-[var(--text-secondary)] text-[12px]">{range.start} to {range.end}</p>
+      </div>
 
       {loadError && <Alert type="error">{loadError}</Alert>}
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {rows.length === 0 ? (
-        <div className="bg-sw-card border border-sw-border rounded-xl p-8 text-center text-sw-dim">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
           No store data for this period.
         </div>
       ) : (
@@ -76,65 +81,65 @@ export default function ComparePage() {
           {best && worst && best.id !== worst.id && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
               <div className="bg-sw-greenD border border-sw-green/30 rounded-xl p-4">
-                <div className="text-sw-green text-[10px] font-bold uppercase tracking-wide mb-1">🏆 Best Performer</div>
-                <div className="text-sw-text text-base font-extrabold">{best.name}</div>
-                <div className="text-sw-sub text-[11px] mt-1">Net profit: <span className="text-sw-green font-mono font-bold">{fmt(best.net)}</span> · Margin: {best.margin.toFixed(1)}%</div>
+                <div className="text-[var(--color-success)] text-[10px] font-bold uppercase tracking-wide mb-1">🏆 Best Performer</div>
+                <div className="text-[var(--text-primary)] text-base font-extrabold">{best.name}</div>
+                <div className="text-[var(--text-secondary)] text-[11px] mt-1">Net profit: <span className="text-[var(--color-success)] font-mono font-bold">{fmt(best.net)}</span> · Margin: {best.margin.toFixed(1)}%</div>
               </div>
               <div className="bg-sw-redD border border-sw-red/30 rounded-xl p-4">
-                <div className="text-sw-red text-[10px] font-bold uppercase tracking-wide mb-1">⚠️ Needs Attention</div>
-                <div className="text-sw-text text-base font-extrabold">{worst.name}</div>
-                <div className="text-sw-sub text-[11px] mt-1">Net profit: <span className="text-sw-red font-mono font-bold">{fmt(worst.net)}</span> · Margin: {worst.margin.toFixed(1)}%</div>
+                <div className="text-[var(--color-danger)] text-[10px] font-bold uppercase tracking-wide mb-1">⚠️ Needs Attention</div>
+                <div className="text-[var(--text-primary)] text-base font-extrabold">{worst.name}</div>
+                <div className="text-[var(--text-secondary)] text-[11px] mt-1">Net profit: <span className="text-[var(--color-danger)] font-mono font-bold">{fmt(worst.net)}</span> · Margin: {worst.margin.toFixed(1)}%</div>
               </div>
             </div>
           )}
 
           <div className="space-y-3">
             {/* Revenue */}
-            <div className="bg-sw-card border border-sw-border rounded-xl p-4">
-              <h3 className="text-sw-text text-xs font-bold mb-3">Revenue</h3>
+            <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
+              <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Revenue</h3>
               <div className="space-y-2">
                 {rows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
-                      <span className="text-sw-text text-[11px] font-semibold truncate">{r.name}</span>
+                      <span className="text-[var(--text-primary)] text-[11px] font-semibold truncate">{r.name}</span>
                     </div>
                     <div className="flex-1"><Bar value={r.revenue} max={maxRev} color="#34D399" /></div>
-                    <span className="w-20 text-right text-sw-green font-mono text-[11px] font-bold">{fK(r.revenue)}</span>
+                    <span className="w-20 text-right text-[var(--color-success)] font-mono text-[11px] font-bold">{fK(r.revenue)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Expenses */}
-            <div className="bg-sw-card border border-sw-border rounded-xl p-4">
-              <h3 className="text-sw-text text-xs font-bold mb-3">Expenses</h3>
+            <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
+              <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Expenses</h3>
               <div className="space-y-2">
                 {rows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
-                      <span className="text-sw-text text-[11px] font-semibold truncate">{r.name}</span>
+                      <span className="text-[var(--text-primary)] text-[11px] font-semibold truncate">{r.name}</span>
                     </div>
                     <div className="flex-1"><Bar value={r.expenses} max={maxExp} color="#FBBF2488" /></div>
-                    <span className="w-20 text-right text-sw-amber font-mono text-[11px]">{fK(r.expenses)}</span>
+                    <span className="w-20 text-right text-[var(--color-warning)] font-mono text-[11px]">{fK(r.expenses)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Net profit */}
-            <div className="bg-sw-card border border-sw-border rounded-xl p-4">
-              <h3 className="text-sw-text text-xs font-bold mb-3">Net Profit</h3>
+            <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
+              <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Net Profit</h3>
               <div className="space-y-2">
                 {rows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
-                      <span className="text-sw-text text-[11px] font-semibold truncate">{r.name}</span>
+                      <span className="text-[var(--text-primary)] text-[11px] font-semibold truncate">{r.name}</span>
                     </div>
                     <div className="flex-1"><Bar value={r.net} max={maxNet} color="#39FF14aa" negative={r.net < 0} /></div>
-                    <span className={`w-20 text-right font-mono text-[11px] font-bold ${r.net >= 0 ? 'text-sw-green' : 'text-sw-red'}`}>
+                    <span className={`w-20 text-right font-mono text-[11px] font-bold ${r.net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                       {r.net >= 0 ? '' : '-'}{fK(Math.abs(r.net))}
                     </span>
                   </div>
