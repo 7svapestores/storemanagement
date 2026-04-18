@@ -34,7 +34,7 @@ export async function POST(req) {
     };
 
     if (debug) {
-      response.rawNRS = nrsData._raw || nrsData;
+      response.rawNRS = nrsData;
     }
 
     return NextResponse.json(response);
