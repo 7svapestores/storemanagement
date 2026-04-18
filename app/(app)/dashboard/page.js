@@ -32,7 +32,7 @@ export default function DashboardPage() {
       setStores(storeData || []);
 
       // Check NRS connection (non-blocking)
-      fetch('/api/nrs/validate').then(r => r.json()).then(d => setNrsStatus(d?.valid)).catch(() => setNrsStatus(false));
+      fetch('/api/nrs/validate').then(r => r.json()).then(d => setNrsStatus(d?.valid === true)).catch(() => setNrsStatus(false));
 
       // Sales — pull all the numeric columns we need for dashboard totals.
       let salesQ = supabase.from('daily_sales')
