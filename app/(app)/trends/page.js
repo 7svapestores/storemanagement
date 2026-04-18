@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DateBar, useDateRange, TrendChart, Loading } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, TrendChart, Loading } from '@/components/UI';
 import { V2StatCard } from '@/components/ui';
 import { fmt, fK, weekLabel } from '@/lib/utils';
 
