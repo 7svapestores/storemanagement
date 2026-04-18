@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { PageHeader, Button, Loading, SmartDatePicker, Field } from '@/components/UI';
-import { fmt, downloadCSV } from '@/lib/utils';
+import { downloadCSV } from '@/lib/utils';
 
 export default function NRSBackfillPage() {
   const { supabase, isOwner } = useAuth();
@@ -11,18 +11,19 @@ export default function NRSBackfillPage() {
   const [selectedStores, setSelectedStores] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [batchSize, setBatchSize] = useState(10);
   const [running, setRunning] = useState(false);
-  const [cancelled, setCancelled] = useState(false);
-  const cancelRef = useRef(false);
   const [error, setError] = useState('');
+  const abortRef = useRef(null);
 
-  // Progress tracking
-  const [totalTasks, setTotalTasks] = useState(0);
-  const [processed, setProcessed] = useState(0);
-  const [totals, setTotals] = useState({ created: 0, skipped: 0, failed: 0 });
-  const [allResults, setAllResults] = useState([]);
+  // Live progress
+  const [total, setTotal] = useState(0);
+  const [current, setCurrent] = useState(0);
+  const [counts, setCounts] = useState({ created: 0, skipped: 0, failed: 0 });
+  const [results, setResults] = useState([]);
+  const [currentTask, setCurrentTask] = useState('');
   const [done, setDone] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
+  const [avgMs, setAvgMs] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -51,73 +52,105 @@ export default function NRSBackfillPage() {
   const run = async () => {
     setRunning(true);
     setDone(false);
-    setCancelled(false);
-    cancelRef.current = false;
+    setInterrupted(false);
     setError('');
-    setAllResults([]);
-    setProcessed(0);
-    setTotalTasks(0);
-    setTotals({ created: 0, skipped: 0, failed: 0 });
+    setResults([]);
+    setCurrent(0);
+    setTotal(0);
+    setCounts({ created: 0, skipped: 0, failed: 0 });
+    setCurrentTask('Starting…');
+    setAvgMs(0);
 
-    let cursor = 0;
-    let total = 0;
-    const cumTotals = { created: 0, skipped: 0, failed: 0 };
-    const cumResults = [];
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const durations = [];
+    const accCounts = { created: 0, skipped: 0, failed: 0 };
+    const accResults = [];
 
     try {
-      while (true) {
-        if (cancelRef.current) break;
+      const res = await fetch('/api/nrs/backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_ids: selectedStores, start_date: startDate, end_date: endDate }),
+        signal: controller.signal,
+      });
 
-        const res = await fetch('/api/nrs/backfill', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            store_ids: selectedStores,
-            start_date: startDate,
-            end_date: endDate,
-            batch_size: batchSize,
-            cursor,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Batch failed');
-
-        if (total === 0) {
-          total = data.total_tasks;
-          setTotalTasks(total);
-        }
-
-        cumTotals.created += data.batch_summary.created;
-        cumTotals.skipped += data.batch_summary.skipped;
-        cumTotals.failed += data.batch_summary.failed;
-        cumResults.push(...data.results_this_batch);
-
-        setProcessed(data.cursor_next);
-        setTotals({ ...cumTotals });
-        setAllResults([...cumResults]);
-
-        if (!data.has_more) break;
-        cursor = data.cursor_next;
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
       }
-    } catch (e) {
-      setError(e.message);
-    }
 
-    setDone(true);
-    setRunning(false);
-    if (cancelRef.current) setCancelled(true);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done: readerDone, value } = await reader.read();
+        if (readerDone) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === 'progress') {
+                setCurrent(data.current);
+                setTotal(data.total);
+                setCurrentTask(`${data.store} — ${data.date}`);
+                accCounts[data.status] = (accCounts[data.status] || 0) + 1;
+                setCounts({ ...accCounts });
+                accResults.push(data);
+                setResults([...accResults]);
+                if (data.duration_ms) {
+                  durations.push(data.duration_ms);
+                  setAvgMs(Math.round(durations.reduce((a, b) => a + b, 0) / durations.length));
+                }
+              } else if (eventType === 'complete') {
+                setDone(true);
+                setCurrent(data.total);
+                setTotal(data.total);
+                setCounts({ created: data.created, skipped: data.skipped, failed: data.failed });
+              }
+            } catch {}
+            eventType = '';
+          }
+        }
+      }
+
+      if (!done) setInterrupted(true);
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setInterrupted(true);
+      } else {
+        setError(e.message);
+        if (accResults.length > 0) setInterrupted(true);
+      }
+    } finally {
+      setRunning(false);
+      setCurrentTask('');
+      abortRef.current = null;
+    }
   };
 
   const cancel = () => {
-    cancelRef.current = true;
+    abortRef.current?.abort();
   };
 
-  const pct = totalTasks > 0 ? Math.round((processed / totalTasks) * 100) : 0;
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  const remaining = total > current && avgMs > 0 ? Math.ceil(((total - current) * avgMs) / 1000) : 0;
+  const remMin = Math.floor(remaining / 60);
+  const remSec = remaining % 60;
 
   const exportResults = () => {
-    if (!allResults.length) return;
-    downloadCSV('nrs-backfill-results.csv', ['Store', 'Date', 'Status', 'Message'],
-      allResults.map(r => [r.store, r.date, r.status, r.message]));
+    if (!results.length) return;
+    downloadCSV('nrs-backfill-results.csv', ['Store', 'Date', 'Status', 'Gross', 'Duration(ms)', 'Error'],
+      results.map(r => [r.store, r.date, r.status, r.gross || '', r.duration_ms, r.error || '']));
   };
 
   return (
@@ -126,7 +159,7 @@ export default function NRSBackfillPage() {
 
       <div className="bg-sw-card rounded-xl border border-sw-border p-5 mb-4">
         <p className="text-sw-sub text-[12px] mb-4">
-          Import historical daily sales from NRS for selected stores and date range. Existing entries will not be overwritten. Processes in batches to avoid timeouts.
+          Streams results in real-time. Existing entries are automatically skipped. If the connection drops, click Resume — already-imported dates won't be duplicated.
         </p>
 
         <div className="mb-4">
@@ -141,70 +174,73 @@ export default function NRSBackfillPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
           <Field label="Start Date"><SmartDatePicker value={startDate} onChange={setStartDate} /></Field>
           <Field label="End Date"><SmartDatePicker value={endDate} onChange={setEndDate} /></Field>
-          <Field label="Batch Size">
-            <input type="number" min="5" max="20" value={batchSize} onChange={e => setBatchSize(Math.max(5, Math.min(20, Number(e.target.value) || 10)))} disabled={running} />
-          </Field>
         </div>
 
         {totalCalls > 0 && !running && (
           <div className="bg-sw-card2 rounded-lg p-3 border border-sw-border mb-4 text-[12px] text-sw-sub">
             {selectedStores.length} store{selectedStores.length === 1 ? '' : 's'} x {totalDays} day{totalDays === 1 ? '' : 's'} = <span className="text-sw-text font-bold">{totalCalls} tasks</span>
-            <span className="text-sw-dim ml-2">in batches of {batchSize}</span>
           </div>
         )}
 
-        {/* Progress bar */}
-        {running && (
+        {/* Live progress */}
+        {(running || (current > 0 && !done)) && (
           <div className="mb-4">
             <div className="flex justify-between text-[11px] mb-1">
-              <span className="text-sw-text font-semibold">{processed} / {totalTasks || '?'} processed</span>
+              <span className="text-sw-text font-semibold">
+                {current} / {total || '?'} processed
+                {currentTask && <span className="text-sw-dim ml-2">— {currentTask}</span>}
+              </span>
               <span className="text-sw-sub">
-                {totals.created} created · {totals.skipped} skipped · {totals.failed} failed
+                {counts.created} created · {counts.skipped} skipped · {counts.failed} failed
               </span>
             </div>
             <div className="w-full bg-sw-card2 rounded-full h-3 border border-sw-border">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-300"
-                style={{ width: `${pct}%` }}
+                className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22C55E, #3B82F6)' }}
               />
             </div>
-            <div className="text-sw-dim text-[10px] mt-1">{pct}% complete</div>
+            <div className="flex justify-between text-sw-dim text-[10px] mt-1">
+              <span>{pct}%</span>
+              {remaining > 0 && <span>~{remMin > 0 ? `${remMin}m ` : ''}{remSec}s remaining</span>}
+            </div>
           </div>
         )}
 
         {error && <div className="bg-sw-redD text-sw-red border border-sw-red/30 rounded-lg p-3 mb-3 text-[12px]">{error}</div>}
-        {cancelled && <div className="bg-sw-amberD text-sw-amber border border-sw-amber/30 rounded-lg p-3 mb-3 text-[12px]">Backfill cancelled by user. {processed} of {totalTasks} tasks were processed.</div>}
+
+        {interrupted && !running && (
+          <div className="bg-sw-amberD text-sw-amber border border-sw-amber/30 rounded-lg p-3 mb-3 text-[12px]">
+            Backfill interrupted at {current}/{total}. Click <strong>Resume</strong> to continue — already-imported dates will be skipped.
+          </div>
+        )}
+
+        {done && !running && (
+          <div className="bg-sw-greenD text-sw-green border border-sw-green/30 rounded-lg p-3 mb-3 text-[13px] font-semibold">
+            Backfill complete: {counts.created} created, {counts.skipped} skipped, {counts.failed} failed
+          </div>
+        )}
 
         <div className="flex gap-2">
-          <Button onClick={run} disabled={running || !selectedStores.length || !startDate || !endDate}>
-            {running ? 'Running…' : 'Start Backfill'}
-          </Button>
+          {!running && (
+            <Button onClick={run} disabled={!selectedStores.length || !startDate || !endDate}>
+              {interrupted ? 'Resume' : (done ? 'Run Again' : 'Start Backfill')}
+            </Button>
+          )}
           {running && (
             <Button variant="secondary" onClick={cancel}>Cancel</Button>
+          )}
+          {results.length > 0 && !running && (
+            <Button variant="secondary" onClick={exportResults} className="!text-[11px]">Download CSV</Button>
           )}
         </div>
       </div>
 
-      {/* Done summary */}
-      {done && !running && allResults.length > 0 && (
-        <div className="bg-sw-card rounded-xl border border-sw-border p-5 mb-4">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-sw-text text-[14px] font-bold">
-              {cancelled ? 'Partial Results' : 'Backfill Complete'}
-            </div>
-            <Button variant="secondary" onClick={exportResults} className="!text-[11px]">Download CSV</Button>
-          </div>
-          <div className="text-sw-sub text-[12px] mb-3">
-            {totals.created} created · {totals.skipped} skipped · {totals.failed} failed
-          </div>
-        </div>
-      )}
-
       {/* Results table */}
-      {allResults.length > 0 && (
+      {results.length > 0 && (
         <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
           <div className="max-h-[400px] overflow-auto">
             <table>
@@ -213,11 +249,12 @@ export default function NRSBackfillPage() {
                   <th>Store</th>
                   <th>Date</th>
                   <th>Status</th>
-                  <th>Message</th>
+                  <th className="hidden sm:table-cell">Gross</th>
+                  <th className="hidden sm:table-cell">Time</th>
                 </tr>
               </thead>
               <tbody>
-                {allResults.map((r, i) => (
+                {results.map((r, i) => (
                   <tr key={i}>
                     <td className="text-[12px]">{r.store}</td>
                     <td className="text-[12px] font-mono">{r.date}</td>
@@ -228,7 +265,8 @@ export default function NRSBackfillPage() {
                         'bg-sw-redD text-sw-red'
                       }`}>{r.status}</span>
                     </td>
-                    <td className="text-sw-dim text-[11px]">{r.message}</td>
+                    <td className="hidden sm:table-cell text-sw-dim text-[11px] font-mono">{r.gross ? `$${r.gross}` : '—'}</td>
+                    <td className="hidden sm:table-cell text-sw-dim text-[10px]">{r.duration_ms}ms</td>
                   </tr>
                 ))}
               </tbody>
