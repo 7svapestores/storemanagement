@@ -140,9 +140,12 @@ export default function DashboardPage() {
           <span>{nrsStatus ? '✓ NRS Connected' : '✕ NRS Token Invalid — update NRS_USER_TOKEN in Vercel env vars'}</span>
           {lastSync && (
             <span className="text-sw-sub text-[10px] font-normal">
-              Last sync: {lastSync.date} — {lastSync.success} synced{lastSync.failed > 0 ? <span className="text-sw-red"> · {lastSync.failed} failed</span> : ''}
+              Last sync: {lastSync.date} — {lastSync.success}/{lastSync.success + lastSync.failed} stores{lastSync.failed > 0 ? <a href="/nrs-sync-history" className="text-sw-red ml-1 underline">{lastSync.failed} failed</a> : ''}
               {' · '}{(() => { const ms = Date.now() - new Date(lastSync.time).getTime(); const h = Math.floor(ms/3600000); return h < 1 ? '<1h ago' : `${h}h ago`; })()}
             </span>
+          )}
+          {!lastSync && nrsStatus && (
+            <a href="/cron-setup" className="text-sw-dim text-[10px] underline font-normal">No auto-syncs yet — setup cron</a>
           )}
         </div>
       )}

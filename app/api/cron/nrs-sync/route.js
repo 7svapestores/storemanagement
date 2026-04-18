@@ -1,16 +1,15 @@
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 // 9:00 AM UTC = ~3 AM CST / 4 AM CDT
 // vercel.json: { "path": "/api/cron/nrs-sync", "schedule": "0 9 * * *" }
+// Also callable from cron-job.org with Authorization: Bearer <CRON_SECRET>
 
 function yesterdayCentral() {
   const now = new Date();
-  // America/Chicago offset: CST = UTC-6, CDT = UTC-5
   const central = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
   central.setDate(central.getDate() - 1);
   const y = central.getFullYear();
@@ -20,6 +19,7 @@ function yesterdayCentral() {
 }
 
 async function runSync(supabase, targetDate) {
+  const startMs = Date.now();
   console.log('[nrs-cron] syncing date:', targetDate);
   const { data: stores } = await supabase
     .from('stores')
@@ -40,7 +40,7 @@ async function runSync(supabase, targetDate) {
         .maybeSingle();
 
       if (existing) {
-        results.push({ store: store.name, date: targetDate, status: 'skipped', message: 'Already exists' });
+        results.push({ store_name: store.name, status: 'skipped', daily_sales_id: existing.id, error: null });
         skipped++;
         console.log(`[nrs-cron] ${store.name} ${targetDate} — skipped (exists)`);
         continue;
@@ -64,12 +64,12 @@ async function runSync(supabase, targetDate) {
         created_daily_sales_id: inserted.id,
       });
 
-      results.push({ store: store.name, date: targetDate, status: 'created', message: `Gross: $${parsed.r1_gross}` });
+      results.push({ store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null });
       created++;
       console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross})`);
     } catch (e) {
       const msg = e.message || String(e);
-      results.push({ store: store.name, date: targetDate, status: 'failed', message: msg });
+      results.push({ store_name: store.name, status: 'failed', daily_sales_id: null, error: msg });
       failed++;
       console.error(`[nrs-cron] ${store.name} ${targetDate} — FAILED:`, msg);
 
@@ -83,18 +83,24 @@ async function runSync(supabase, targetDate) {
     await new Promise(r => setTimeout(r, 500));
   }
 
-  const summary = { date: targetDate, total_stores: (stores || []).length, created, skipped, failed, results };
-  console.log(`[nrs-cron] done: ${created} created, ${skipped} skipped, ${failed} failed`);
+  const durationMs = Date.now() - startMs;
+  console.log(`[nrs-cron] done in ${durationMs}ms: ${created} created, ${skipped} skipped, ${failed} failed`);
 
   if (failed > 0) {
     console.error(`[nrs-cron] WARNING: ${failed} store(s) failed to sync for ${targetDate}`);
-    await sendFailureEmail(failed, results.filter(r => r.status === 'failed'));
+    await sendFailureEmail(failed, results.filter(r => r.status === 'failed'), targetDate);
   }
 
-  return summary;
+  return {
+    success: failed === 0,
+    date_synced: targetDate,
+    summary: { total_stores: (stores || []).length, created, skipped, failed },
+    results,
+    duration_ms: durationMs,
+  };
 }
 
-async function sendFailureEmail(failedCount, failedResults) {
+async function sendFailureEmail(failedCount, failedResults, date) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
   try {
@@ -105,7 +111,7 @@ async function sendFailureEmail(failedCount, failedResults) {
         from: 'StoreWise <noreply@7sstores.com>',
         to: 'admin@7sstores.com',
         subject: `NRS Sync Alert — ${failedCount} store(s) failed`,
-        text: `NRS Auto-Sync failed for:\n\n${failedResults.map(r => `${r.store} (${r.date}): ${r.message}`).join('\n')}`,
+        text: `NRS Auto-Sync failed for ${date}:\n\n${failedResults.map(r => `${r.store_name}: ${r.error}`).join('\n')}`,
       }),
     });
     console.log('[nrs-cron] failure email sent');
@@ -114,22 +120,42 @@ async function sendFailureEmail(failedCount, failedResults) {
   }
 }
 
-export async function GET(request) {
+async function handleSync(request) {
+  // Auth: Bearer token OR Vercel Cron header OR logged-in owner
   const authHeader = request.headers.get('authorization');
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const isAuthed = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const isBearer = authHeader === `Bearer ${process.env.CRON_SECRET}`;
 
-  if (!isVercelCron && !isAuthed && process.env.NODE_ENV === 'production') {
+  let isOwnerUser = false;
+  if (!isVercelCron && !isBearer) {
+    try {
+      const userSupa = createClient();
+      const { data: { user } } = await userSupa.auth.getUser();
+      if (user) {
+        const admin = createAdminClient();
+        const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single();
+        isOwnerUser = profile?.role === 'owner';
+      }
+    } catch {}
+  }
+
+  if (!isVercelCron && !isBearer && !isOwnerUser && process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
+    const url = new URL(request.url);
+    const dateParam = url.searchParams.get('date');
+    const targetDate = dateParam || yesterdayCentral();
+
     const supabase = createAdminClient();
-    const targetDate = yesterdayCentral();
-    const summary = await runSync(supabase, targetDate);
-    return NextResponse.json(summary);
+    const result = await runSync(supabase, targetDate);
+    return NextResponse.json(result);
   } catch (e) {
     console.error('[nrs-cron] fatal error:', e);
-    return NextResponse.json({ error: e.message || 'Cron failed' }, { status: 500 });
+    return NextResponse.json({ error: e.message || 'Cron failed', success: false }, { status: 500 });
   }
 }
+
+export async function GET(request) { return handleSync(request); }
+export async function POST(request) { return handleSync(request); }
