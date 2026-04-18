@@ -3,14 +3,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, StatCard, Loading, Button } from '@/components/UI';
-import { dayLabel, downloadCSV } from '@/lib/utils';
+import { fmt, dayLabel, downloadCSV } from '@/lib/utils';
 
 function fmtTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Chicago' });
 }
-
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const soColor = (v) => Math.abs(v) < 0.01 ? '#64748B' : v > 0 ? '#34D399' : '#F87171';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -31,7 +31,7 @@ export default function EmployeeDetailPage() {
       const [{ data: st }, { data: sh }] = await Promise.all([
         supabase.from('stores').select('id, name, color').eq('id', storeId).single(),
         supabase.from('employee_shifts')
-          .select('*')
+          .select('*, daily_sales(net_sales, r1_short_over, short_over)')
           .eq('store_id', storeId)
           .eq('employee_name', employeeName)
           .gte('shift_date', range.start)
@@ -44,20 +44,38 @@ export default function EmployeeDetailPage() {
     })();
   }, [range.start, range.end, storeId, employeeName]);
 
+  // Deduplicate S/O per daily_sales_id — attribute to last closer
+  const enriched = useMemo(() => {
+    const dsMap = {};
+    shifts.forEach(s => {
+      if (!s.daily_sales_id) return;
+      const prev = dsMap[s.daily_sales_id];
+      if (!prev || (s.closed_at && (!prev.closed_at || s.closed_at > prev.closed_at))) {
+        dsMap[s.daily_sales_id] = s;
+      }
+    });
+    const primaryIds = new Set(Object.values(dsMap).map(s => s.id));
+    return shifts.map(s => ({
+      ...s,
+      _so: primaryIds.has(s.id) ? Number(s.daily_sales?.r1_short_over ?? s.daily_sales?.short_over ?? 0) : 0,
+      _sales: primaryIds.has(s.id) ? Number(s.daily_sales?.net_sales ?? 0) : 0,
+      _isPrimary: primaryIds.has(s.id),
+    }));
+  }, [shifts]);
+
   const stats = useMemo(() => {
-    const withHours = shifts.filter(s => Number(s.total_hours) > 0);
+    const withHours = enriched.filter(s => Number(s.total_hours) > 0);
     const totalHours = withHours.reduce((s, r) => s + Number(r.total_hours), 0);
+    const totalSales = enriched.reduce((s, r) => s + r._sales, 0);
+    const totalSO = enriched.reduce((s, r) => s + r._so, 0);
     const avgShift = withHours.length ? (totalHours / withHours.length).toFixed(1) : '0';
     const longest = withHours.length ? withHours.reduce((a, b) => (Number(b.total_hours) > Number(a.total_hours) ? b : a)) : null;
-    const shortest = withHours.length ? withHours.reduce((a, b) => (Number(b.total_hours) < Number(a.total_hours) ? b : a)) : null;
 
-    // Consecutive days
-    const dateSet = new Set(shifts.map(s => s.shift_date));
+    const dateSet = new Set(enriched.map(s => s.shift_date));
     const sortedDates = [...dateSet].sort();
     let maxConsec = 0, curConsec = 0;
     for (let i = 0; i < sortedDates.length; i++) {
-      if (i === 0) { curConsec = 1; }
-      else {
+      if (i === 0) { curConsec = 1; } else {
         const prev = new Date(sortedDates[i - 1] + 'T12:00:00');
         const cur = new Date(sortedDates[i] + 'T12:00:00');
         curConsec = (cur - prev === 86400000) ? curConsec + 1 : 1;
@@ -65,34 +83,25 @@ export default function EmployeeDetailPage() {
       maxConsec = Math.max(maxConsec, curConsec);
     }
 
-    // Days off
-    let daysOff = 0;
-    if (sortedDates.length >= 2) {
-      const first = new Date(sortedDates[0] + 'T12:00:00');
-      const last = new Date(sortedDates[sortedDates.length - 1] + 'T12:00:00');
-      const totalDays = Math.round((last - first) / 86400000) + 1;
-      daysOff = totalDays - dateSet.size;
-    }
-
     return {
-      totalShifts: shifts.length,
+      totalShifts: enriched.length,
       totalHours: totalHours.toFixed(1),
+      totalSales: totalSales.toFixed(2),
+      totalSO: totalSO.toFixed(2),
       avgShift,
       longest: longest ? { hours: Number(longest.total_hours).toFixed(1), date: longest.shift_date } : null,
-      shortest: shortest ? { hours: Number(shortest.total_hours).toFixed(1), date: shortest.shift_date } : null,
       maxConsec,
-      daysOff,
     };
-  }, [shifts]);
+  }, [enriched]);
 
   if (!isOwner) return <div className="text-sw-dim text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
   const exportCSV = () => {
-    downloadCSV(`shifts-${employeeName}.csv`, ['Date', 'Day', 'Opened', 'Closed', 'Hours'],
-      shifts.map(r => {
+    downloadCSV(`shifts-${employeeName}.csv`, ['Date', 'Day', 'Opened', 'Closed', 'Hours', 'Sales', 'Short/Over'],
+      enriched.map(r => {
         const dow = DOW[new Date(r.shift_date + 'T12:00:00').getDay()];
-        return [r.shift_date, dow, fmtTime(r.opened_at), fmtTime(r.closed_at), r.total_hours || ''];
+        return [r.shift_date, dow, fmtTime(r.opened_at), fmtTime(r.closed_at), r.total_hours || '', r._sales || '', r._so || ''];
       }));
   };
 
@@ -122,46 +131,74 @@ export default function EmployeeDetailPage() {
         <Button variant="secondary" onClick={exportCSV} className="!text-[11px]">CSV</Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
-        <StatCard label="Total Shifts" value={stats.totalShifts} icon="📋" color="#60A5FA" />
-        <StatCard label="Total Hours" value={`${stats.totalHours}h`} icon="🕐" color={Number(stats.totalHours) >= 40 ? '#34D399' : '#60A5FA'} />
-        <StatCard label="Avg / Shift" value={`${stats.avgShift}h`} icon="📊" color="#FBBF24" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3.5">
+        <StatCard label="Shifts" value={stats.totalShifts} icon="📋" color="#60A5FA" />
+        <StatCard label="Hours" value={`${stats.totalHours}h`} icon="🕐" color={Number(stats.totalHours) >= 40 ? '#34D399' : '#60A5FA'} />
+        <StatCard label="Sales Handled" value={fmt(Number(stats.totalSales))} icon="💵" color="#34D399" />
+        <StatCard label="Net Short/Over" value={`${Number(stats.totalSO) >= 0 ? '+' : ''}${fmt(Number(stats.totalSO))}`} icon="💰" color={soColor(Number(stats.totalSO))} />
         <StatCard label="Longest Shift" value={stats.longest ? `${stats.longest.hours}h` : '—'} sub={stats.longest ? dayLabel(stats.longest.date) : ''} icon="🏆" color="#C084FC" />
       </div>
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden">
+      <div className="bg-sw-card rounded-xl border border-sw-border overflow-hidden mb-4">
         <DataTable
           sortState={sortState}
           onSortChange={setSortState}
           emptyMessage="No shifts in this date range."
           columns={[
             { key: 'shift_date', label: 'Date', render: v => dayLabel(v) },
-            { key: '_dow', label: 'Day', sortValue: r => new Date(r.shift_date + 'T12:00:00').getDay(),
+            { key: '_dow', label: 'Day', sortable: true, sortValue: r => new Date(r.shift_date + 'T12:00:00').getDay(),
               render: (_, r) => <span className="text-sw-sub text-[11px]">{DOW[new Date(r.shift_date + 'T12:00:00').getDay()]}</span> },
             { key: 'opened_at', label: 'Opened', render: v => <span className="font-mono text-[11px]">{fmtTime(v)}</span> },
             { key: 'closed_at', label: 'Closed', render: v => <span className="font-mono text-[11px]">{fmtTime(v)}</span> },
             { key: 'total_hours', label: 'Hours', align: 'right', mono: true, sortValue: r => Number(r.total_hours || 0),
-              render: v => v ? <span className={`font-bold ${v >= 8 ? 'text-sw-green' : v >= 4 ? 'text-sw-blue' : 'text-sw-amber'}`}>{Number(v).toFixed(1)}h</span> : <span className="text-sw-dim">—</span>
-            },
+              render: v => v ? <span className={`font-bold ${v >= 8 ? 'text-sw-green' : v >= 4 ? 'text-sw-blue' : 'text-sw-amber'}`}>{Number(v).toFixed(1)}h</span> : <span className="text-sw-dim">—</span> },
+            { key: '_sales', label: 'Sales', align: 'right', mono: true, sortValue: r => r._sales,
+              render: (_, r) => r._sales > 0 ? <span className="text-sw-text">{fmt(r._sales)}</span> : <span className="text-sw-dim">—</span> },
+            { key: '_so', label: 'S/O', align: 'right', mono: true, sortable: true, sortValue: r => r._so,
+              render: (_, r) => {
+                if (!r._isPrimary) return <span className="text-sw-dim">—</span>;
+                const v = r._so;
+                if (Math.abs(v) < 0.01) return <span className="text-sw-dim">⚪ $0</span>;
+                return <span style={{ color: soColor(v) }} className="font-bold">{v > 0 ? '🟢 +' : '🔴 '}{fmt(v)}</span>;
+              } },
           ]}
-          rows={shifts}
+          rows={enriched}
           isOwner={false}
         />
-        {shifts.length > 0 && (
-          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2">
-            <div className="flex justify-between items-center flex-wrap gap-2 text-[11px]">
-              <span className="text-sw-sub font-bold uppercase">{shifts.length} shifts</span>
-              <div className="flex gap-4 text-sw-sub">
-                {stats.shortest && <span>Shortest: <span className="text-sw-text font-mono">{stats.shortest.hours}h</span> ({dayLabel(stats.shortest.date)})</span>}
-                <span>Consecutive: <span className="text-sw-text font-semibold">{stats.maxConsec} days</span></span>
-                <span>Days off: <span className="text-sw-text font-semibold">{stats.daysOff}</span></span>
-              </div>
-            </div>
+        {enriched.length > 0 && (
+          <div className="px-3 py-2 border-t border-sw-border bg-sw-card2 flex justify-between items-center flex-wrap gap-2 text-[11px]">
+            <span className="text-sw-sub font-bold uppercase">{enriched.length} shifts · {stats.maxConsec} max consecutive days</span>
+            <span className="font-mono font-bold" style={{ color: soColor(Number(stats.totalSO)) }}>
+              Net S/O: {Number(stats.totalSO) >= 0 ? '+' : ''}{fmt(Number(stats.totalSO))}
+            </span>
           </div>
         )}
       </div>
+
+      {/* Payroll Impact */}
+      {enriched.length > 0 && (
+        <div className="bg-sw-card rounded-xl border border-sw-border p-4">
+          <div className="text-sw-text text-[13px] font-bold mb-2">💰 Payroll Impact</div>
+          <div className="grid grid-cols-2 gap-y-1.5 text-[12px] max-w-sm">
+            <div className="text-sw-sub">Date Range</div>
+            <div className="text-right text-sw-text">{range.start} — {range.end}</div>
+            <div className="text-sw-sub">Total Hours Worked</div>
+            <div className="text-right text-sw-text font-mono font-bold">{stats.totalHours}h</div>
+            <div className="text-sw-sub">Sales Handled</div>
+            <div className="text-right text-sw-text font-mono">{fmt(Number(stats.totalSales))}</div>
+            <div className="text-sw-sub font-semibold">Cumulative Short/Over</div>
+            <div className="text-right font-mono font-bold" style={{ color: soColor(Number(stats.totalSO)) }}>
+              {Number(stats.totalSO) >= 0 ? '+' : ''}{fmt(Number(stats.totalSO))}
+            </div>
+          </div>
+          <div className="text-sw-dim text-[10px] mt-3 space-y-0.5">
+            <div>If negative: deduct from paycheck</div>
+            <div>If positive: employee overage — goes to store</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,7 +28,6 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { path: '/exports',   icon: '📥', label: 'Export Data' },
     { path: '/inventory',        icon: '📦', label: 'Inventory' },
     { path: '/employee-tracking', icon: '🕐', label: 'Employee Tracking' },
-    { path: '/employee-shorts',  icon: '💸', label: 'Employee Shorts' },
     { path: '/team',             icon: '👤', label: 'Admin' },
     { path: '/email',            icon: '📧', label: 'Email Reports' },
     { path: '/nrs-backfill',       icon: '⚡', label: 'NRS Backfill' },
