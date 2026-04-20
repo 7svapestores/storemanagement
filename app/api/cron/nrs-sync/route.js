@@ -64,7 +64,7 @@ async function syncOneStore(supabase, store, targetDate) {
   await extractShiftsFromNRS(supabase, nrsData, store.id, targetDate, inserted.id);
 
   console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross}) [${Date.now() - t0}ms]`);
-  return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0, salesData: parsed };
+  return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0, salesData: inserted };
 }
 
 async function runSync(supabase, targetDate) {
