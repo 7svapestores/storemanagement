@@ -21,14 +21,14 @@ async function syncOneStore(supabase, store, targetDate) {
 
   const { data: existing } = await supabase
     .from('daily_sales')
-    .select('id')
+    .select('id, r1_gross, r1_net, gross_sales, net_sales, cash_sales, card_sales, tax_collected, r1_sales_tax, r1_safe_drop, r2_safe_drop, r2_gross, short_over, r1_short_over, r2_short_over')
     .eq('store_id', store.id)
     .eq('date', targetDate)
     .maybeSingle();
 
   if (existing) {
     console.log(`[nrs-cron] ${store.name} ${targetDate} — skipped (exists) [${Date.now() - t0}ms]`);
-    return { store_name: store.name, status: 'skipped', daily_sales_id: existing.id, error: null, ms: Date.now() - t0 };
+    return { store_name: store.name, status: 'skipped', daily_sales_id: existing.id, error: null, ms: Date.now() - t0, salesData: existing };
   }
 
   const nrsData = await fetchNRSDailyStats(store.nrs_store_id, targetDate);
