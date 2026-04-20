@@ -2,6 +2,7 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
 import { extractShiftsFromNRS } from '@/lib/extract-shifts';
+import { sendTelegram, buildSyncSummaryMessage, formatCurrency } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,13 +122,60 @@ async function runSync(supabase, targetDate) {
     await sendFailureEmail(failed, results.filter(r => r.status === 'failed'), targetDate);
   }
 
+  // Check short/over for all stores on this date and send Telegram notification
+  const shortOverAlerts = await checkShortOver(supabase, stores, targetDate);
+  try {
+    const msg = buildSyncSummaryMessage(results, targetDate, shortOverAlerts);
+    await sendTelegram(msg);
+  } catch (e) {
+    console.warn('[nrs-cron] telegram notification failed (non-fatal):', e.message);
+  }
+
   return {
     success: failed === 0,
     date_synced: targetDate,
     summary: { total_stores: stores.length, created, skipped, failed },
     results,
     duration_ms: durationMs,
+    short_over_alerts: shortOverAlerts.length,
   };
+}
+
+async function checkShortOver(supabase, stores, targetDate) {
+  const alerts = [];
+  try {
+    const { data: sales } = await supabase
+      .from('daily_sales')
+      .select('store_id, r1_safe_drop, r2_safe_drop')
+      .eq('date', targetDate);
+    const { data: cash } = await supabase
+      .from('cash_collections')
+      .select('store_id, cash_collected')
+      .eq('date', targetDate);
+    if (!sales?.length || !cash?.length) return alerts;
+
+    const expectedMap = {};
+    sales.forEach(s => {
+      expectedMap[s.store_id] = (expectedMap[s.store_id] || 0) + (s.r1_safe_drop || 0) + (s.r2_safe_drop || 0);
+    });
+    const collectedMap = {};
+    cash.forEach(c => {
+      collectedMap[c.store_id] = (collectedMap[c.store_id] || 0) + (c.cash_collected || 0);
+    });
+
+    for (const storeId of Object.keys(collectedMap)) {
+      const expected = expectedMap[storeId] || 0;
+      const collected = collectedMap[storeId] || 0;
+      const diff = +(collected - expected).toFixed(2);
+      if (Math.abs(diff) >= 0.01) {
+        const store = stores.find(s => s.id === storeId);
+        alerts.push({ store_name: store?.name || storeId, expected, collected, diff });
+      }
+    }
+  } catch (e) {
+    console.warn('[nrs-cron] checkShortOver failed (non-fatal):', e.message);
+  }
+  return alerts;
 }
 
 async function sendFailureEmail(failedCount, failedResults, date) {

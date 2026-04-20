@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramMsg, setTelegramMsg] = useState('');
 
   const blankStore = { name: '', color: '#60A5FA', email: '', has_register2: false, tax_rate: '8.25', address: '', phone: '', is_active: true };
   const [form, setForm] = useState(blankStore);
@@ -153,6 +155,59 @@ export default function SettingsPage() {
             {s.address && <div className="text-[var(--text-muted)] text-[10px] mt-2">{s.address}</div>}
           </div>
         ))}
+      </div>
+
+      {/* Telegram Notifications */}
+      <div className="mt-8 mb-4">
+        <h2 className="text-[var(--text-primary)] text-[16px] font-bold mb-1">📲 Telegram Notifications</h2>
+        <p className="text-[var(--text-muted)] text-[11px] mb-3">Get short/over alerts sent to your Telegram after each NRS sync.</p>
+        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 space-y-3">
+          <div className="text-[var(--text-secondary)] text-[12px] space-y-2">
+            <p className="font-semibold text-[var(--text-primary)]">Setup Steps:</p>
+            <ol className="list-decimal list-inside space-y-1 text-[11px]">
+              <li>Open Telegram and search for <b>@BotFather</b></li>
+              <li>Send <code>/newbot</code> and follow the prompts to create a bot</li>
+              <li>Copy the <b>bot token</b> you receive</li>
+              <li>Start a chat with your new bot (or add it to a group)</li>
+              <li>Get your <b>Chat ID</b> — send a message to your bot, then visit:<br />
+                <code className="text-[10px] break-all">https://api.telegram.org/bot&lt;YOUR_TOKEN&gt;/getUpdates</code><br />
+                and find <code>chat.id</code> in the response
+              </li>
+              <li>Add both values to your Vercel environment variables:<br />
+                <code className="text-[10px]">TELEGRAM_BOT_TOKEN</code> and <code className="text-[10px]">TELEGRAM_CHAT_ID</code>
+              </li>
+            </ol>
+          </div>
+          <div className="flex items-center gap-3 pt-2 border-t border-[var(--border-subtle)]">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                setTelegramTesting(true);
+                setTelegramMsg('');
+                try {
+                  const res = await fetch('/api/telegram/test', { method: 'POST' });
+                  const data = await res.json();
+                  if (data.success) {
+                    setTelegramMsg('✅ Test message sent! Check your Telegram.');
+                  } else {
+                    setTelegramMsg(`❌ ${data.error || data.reason || 'Failed to send'}`);
+                  }
+                } catch (e) {
+                  setTelegramMsg(`❌ ${e.message}`);
+                }
+                setTelegramTesting(false);
+              }}
+              disabled={telegramTesting}
+            >
+              {telegramTesting ? 'Sending…' : '🔔 Send Test Message'}
+            </Button>
+            {telegramMsg && (
+              <span className={`text-[11px] font-semibold ${telegramMsg.startsWith('✅') ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                {telegramMsg}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {showModal && (
