@@ -41,7 +41,7 @@ export default function SettingsPage() {
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramMsg, setTelegramMsg] = useState('');
 
-  const blankStore = { name: '', color: '#60A5FA', email: '', has_register2: false, tax_rate: '8.25', address: '', phone: '', is_active: true };
+  const blankStore = { name: '', color: '#60A5FA', email: '', has_register2: false, tax_rate: '8.25', address: '', phone: '', is_active: true, telegram_chat_id: '' };
   const [form, setForm] = useState(blankStore);
 
   const load = async () => {
@@ -63,6 +63,7 @@ export default function SettingsPage() {
       address: s.address || '',
       phone: s.phone || '',
       is_active: s.is_active !== false,
+      telegram_chat_id: s.telegram_chat_id || '',
     });
   };
 
@@ -84,6 +85,7 @@ export default function SettingsPage() {
       address: form.address.trim(),
       phone: form.phone.trim(),
       is_active: form.is_active,
+      telegram_chat_id: form.telegram_chat_id.trim() || null,
     };
     const { error } = editStore
       ? await supabase.from('stores').update(payload).eq('id', editStore.id)
@@ -130,7 +132,7 @@ export default function SettingsPage() {
               </div>
               <Button variant="secondary" onClick={() => openEdit(s)} className="!text-[11px] !px-3 !py-1.5">Edit</Button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11px]">
               <div>
                 <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Register 2</div>
                 <div className={s.has_register2 ? 'text-[var(--color-success)] font-semibold' : 'text-[var(--text-muted)]'}>
@@ -150,6 +152,12 @@ export default function SettingsPage() {
               <div>
                 <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Phone</div>
                 <div className="text-[var(--text-muted)] truncate">{s.phone || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[var(--text-secondary)] font-bold uppercase text-[9px] mb-0.5">Telegram</div>
+                <div className={s.telegram_chat_id ? 'text-[var(--color-success)] font-semibold' : 'text-[var(--text-muted)]'}>
+                  {s.telegram_chat_id ? '📲 Connected' : '—'}
+                </div>
               </div>
             </div>
             {s.address && <div className="text-[var(--text-muted)] text-[10px] mt-2">{s.address}</div>}
@@ -244,6 +252,11 @@ export default function SettingsPage() {
 
           <Field label="Phone (optional)">
             <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="(555) 123-4567" />
+          </Field>
+
+          <Field label="Telegram Group Chat ID">
+            <input type="text" value={form.telegram_chat_id} onChange={e => setForm({ ...form, telegram_chat_id: e.target.value })} placeholder="e.g. -1001234567890" />
+            <div className="text-[var(--text-muted)] text-[10px] mt-1">Add the bot to the store's Telegram group, send a message, then check getUpdates for the group chat ID (starts with -)</div>
           </Field>
 
           <Toggle label="Has Register 2" hint="Enable second register (Bells, Kerens)" value={form.has_register2} onChange={v => setForm({ ...form, has_register2: v })} />

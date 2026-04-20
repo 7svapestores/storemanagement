@@ -30,6 +30,7 @@ create table stores (
   address text,
   phone text,
   tax_rate numeric(6,4) default 0.0825,
+  telegram_chat_id text,
   is_active boolean default true,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

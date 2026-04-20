@@ -2,7 +2,7 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
 import { extractShiftsFromNRS } from '@/lib/extract-shifts';
-import { sendTelegram, buildSyncSummaryMessage, formatCurrency } from '@/lib/telegram';
+import { sendTelegram, buildSyncSummaryMessage, buildStoreDailySummary } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +64,7 @@ async function syncOneStore(supabase, store, targetDate) {
   await extractShiftsFromNRS(supabase, nrsData, store.id, targetDate, inserted.id);
 
   console.log(`[nrs-cron] ${store.name} ${targetDate} — created (gross $${parsed.r1_gross}) [${Date.now() - t0}ms]`);
-  return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0 };
+  return { store_name: store.name, status: 'created', daily_sales_id: inserted.id, error: null, ms: Date.now() - t0, salesData: parsed };
 }
 
 async function runSync(supabase, targetDate) {
@@ -73,7 +73,7 @@ async function runSync(supabase, targetDate) {
 
   const { data: stores } = await supabase
     .from('stores')
-    .select('id, name, nrs_store_id')
+    .select('id, name, nrs_store_id, telegram_chat_id')
     .not('nrs_store_id', 'is', null)
     .order('created_at');
 
@@ -122,11 +122,21 @@ async function runSync(supabase, targetDate) {
     await sendFailureEmail(failed, results.filter(r => r.status === 'failed'), targetDate);
   }
 
-  // Check short/over for all stores on this date and send Telegram notification
+  // Check short/over for all stores on this date and send Telegram notifications
   const shortOverAlerts = await checkShortOver(supabase, stores, targetDate);
   try {
+    // Send overall summary to owner
     const msg = buildSyncSummaryMessage(results, targetDate, shortOverAlerts);
     await sendTelegram(msg);
+
+    // Send per-store daily sales summary to each store's Telegram group
+    for (const store of stores) {
+      if (!store.telegram_chat_id) continue;
+      const storeResult = results.find(r => r.store_name === store.name);
+      if (!storeResult?.salesData) continue;
+      const storeMsg = buildStoreDailySummary(store.name, storeResult.salesData, targetDate);
+      await sendTelegram(storeMsg, store.telegram_chat_id);
+    }
   } catch (e) {
     console.warn('[nrs-cron] telegram notification failed (non-fatal):', e.message);
   }
