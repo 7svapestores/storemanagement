@@ -554,7 +554,11 @@ export default function ExpensesPage() {
           sortState={sortState}
           onSortChange={setSortState}
           columns={[
-            { key: 'month', label: 'Date', render: (v, r) => r.expense_date ? dayLabel(r.expense_date) : monthLabel(v), sortValue: r => r.expense_date || r.month },
+            { key: 'month', label: 'Date', render: (v, r) => {
+              if (r.expense_date) return dayLabel(r.expense_date);
+              if (r.created_at) { try { return new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch {} }
+              return monthLabel(v);
+            }, sortValue: r => r.expense_date || r.created_at?.slice(0, 10) || r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
             { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
             { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-[var(--color-danger)]">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
