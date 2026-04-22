@@ -92,7 +92,7 @@ export default function ExpensesPage() {
         .select('*, stores(name, color)')
         .gte('month', startMonth)
         .lte('month', endMonth)
-        .order('month', { ascending: false });
+        .order('expense_date', { ascending: false, nullsFirst: false });
       if (pageStoreIds.length) q = q.in('store_id', pageStoreIds);
       const { data: e } = await q;
       setItems(e || []);
@@ -367,7 +367,7 @@ export default function ExpensesPage() {
           if (existingRow) {
             if (Number(existingRow.amount) !== amt) updates.push({ id: existingRow.id, amount: amt });
           } else {
-            inserts.push({ store_id: st.id, month: tplMonth, category: cat.id, amount: amt });
+            inserts.push({ store_id: st.id, month: tplMonth, expense_date: tplDate || `${tplMonth}-01`, category: cat.id, amount: amt });
           }
         }
       }
@@ -389,7 +389,7 @@ export default function ExpensesPage() {
               }
             }
           } else {
-            inserts.push({ store_id: st.id, month: tplMonth, category: name, amount: amt });
+            inserts.push({ store_id: st.id, month: tplMonth, expense_date: tplDate || `${tplMonth}-01`, category: name, amount: amt });
           }
         }
       }
@@ -554,11 +554,10 @@ export default function ExpensesPage() {
           sortState={sortState}
           onSortChange={setSortState}
           columns={[
-            { key: 'month', label: 'Date', render: (v, r) => {
+            { key: 'expense_date', label: 'Date', render: (_, r) => {
               if (r.expense_date) return dayLabel(r.expense_date);
-              if (r.created_at) { try { return new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch {} }
-              return monthLabel(v);
-            }, sortValue: r => r.expense_date || r.created_at?.slice(0, 10) || r.month },
+              return monthLabel(r.month);
+            }, sortValue: r => r.expense_date || r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
             { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
             { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-[var(--color-danger)]">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
