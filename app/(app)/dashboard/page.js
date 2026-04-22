@@ -16,7 +16,8 @@ const dayStr = () => new Date().toLocaleDateString('en-US', { weekday: 'long', m
 export default function DashboardPage() {
   const router = useRouter();
   const { supabase, isOwner, profile, effectiveStoreId } = useAuth();
-  const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last30');
+  const { range, preset, selectPreset, setStart, setEnd } = useDateRange('thismonth');
+  const [selectedStore, setSelectedStore] = useState('');
   const [stats, setStats] = useState(null);
   const [trends, setTrends] = useState([]);
   const [stores, setStores] = useState([]);
@@ -29,7 +30,7 @@ export default function DashboardPage() {
   const [topEmployees, setTopEmployees] = useState([]);
   const [storeSort, setStoreSort] = useState('revenue');
 
-  const storeId = effectiveStoreId;
+  const storeId = selectedStore || effectiveStoreId;
 
   useEffect(() => {
     const load = async () => {
@@ -87,7 +88,7 @@ export default function DashboardPage() {
             const so = (sales || []).filter(r => r.store_id === st.id).reduce((s, r) => s + (r.short_over || 0), 0);
             const profit = rev - cogs - exp;
             const mg = rev > 0 ? (profit / rev * 100) : 0;
-            return { ...st, revenue: rev, profit, margin: mg, shortOver: so };
+            return { ...st, revenue: rev, buying: cogs, expenses: exp, profit, margin: mg, shortOver: so };
           }).sort((a, b) => b.revenue - a.revenue);
           setStorePerf(perf);
         }
@@ -136,7 +137,7 @@ export default function DashboardPage() {
       }
     };
     load();
-  }, [range.start, range.end, storeId]);
+  }, [range.start, range.end, storeId, selectedStore]);
 
   const paymentMix = useMemo(() => {
     if (!stats || stats.totalGross <= 0) return null;
@@ -192,6 +193,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Store filter pills */}
+      <div className="flex gap-1.5 overflow-x-auto mb-3 pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <button
+          onClick={() => setSelectedStore('')}
+          className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${!selectedStore ? 'text-white shadow-sm' : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]'}`}
+          style={!selectedStore ? { background: 'var(--brand-primary)' } : undefined}
+        >All Stores</button>
+        {stores.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setSelectedStore(s.id === selectedStore ? '' : s.id)}
+            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors flex items-center gap-1.5 ${selectedStore === s.id ? 'text-white shadow-sm' : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]'}`}
+            style={selectedStore === s.id ? { background: s.color || 'var(--brand-primary)' } : undefined}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+            {s.name?.split(' - ').pop()?.trim() || s.name}
+          </button>
+        ))}
+      </div>
+
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       {loadError && <V2Alert type="danger" className="mb-3">{loadError}</V2Alert>}
@@ -204,7 +225,22 @@ export default function DashboardPage() {
           <p className={`text-[40px] font-bold tracking-tight tabular-nums ${stats.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
             {stats.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(stats.netProfit))}
           </p>
-          <p className="text-[var(--text-muted)] text-[12px] mt-1">Margin: <span className={stats.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>{stats.margin.toFixed(1)}%</span></p>
+          <p className="text-[var(--text-muted)] text-[12px] mt-1">
+            Margin: <span className={stats.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>{stats.margin.toFixed(1)}%</span>
+            {(() => {
+              const now = new Date();
+              const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+              const daysPassed = now.getDate();
+              const daysLeft = daysInMonth - daysPassed;
+              const dailyAvg = daysPassed > 0 ? stats.netProfit / daysPassed : 0;
+              const projected = dailyAvg * daysInMonth;
+              return (
+                <span className="ml-3">
+                  · {daysLeft}d left · Pace: <span className={projected >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fK(projected)}/mo</span>
+                </span>
+              );
+            })()}
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
             <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(stats.totalNet)}</p></div>
             <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(stats.totalPurch)}</p></div>
@@ -283,15 +319,17 @@ export default function DashboardPage() {
           </div>
           <div className="overflow-x-auto">
             <table>
-              <thead><tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr></thead>
+              <thead><tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>Product Buying</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr></thead>
               <tbody>
                 {sortedStores.map((s, i) => (
-                  <tr key={s.id} onClick={() => router.push(`/reports`)} className="cursor-pointer" style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
+                  <tr key={s.id} onClick={() => { setSelectedStore(s.id); }} className="cursor-pointer" style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
                     <td className="text-[var(--text-muted)] text-center">{i === 0 ? '🏆' : i + 1}</td>
-                    <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold text-[13px]">{s.name}</span></span></td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-success)] font-semibold">{fmt(s.revenue)}</td>
+                    <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold text-[13px]">{s.name?.split(' - ').pop()?.trim() || s.name}</span></span></td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--text-primary)] font-semibold">{fmt(s.revenue)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-warning)]">{fmt(s.buying)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-danger)]">{fmt(s.expenses)}</td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className={`font-bold ${s.profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmt(s.profit)}</td>
-                    <td style={{ textAlign: 'right' }} className={`font-semibold ${s.margin >= 60 ? 'text-[var(--color-success)]' : s.margin >= 40 ? 'text-[var(--color-warning)]' : 'text-[var(--color-danger)]'}`}>{s.margin.toFixed(1)}%</td>
+                    <td style={{ textAlign: 'right' }} className={`font-semibold ${s.margin >= 40 ? 'text-[var(--color-success)]' : s.margin >= 20 ? 'text-[var(--color-warning)]' : 'text-[var(--color-danger)]'}`}>{s.margin.toFixed(1)}%</td>
                   </tr>
                 ))}
               </tbody>
