@@ -3,10 +3,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal, MultiSelect } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
-import { dayLabel } from '@/lib/utils';
+import { dateLabel } from '@/lib/utils';
 
 const utilDate = (d) => {
-  try { return dayLabel(d); } catch { return String(d); }
+  try { return dateLabel(d); } catch { return String(d); }
 };
 
 const fmtMoney = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
-import { fmt, monthLabel, dayLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
+import { fmt, monthLabel, dateLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
 import ImageGallery from '@/components/ImageGallery';
@@ -555,7 +555,7 @@ export default function ExpensesPage() {
           onSortChange={setSortState}
           columns={[
             { key: 'expense_date', label: 'Date', render: (_, r) => {
-              if (r.expense_date) return dayLabel(r.expense_date);
+              if (r.expense_date) return dateLabel(r.expense_date);
               return monthLabel(r.month);
             }, sortValue: r => r.expense_date || r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },

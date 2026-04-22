@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
-import { fmt, weekLabel, today, downloadCSV } from '@/lib/utils';
+import { fmt, dateLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
 import { uploadInvoice, compressImage } from '@/lib/storage';
 
@@ -401,7 +401,7 @@ export default function PurchasesPage() {
         onSortChange={setSortState}
         emptyMessage="No purchases yet. Tap + Add to log an invoice."
         columns={[
-          { key: 'week_of', label: 'Date', render: v => weekLabel(v) },
+          { key: 'week_of', label: 'Date', render: v => dateLabel(v) },
           ...(!pageStoreId ? [{ key: 'store_id', label: 'Store', hideOnMobile: true, render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> }] : []),
           { key: 'supplier', label: 'Vendor', render: v => <span className="text-[var(--text-primary)] font-bold">{v || '—'}</span> },
           { key: 'total_cost', label: 'Amount', align: 'right', mono: true, render: (v, r) => {
