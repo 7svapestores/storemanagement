@@ -1199,7 +1199,7 @@ export default function SalesPage() {
       const st = stores.find(s => s.id === r.store_id);
       const usesR2 = !!st?.has_register2;
       if (usesR2) {
-        const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+        const diff = Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0);
         const hasMismatch = Math.abs(diff) >= 0.01;
         if (mismatchFilter === 'mismatch' && !hasMismatch) return false;
         if (mismatchFilter === 'clean' && hasMismatch) return false;
@@ -1330,16 +1330,14 @@ export default function SalesPage() {
             sortValue: r => {
               const st = stores.find(s => s.id === r.store_id);
               if (!st?.has_register2) return 2;
-              const diff = r.basket_r2_diff != null ? Number(r.basket_r2_diff) : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              const diff = Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0);
               return Math.abs(diff) < 0.01 ? 2 : 1;
             },
             render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
               const rowUsesR2 = !!rowStore?.has_register2;
               if (!rowUsesR2) return <span className="text-sw-green text-base" title="No Register 2">✅</span>;
-              const diff = r.basket_r2_diff != null
-                ? Number(r.basket_r2_diff)
-                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              const diff = Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0);
               if (Math.abs(diff) < 0.01) {
                 return <span className="text-sw-green text-base" title="Basket matches R2 Net">✅</span>;
               }
@@ -1387,17 +1385,13 @@ export default function SalesPage() {
             sortValue: (r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
               if (!rowStore?.has_register2) return null;
-              return r.basket_r2_diff != null
-                ? Number(r.basket_r2_diff)
-                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              return Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0);
             },
             render: (_, r) => {
               const rowStore = stores.find(s => s.id === r.store_id);
               const rowUsesR2 = !!rowStore?.has_register2;
               if (!rowUsesR2) return <span className="text-sw-dim">—</span>;
-              const diff = r.basket_r2_diff != null
-                ? Number(r.basket_r2_diff)
-                : (Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0));
+              const diff = Number(r.r2_net || 0) - Number(r.r1_canceled_basket || 0);
               if (Math.abs(diff) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
               if (diff < 0) return <span className="text-sw-red">-{fmt(Math.abs(diff))}</span>;
               return <span className="text-sw-amber">+{fmt(diff)}</span>;
