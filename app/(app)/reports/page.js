@@ -45,7 +45,11 @@ export default function ReportsPage() {
         const prev = previousRange(range);
 
         // Pull everything in parallel for current and previous periods.
-        const scope = (q) => effectiveStoreId ? q.eq('store_id', effectiveStoreId) : q;
+        // exportScope (top-right dropdown) overrides effectiveStoreId (sidebar)
+        // when set, so picking a store in the P&L header scopes both the on-
+        // screen view and the downloads.
+        const filterStoreId = (exportScope && exportScope !== 'all') ? exportScope : effectiveStoreId;
+        const scope = (q) => filterStoreId ? q.eq('store_id', filterStoreId) : q;
         const [
           { data: salesCur },
           { data: salesPrev },
@@ -194,57 +198,16 @@ export default function ReportsPage() {
       }
     };
     load();
-  }, [range.start, range.end, effectiveStoreId]);
+  }, [range.start, range.end, effectiveStoreId, exportScope]);
 
-  // Build a scoped bundle — either all stores in the loaded range, or a single
-  // store if exportScope is set to a specific id. All downstream export
-  // functions operate on the bundle so they share the same filtering.
+  // Data is already scoped at load time by exportScope (or effectiveStoreId).
+  // Bundle just returns the current state + a display name for filenames.
   const buildExportBundle = () => {
-    if (exportScope === 'all' || !exportScope) {
-      return {
-        summary,
-        storeRows,
-        rawSales, rawPurch, rawExp, rawCash,
-        scopeName: effectiveStoreId
-          ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
-          : 'All Stores',
-      };
-    }
-    const store = stores.find(s => s.id === exportScope);
-    if (!store) {
-      return { summary, storeRows, rawSales, rawPurch, rawExp, rawCash, scopeName: 'All Stores' };
-    }
-    const fSales = rawSales.filter(r => r.store_id === exportScope);
-    const fPurch = rawPurch.filter(r => r.store_id === exportScope);
-    const fExp   = rawExp.filter(r => r.store_id === exportScope);
-    const fCash  = rawCash.filter(r => r.store_id === exportScope);
-
-    const totalRevenue   = fSales.reduce((s, r) => s + (r.total_sales || 0), 0);
-    const totalCash      = fSales.reduce((s, r) => s + (r.cash_sales || 0), 0);
-    const totalCard      = fSales.reduce((s, r) => s + (r.card_sales || 0), 0);
-    const totalCheck     = fSales.reduce((s, r) => s + (r.cashapp_check || 0), 0);
-    const totalTax       = fSales.reduce((s, r) => s + (r.tax_collected || 0), 0);
-    const totalPurchases = fPurch.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
-    const totalExpenses  = fExp.reduce((s, r) => s + (r.amount || 0), 0);
-    const grossProfit    = totalRevenue - totalPurchases;
-    const netProfit      = totalRevenue - totalPurchases - totalExpenses;
-    const margin         = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-
-    const scopedSummary = {
-      totalRevenue, totalCash, totalCard, totalCheck, totalTax,
-      totalPurchases, totalExpenses, grossProfit, netProfit, margin,
-      cashPct:  totalRevenue > 0 ? (totalCash / totalRevenue) * 100  : 0,
-      cardPct:  totalRevenue > 0 ? (totalCard / totalRevenue) * 100  : 0,
-      checkPct: totalRevenue > 0 ? (totalCheck / totalRevenue) * 100 : 0,
-      revenueChange: null,
-    };
-    const scopedRow = storeRows.find(s => s.id === exportScope);
-    return {
-      summary: scopedSummary,
-      storeRows: scopedRow ? [scopedRow] : [],
-      rawSales: fSales, rawPurch: fPurch, rawExp: fExp, rawCash: fCash,
-      scopeName: store.name,
-    };
+    const activeStoreId = (exportScope && exportScope !== 'all') ? exportScope : effectiveStoreId;
+    const scopeName = activeStoreId
+      ? (stores.find(s => s.id === activeStoreId)?.name || 'Store')
+      : 'All Stores';
+    return { summary, storeRows, rawSales, rawPurch, rawExp, rawCash, scopeName };
   };
 
   // Build a single "Full Report" sheet — same shape for both Excel sheet 1 and CSV.
@@ -626,10 +589,10 @@ export default function ReportsPage() {
             value={exportScope}
             onChange={(e) => setExportScope(e.target.value)}
             className="px-2 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-primary)] text-[11px] font-semibold"
-            title="Choose which store the export will cover"
+            title="Scope the P&L view and the downloads to one store"
           >
             <option value="all">All Stores</option>
-            {storeRows.map(s => (
+            {stores.map(s => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
