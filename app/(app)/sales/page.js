@@ -1148,9 +1148,8 @@ export default function SalesPage() {
             { key: 'total_sales', label: 'Total', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? r.net_sales ?? 0)}</span> },
             { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
               const n = Number(v || 0);
-              if (Math.abs(n) < 0.01) return <span className="text-sw-dim">—</span>;
-              if (n > 0) return <span className="text-sw-red">-{fmt(n)}</span>;
-              return <span className="text-sw-green">+{fmt(Math.abs(n))}</span>;
+              if (Math.abs(n) < 0.01) return <span className="text-[var(--text-muted)]">{fmt(0)}</span>;
+              return <span className={n < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-warning)]'}>{n < 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
             } },
           ]} rows={sales.slice(0, 14)} isOwner={false} />
         </div>
@@ -1379,13 +1378,10 @@ export default function SalesPage() {
           { key: 'short_over', label: 'S/O', align: 'right', mono: true,
             sortValue: (r) => Number(r.short_over ?? 0),
             render: v => {
-              // Only missing when truly null/undefined — zero is a valid "matched" state.
-              if (v == null) return <span className="text-sw-dim">—</span>;
+              if (v == null) return <span className="text-[var(--text-muted)]">—</span>;
               const n = Number(v);
-              if (Math.abs(n) < 0.01) return <span className="text-sw-green">{fmt(0)}</span>;
-              // Positive = short (employee owes money) → red. Negative = over → green.
-              if (n > 0) return <span className="text-sw-red font-bold">-{fmt(n)}</span>;
-              return <span className="text-sw-green font-bold">+{fmt(Math.abs(n))}</span>;
+              if (Math.abs(n) < 0.01) return <span className="text-[var(--text-muted)]">{fmt(0)}</span>;
+              return <span className={`font-bold ${n < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-warning)]'}`}>{n < 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
             } },
           { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, sortable: true,
             sortValue: (r) => {
