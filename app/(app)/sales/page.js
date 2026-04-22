@@ -27,7 +27,7 @@ export default function SalesPage() {
     { label: 'Date (oldest)', key: 'date', dir: 'asc' },
     { label: 'Store A-Z', key: 'store_id', dir: 'asc' },
     { label: 'Gross (high-low)', key: 'gross_sales', dir: 'desc' },
-    { label: 'Net (high-low)', key: 'net_sales', dir: 'desc' },
+    { label: 'Total (high-low)', key: 'total_sales', dir: 'desc' },
     { label: 'Cash (high-low)', key: 'cash_total', dir: 'desc' },
     { label: 'Status (alerts first)', key: '_status', dir: 'asc' },
   ];
@@ -1145,7 +1145,7 @@ export default function SalesPage() {
           <DataTable columns={[
             { key: 'date', label: 'Date', render: v => dayLabel(v) },
             { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, render: (v, r) => fmt(v ?? r.total_sales) },
-            { key: 'net_sales', label: 'Net', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? (r.total_sales - (r.credits || 0)))}</span> },
+            { key: 'total_sales', label: 'Total', align: 'right', mono: true, render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? r.net_sales ?? 0)}</span> },
             { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
               const n = Number(v || 0);
               if (Math.abs(n) < 0.01) return <span className="text-sw-dim">—</span>;
@@ -1243,7 +1243,7 @@ export default function SalesPage() {
     resetReceipts();
   };
 
-  const totalNetSales = filteredSales.reduce((s, r) => s + (r.net_sales ?? r.total_sales ?? 0), 0);
+  const totalNetSales = filteredSales.reduce((s, r) => s + (r.total_sales ?? r.net_sales ?? 0), 0);
   const agentCount = filteredSales.filter(r => r.sync_source === '7s_agent').length;
   const avgPerDay = (() => { const days = new Set(filteredSales.map(r => r.date)).size; return days > 0 ? totalNetSales / days : 0; })();
 
@@ -1357,7 +1357,7 @@ export default function SalesPage() {
           { key: 'date', label: 'Date', render: v => dayLabel(v) },
           { key: 'store_id', label: 'Store', sortValue: (r) => r.stores?.name || '', render: (v, r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} /> },
           { key: 'gross_sales', label: 'Gross', align: 'right', mono: true, sortValue: (r) => Number(r.gross_sales ?? r.total_sales ?? 0), render: (v, r) => fmt(v ?? r.total_sales) },
-          { key: 'net_sales', label: 'Net', align: 'right', mono: true, sortValue: (r) => Number(r.net_sales ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0))), render: (v, r) => <span className="text-sw-green font-bold">{fmt(v ?? ((r.gross_sales ?? r.total_sales) - (r.credits || 0)))}</span> },
+          { key: 'total_sales', label: 'Total', align: 'right', mono: true, sortValue: (r) => Number(r.total_sales ?? r.net_sales ?? 0), render: (v, r) => <span className="text-[var(--color-success)] font-bold">{fmt(v ?? r.net_sales ?? 0)}</span> },
           { key: 'cash_total', label: 'Cash', align: 'right', mono: true, sortable: true, sortValue: (r) => (Number(r.cash_sales || 0) + Number(r.register2_cash || 0)), render: (_, r) => fmt((r.cash_sales || 0) + (r.register2_cash || 0)) },
           { key: 'card_sales', label: 'Card', align: 'right', mono: true, sortValue: (r) => Number(r.card_sales || 0), render: v => fmt(v) },
           { key: 'cashapp_check', label: 'CApp/Chk', align: 'right', mono: true, sortValue: (r) => Number(r.cashapp_check || 0), render: v => fmt(v) },

@@ -20,7 +20,7 @@ export default function EmployeeTrackingPage() {
       const [{ data: st }, { data: sh }] = await Promise.all([
         supabase.from('stores').select('id, name, color').order('created_at'),
         supabase.from('employee_shifts')
-          .select('*, stores(name, color), daily_sales(net_sales, r1_short_over, short_over)')
+          .select('*, stores(name, color), daily_sales(total_sales, net_sales, r1_short_over, short_over)')
           .gte('shift_date', range.start)
           .lte('shift_date', range.end)
           .order('opened_at', { ascending: true }),
@@ -46,7 +46,7 @@ export default function EmployeeTrackingPage() {
       ...s,
       _isPrimary: primaryIds.has(s.id),
       _so: primaryIds.has(s.id) ? (Number(s.daily_sales?.r1_short_over ?? s.daily_sales?.short_over ?? 0)) : 0,
-      _sales: primaryIds.has(s.id) ? (Number(s.daily_sales?.net_sales ?? 0)) : 0,
+      _sales: primaryIds.has(s.id) ? (Number(s.daily_sales?.total_sales ?? s.daily_sales?.net_sales ?? 0)) : 0,
     }));
   }, [shifts]);
 

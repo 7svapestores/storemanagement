@@ -32,7 +32,7 @@ export default function EmployeeDetailPage() {
       const [{ data: st }, { data: sh }] = await Promise.all([
         supabase.from('stores').select('id, name, color').eq('id', storeId).single(),
         supabase.from('employee_shifts')
-          .select('*, daily_sales(net_sales, r1_short_over, short_over)')
+          .select('*, daily_sales(total_sales, net_sales, r1_short_over, short_over)')
           .eq('store_id', storeId)
           .eq('employee_name', employeeName)
           .gte('shift_date', range.start)
@@ -59,7 +59,7 @@ export default function EmployeeDetailPage() {
     return shifts.map(s => ({
       ...s,
       _so: primaryIds.has(s.id) ? Number(s.daily_sales?.r1_short_over ?? s.daily_sales?.short_over ?? 0) : 0,
-      _sales: primaryIds.has(s.id) ? Number(s.daily_sales?.net_sales ?? 0) : 0,
+      _sales: primaryIds.has(s.id) ? Number(s.daily_sales?.total_sales ?? s.daily_sales?.net_sales ?? 0) : 0,
       _isPrimary: primaryIds.has(s.id),
     }));
   }, [shifts]);

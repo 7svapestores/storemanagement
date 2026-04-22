@@ -74,7 +74,7 @@ export default function DashboardPage() {
         const totalGross = sales?.reduce((s, r) => s + (r.gross_sales ?? r.total_sales ?? 0), 0) || 0;
         const totalCash = sales?.reduce((s, r) => s + (r.cash_sales || 0) + (r.register2_cash || 0), 0) || 0;
         const totalCard = sales?.reduce((s, r) => s + (r.card_sales || 0) + (r.register2_card || 0), 0) || 0;
-        const totalNet = sales?.reduce((s, r) => s + (r.net_sales ?? ((r.gross_sales ?? r.total_sales ?? 0) - (r.credits || 0))), 0) || 0;
+        const totalNet = sales?.reduce((s, r) => s + (r.total_sales ?? r.net_sales ?? 0), 0) || 0;
         const totalShortOver = sales?.reduce((s, r) => s + (r.short_over || 0), 0) || 0;
         const totalTax = sales?.reduce((s, r) => s + (r.tax_collected || 0), 0) || 0;
         const totalPurch = purch?.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0) || 0;
@@ -86,7 +86,7 @@ export default function DashboardPage() {
         // Store performance
         if (storeData?.length && !storeId) {
           const perf = storeData.map(st => {
-            const rev = (sales || []).filter(r => r.store_id === st.id).reduce((s, r) => s + (r.net_sales ?? r.total_sales ?? 0), 0);
+            const rev = (sales || []).filter(r => r.store_id === st.id).reduce((s, r) => s + (r.total_sales ?? r.net_sales ?? 0), 0);
             const cogs = (purch || []).filter(r => r.store_id === st.id).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
             const exp = (exps || []).filter(r => r.store_id === st.id).reduce((s, r) => s + (r.amount || 0), 0);
             const profit = rev - cogs - exp;
