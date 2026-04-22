@@ -29,6 +29,10 @@ export default function ReportsPage() {
   const [rawCash, setRawCash] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedStoreId, setSelectedStoreId] = useState('');
+  // Export scope: 'all' to export every store in the loaded range, or a
+  // specific store id to export just that store. Overrides the sidebar
+  // filter for CSV/Excel/PDF only — does not re-query data.
+  const [exportScope, setExportScope] = useState('all');
 
   useEffect(() => {
     const load = async () => {
@@ -74,6 +78,7 @@ export default function ReportsPage() {
         const totalRevenue = (salesCur || []).reduce((s, r) => s + (r.total_sales || 0), 0);
         const totalCash = (salesCur || []).reduce((s, r) => s + (r.cash_sales || 0), 0);
         const totalCard = (salesCur || []).reduce((s, r) => s + (r.card_sales || 0), 0);
+        const totalCheck = (salesCur || []).reduce((s, r) => s + (r.cashapp_check || 0), 0);
         const totalTax = (salesCur || []).reduce((s, r) => s + (r.tax_collected || 0), 0);
         const totalPurchases = (purchCur || []).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
         const totalExpenses = (expCur || []).reduce((s, r) => s + (r.amount || 0), 0);
@@ -82,28 +87,33 @@ export default function ReportsPage() {
         const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
         const cashPct = totalRevenue > 0 ? (totalCash / totalRevenue) * 100 : 0;
         const cardPct = totalRevenue > 0 ? (totalCard / totalRevenue) * 100 : 0;
+        const checkPct = totalRevenue > 0 ? (totalCheck / totalRevenue) * 100 : 0;
 
         const prevRevenue = (salesPrev || []).reduce((s, r) => s + (r.total_sales || 0), 0);
         const prevPurchases = (purchPrev || []).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
         const prevExpenses = (expPrev || []).reduce((s, r) => s + (r.amount || 0), 0);
 
         setSummary({
-          totalRevenue, totalCash, totalCard, totalTax,
+          totalRevenue, totalCash, totalCard, totalCheck, totalTax,
           totalPurchases, totalExpenses,
-          grossProfit, netProfit, margin, cashPct, cardPct,
+          grossProfit, netProfit, margin, cashPct, cardPct, checkPct,
           revenueChange: prevRevenue > 0 ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 : null,
         });
 
         // ── Section 2 — Store breakdown ─────────────────
         const rows = (st || []).map(s => {
-          const rev = (salesCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.total_sales || 0), 0);
-          const tax = (salesCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.tax_collected || 0), 0);
+          const storeSales = (salesCur || []).filter(r => r.store_id === s.id);
+          const rev = storeSales.reduce((a, r) => a + (r.total_sales || 0), 0);
+          const cash = storeSales.reduce((a, r) => a + (r.cash_sales || 0), 0);
+          const card = storeSales.reduce((a, r) => a + (r.card_sales || 0), 0);
+          const check = storeSales.reduce((a, r) => a + (r.cashapp_check || 0), 0);
+          const tax = storeSales.reduce((a, r) => a + (r.tax_collected || 0), 0);
           const pur = (purchCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.total_cost || r.unit_cost || 0), 0);
           const exp = (expCur || []).filter(r => r.store_id === s.id).reduce((a, r) => a + (r.amount || 0), 0);
           const gross = rev - pur;
           const net = rev - pur - exp;
           const mg = rev > 0 ? (net / rev) * 100 : 0;
-          return { ...s, revenue: rev, purchases: pur, expenses: exp, tax, gross, net, margin: mg };
+          return { ...s, revenue: rev, cash, card, check, purchases: pur, expenses: exp, tax, gross, net, margin: mg };
         }).sort((a, b) => b.net - a.net);
         setStoreRows(rows);
 
@@ -186,12 +196,63 @@ export default function ReportsPage() {
     load();
   }, [range.start, range.end, effectiveStoreId]);
 
+  // Build a scoped bundle — either all stores in the loaded range, or a single
+  // store if exportScope is set to a specific id. All downstream export
+  // functions operate on the bundle so they share the same filtering.
+  const buildExportBundle = () => {
+    if (exportScope === 'all' || !exportScope) {
+      return {
+        summary,
+        storeRows,
+        rawSales, rawPurch, rawExp, rawCash,
+        scopeName: effectiveStoreId
+          ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
+          : 'All Stores',
+      };
+    }
+    const store = stores.find(s => s.id === exportScope);
+    if (!store) {
+      return { summary, storeRows, rawSales, rawPurch, rawExp, rawCash, scopeName: 'All Stores' };
+    }
+    const fSales = rawSales.filter(r => r.store_id === exportScope);
+    const fPurch = rawPurch.filter(r => r.store_id === exportScope);
+    const fExp   = rawExp.filter(r => r.store_id === exportScope);
+    const fCash  = rawCash.filter(r => r.store_id === exportScope);
+
+    const totalRevenue   = fSales.reduce((s, r) => s + (r.total_sales || 0), 0);
+    const totalCash      = fSales.reduce((s, r) => s + (r.cash_sales || 0), 0);
+    const totalCard      = fSales.reduce((s, r) => s + (r.card_sales || 0), 0);
+    const totalCheck     = fSales.reduce((s, r) => s + (r.cashapp_check || 0), 0);
+    const totalTax       = fSales.reduce((s, r) => s + (r.tax_collected || 0), 0);
+    const totalPurchases = fPurch.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
+    const totalExpenses  = fExp.reduce((s, r) => s + (r.amount || 0), 0);
+    const grossProfit    = totalRevenue - totalPurchases;
+    const netProfit      = totalRevenue - totalPurchases - totalExpenses;
+    const margin         = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+    const scopedSummary = {
+      totalRevenue, totalCash, totalCard, totalCheck, totalTax,
+      totalPurchases, totalExpenses, grossProfit, netProfit, margin,
+      cashPct:  totalRevenue > 0 ? (totalCash / totalRevenue) * 100  : 0,
+      cardPct:  totalRevenue > 0 ? (totalCard / totalRevenue) * 100  : 0,
+      checkPct: totalRevenue > 0 ? (totalCheck / totalRevenue) * 100 : 0,
+      revenueChange: null,
+    };
+    const scopedRow = storeRows.find(s => s.id === exportScope);
+    return {
+      summary: scopedSummary,
+      storeRows: scopedRow ? [scopedRow] : [],
+      rawSales: fSales, rawPurch: fPurch, rawExp: fExp, rawCash: fCash,
+      scopeName: store.name,
+    };
+  };
+
   // Build a single "Full Report" sheet — same shape for both Excel sheet 1 and CSV.
-  const buildFullReportRows = () => {
+  const buildFullReportRows = (bundle) => {
+    const { summary, storeRows, rawSales, rawPurch, rawExp, rawCash, scopeName } =
+      bundle || buildExportBundle();
     if (!summary) return [];
-    const selectedName = effectiveStoreId
-      ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
-      : 'All Stores';
+    const selectedName = scopeName;
     const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const pct = (n) => `${Number(n || 0).toFixed(2)}%`;
 
@@ -208,8 +269,10 @@ export default function ReportsPage() {
     rows.push(['Total Revenue', money(summary.totalRevenue)]);
     rows.push(['Total Cash Sales', money(summary.totalCash)]);
     rows.push(['Total Card Sales', money(summary.totalCard)]);
+    rows.push(['Total CashApp / Check', money(summary.totalCheck || 0)]);
     rows.push(['Cash %', pct(summary.cashPct)]);
     rows.push(['Card %', pct(summary.cardPct)]);
+    rows.push(['CashApp / Check %', pct(summary.checkPct || 0)]);
     rows.push(['Tax Collected', money(summary.totalTax)]);
     rows.push([]);
 
@@ -231,21 +294,15 @@ export default function ReportsPage() {
 
     // ── Store-by-store
     rows.push(['=== STORE-BY-STORE PERFORMANCE ===']);
-    rows.push(['Store', 'Revenue', 'Cash', 'Card', 'Purchases', 'Expenses', 'Gross Profit', 'Net Profit', 'Net Margin %', 'Tax']);
-    const storeTotals = { revenue: 0, cash: 0, card: 0, purchases: 0, expenses: 0, gross: 0, net: 0, tax: 0 };
-    const salesByStore = {};
-    rawSales.forEach(s => {
-      if (!salesByStore[s.store_id]) salesByStore[s.store_id] = { cash: 0, card: 0 };
-      salesByStore[s.store_id].cash += (s.cash_sales || 0);
-      salesByStore[s.store_id].card += (s.card_sales || 0);
-    });
+    rows.push(['Store', 'Revenue', 'Cash', 'Card', 'CashApp/Check', 'Purchases', 'Expenses', 'Gross Profit', 'Net Profit', 'Net Margin %', 'Tax']);
+    const storeTotals = { revenue: 0, cash: 0, card: 0, check: 0, purchases: 0, expenses: 0, gross: 0, net: 0, tax: 0 };
     storeRows.forEach(s => {
-      const sbs = salesByStore[s.id] || { cash: 0, card: 0 };
       rows.push([
         s.name,
         money(s.revenue),
-        money(sbs.cash),
-        money(sbs.card),
+        money(s.cash || 0),
+        money(s.card || 0),
+        money(s.check || 0),
         money(s.purchases),
         money(s.expenses),
         money(s.gross),
@@ -254,8 +311,9 @@ export default function ReportsPage() {
         money(s.tax),
       ]);
       storeTotals.revenue += s.revenue;
-      storeTotals.cash += sbs.cash;
-      storeTotals.card += sbs.card;
+      storeTotals.cash += (s.cash || 0);
+      storeTotals.card += (s.card || 0);
+      storeTotals.check += (s.check || 0);
       storeTotals.purchases += s.purchases;
       storeTotals.expenses += s.expenses;
       storeTotals.gross += s.gross;
@@ -268,6 +326,7 @@ export default function ReportsPage() {
       money(storeTotals.revenue),
       money(storeTotals.cash),
       money(storeTotals.card),
+      money(storeTotals.check),
       money(storeTotals.purchases),
       money(storeTotals.expenses),
       money(storeTotals.gross),
@@ -370,23 +429,25 @@ export default function ReportsPage() {
     return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }).replace(' ', '');
   };
 
-  const fileTag = () => {
-    const storeName = effectiveStoreId
-      ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store')
-      : 'AllStores';
+  const fileTag = (scopeName) => {
+    const storeName = scopeName
+      || (effectiveStoreId ? (stores.find(s => s.id === effectiveStoreId)?.name || 'Store') : 'AllStores');
     const safe = storeName.replace(/[^a-z0-9]+/gi, '').slice(0, 20) || 'Store';
     return `7S-${safe}-Report-${monthYearTag()}`;
   };
 
   const handleExportCSV = () => {
-    const rows = buildFullReportRows();
+    const bundle = buildExportBundle();
+    const rows = buildFullReportRows(bundle);
     if (!rows.length) return;
-    downloadCSV(`${fileTag()}.csv`, rows[0], rows.slice(1));
+    downloadCSV(`${fileTag(bundle.scopeName)}.csv`, rows[0], rows.slice(1));
   };
 
   const handleExportExcel = () => {
-    const fullRows = buildFullReportRows();
+    const bundle = buildExportBundle();
+    const fullRows = buildFullReportRows(bundle);
     if (!fullRows.length) return;
+    const { rawSales: bSales, rawPurch: bPurch, rawExp: bExp, rawCash: bCash, scopeName } = bundle;
     const wb = XLSX.utils.book_new();
 
     // Sheet 1 — Full Report
@@ -394,20 +455,21 @@ export default function ReportsPage() {
     // Widen columns so the first sheet is readable.
     ws1['!cols'] = [
       { wch: 36 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
-      { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 },
+      { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
     ];
     XLSX.utils.book_append_sheet(wb, ws1, 'Full Report');
 
     // Sheet 2 — Daily Sales (raw)
     const dailySalesRows = [
-      ['Date', 'Store', 'Cash Sales', 'Card Sales', 'Total Sales', 'Credits', 'Tax', 'Entered By'],
-      ...[...rawSales]
+      ['Date', 'Store', 'Cash Sales', 'Card Sales', 'CashApp/Check', 'Total Sales', 'Credits', 'Tax', 'Entered By'],
+      ...[...bSales]
         .sort((a, b) => b.date.localeCompare(a.date))
         .map(s => [
           s.date,
           stores.find(st => st.id === s.store_id)?.name || '',
           Number(s.cash_sales || 0),
           Number(s.card_sales || 0),
+          Number(s.cashapp_check || 0),
           Number(s.total_sales || 0),
           Number(s.credits || 0),
           Number(s.tax_collected || 0),
@@ -419,7 +481,7 @@ export default function ReportsPage() {
     // Sheet 3 — Purchase Details
     const purchRows = [
       ['Week', 'Store', 'Item', 'Vendor', 'Quantity', 'Unit Cost', 'Total Cost'],
-      ...[...rawPurch]
+      ...[...bPurch]
         .sort((a, b) => (b.week_of || '').localeCompare(a.week_of || ''))
         .map(p => [
           p.week_of,
@@ -436,7 +498,7 @@ export default function ReportsPage() {
     // Sheet 4 — Expense Details
     const expRows = [
       ['Month', 'Store', 'Category', 'Amount', 'Note'],
-      ...[...rawExp]
+      ...[...bExp]
         .sort((a, b) => (b.month || '').localeCompare(a.month || ''))
         .map(e => [
           e.month,
@@ -451,7 +513,7 @@ export default function ReportsPage() {
     // Sheet 5 — Cash Collections
     const cashRows = [
       ['Date', 'Store', 'Cash Collected', 'Note'],
-      ...[...rawCash]
+      ...[...bCash]
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
         .map(c => [
           c.date,
@@ -462,7 +524,7 @@ export default function ReportsPage() {
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cashRows), 'Cash Collections');
 
-    XLSX.writeFile(wb, `${fileTag()}.xlsx`);
+    XLSX.writeFile(wb, `${fileTag(scopeName)}.xlsx`);
   };
 
   if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
@@ -530,8 +592,23 @@ export default function ReportsPage() {
 
   const handlePDF = () => {
     try {
-      const pdf = generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores }, range);
-      pdf.save(`7S-Stores-Report-${range.start}-to-${range.end}.pdf`);
+      const bundle = buildExportBundle();
+      const pdf = generatePDF({
+        summary: bundle.summary,
+        storeRows: bundle.storeRows,
+        expenseRows,
+        byVendor,
+        dailyTrend,
+        trendStats,
+        cashRecon,
+        insights,
+        watchouts,
+        rawSales: bundle.rawSales,
+        rawPurch: bundle.rawPurch,
+        rawExp: bundle.rawExp,
+        stores,
+      }, range);
+      pdf.save(`${fileTag(bundle.scopeName)}.pdf`);
     } catch (e) { console.error('PDF generation failed:', e); alert('PDF generation failed: ' + e.message); }
   };
 
@@ -544,7 +621,18 @@ export default function ReportsPage() {
           <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Business Performance Report</h1>
           <p className="text-[var(--text-secondary)] text-[12px]">{range.start} to {range.end} · {storeRows.length} stores</p>
         </div>
-        <div className="flex gap-1.5 flex-wrap print:hidden">
+        <div className="flex gap-1.5 flex-wrap items-center print:hidden">
+          <select
+            value={exportScope}
+            onChange={(e) => setExportScope(e.target.value)}
+            className="px-2 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-primary)] text-[11px] font-semibold"
+            title="Choose which store the export will cover"
+          >
+            <option value="all">All Stores</option>
+            {storeRows.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
           <button onClick={handlePDF} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white" style={{ background: 'var(--brand-primary)' }}>Export PDF</button>
           <button onClick={handleExportExcel} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">Excel</button>
           <button onClick={handleExportCSV} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">CSV</button>
@@ -611,12 +699,21 @@ export default function ReportsPage() {
             </div>
           </Card>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             <V2StatCard label="Gross Sales" value={fK(summary.totalRevenue)} variant="success" icon="💰" />
             <V2StatCard label="Product Buying" value={fK(summary.totalPurchases)} variant="warning" icon="📦" />
             <V2StatCard label="Operating Expenses" value={fK(summary.totalExpenses)} variant="danger" icon="📋" />
             <V2StatCard label="Tax Collected" value={fK(summary.totalTax)} variant="info" icon="🏛️" />
           </div>
+
+          {summary.totalRevenue > 0 && (
+            <div className="bg-[var(--bg-elevated)] rounded-lg border border-[var(--border-subtle)] p-3 mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px]">
+              <span className="text-[var(--text-muted)] font-semibold uppercase text-[10px] tracking-wider">Payment Mix</span>
+              <span>💵 Cash <span className="text-[var(--color-success)] font-bold">{fmt(summary.totalCash)}</span> <span className="text-[var(--text-muted)]">({summary.cashPct.toFixed(1)}%)</span></span>
+              <span>💳 Card <span className="text-[var(--text-primary)] font-bold">{fmt(summary.totalCard)}</span> <span className="text-[var(--text-muted)]">({summary.cardPct.toFixed(1)}%)</span></span>
+              <span>📱 CashApp / Check <span className="text-[var(--color-warning)] font-bold">{fmt(summary.totalCheck || 0)}</span> <span className="text-[var(--text-muted)]">({(summary.checkPct || 0).toFixed(1)}%)</span></span>
+            </div>
+          )}
         </>
       )}
 
