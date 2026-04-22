@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
-import { fmt, monthLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
+import { fmt, monthLabel, dayLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
 import ImageGallery from '@/components/ImageGallery';
@@ -180,6 +180,7 @@ export default function ExpensesPage() {
       const payload = {
         store_id: form.store_id,
         month: monthKey,
+        expense_date: form.date || null,
         category,
         amount,
         note: (form.note || '').trim(),
@@ -444,7 +445,7 @@ export default function ExpensesPage() {
     const isFixed = FIXED_EXPENSE_IDS.has(row.category);
     setForm({
       store_id: row.store_id,
-      date: `${row.month}-01`,
+      date: row.expense_date || `${row.month}-01`,
       category: isFixed ? row.category : '__other__',
       customCategory: isFixed ? '' : row.category,
       amount: String(row.amount ?? ''),
@@ -553,7 +554,7 @@ export default function ExpensesPage() {
           sortState={sortState}
           onSortChange={setSortState}
           columns={[
-            { key: 'month', label: 'Date', render: v => monthLabel(v), sortValue: r => r.month },
+            { key: 'month', label: 'Date', render: (v, r) => r.expense_date ? dayLabel(r.expense_date) : monthLabel(v), sortValue: r => r.expense_date || r.month },
             { key: 'store_id', label: 'Store', render: (_,r) => <StoreBadge name={r.stores?.name} color={r.stores?.color} />, sortValue: r => r.stores?.name || '' },
             { key: 'category', label: 'Type', render: renderCatInTable, sortValue: r => catLabel(r.category)?.label || r.category },
             { key: 'amount', label: 'Amount', align: 'right', mono: true, render: v => <span className="text-[var(--color-danger)]">{fmt(v)}</span>, sortValue: r => Number(r.amount || 0) },
