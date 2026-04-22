@@ -1180,7 +1180,9 @@ export default function SalesPage() {
             { key: 'short_over', label: 'S/O', align: 'right', mono: true, render: v => {
               const n = Number(v || 0);
               if (Math.abs(n) < 0.01) return <span className="text-[var(--text-muted)]">{fmt(0)}</span>;
-              return <span className={n < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-warning)]'}>{n < 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
+              // Positive short_over = SHORT (missing cash, red, shown with −).
+              // Negative = OVER (extra cash, green, shown with +).
+              return <span className={n > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}>{n > 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
             } },
           ]} rows={sales.slice(0, 14)} isOwner={false} />
         </div>
@@ -1410,7 +1412,9 @@ export default function SalesPage() {
               if (v == null) return <span className="text-[var(--text-muted)]">—</span>;
               const n = Number(v);
               if (Math.abs(n) < 0.01) return <span className="text-[var(--text-muted)]">{fmt(0)}</span>;
-              return <span className={`font-bold ${n < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-warning)]'}`}>{n < 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
+              // Positive short_over = SHORT (missing cash, red, shown with −).
+              // Negative = OVER (extra cash, green, shown with +).
+              return <span className={`font-bold ${n > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>{n > 0 ? '−' : '+'}{fmt(Math.abs(n))}</span>;
             } },
           { key: '_basket_diff', label: 'Diff', align: 'right', mono: true, sortable: true,
             sortValue: (r) => {
