@@ -510,6 +510,7 @@ export default function ReportsPage() {
         rawPurch: bundle.rawPurch,
         rawExp: bundle.rawExp,
         stores,
+        scopeName: bundle.scopeName,
       }, range);
       pdf.save(`${fileTag(bundle.scopeName)}.pdf`);
     } catch (e) { console.error('PDF generation failed:', e); alert('PDF generation failed: ' + e.message); }

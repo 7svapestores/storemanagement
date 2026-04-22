@@ -57,16 +57,21 @@ function drawBar(doc, x, y, maxW, h, pctFill, color, label, amount) {
   doc.text(amount, x + maxW + 3, y + h / 2 + 2);
 }
 
-export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores }, range) {
+export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTrend, trendStats, cashRecon, insights, watchouts, rawSales, rawPurch, rawExp, stores, scopeName }, range) {
   const doc = new jsPDF('p', 'mm', 'letter');
   const W = doc.internal.pageSize.getWidth();
   let page = 0;
 
+  const isSingleStore = (storeRows?.length === 1);
+  const onlyStore = isSingleStore ? storeRows[0] : null;
+  const scopeLabel = isSingleStore ? (onlyStore?.name || scopeName || 'Store') : 'All Stores';
+
   // ── PAGE 1: COVER ──
   page++;
-  doc.setFillColor(16, 185, 129);
+  const coverColor = isSingleStore ? (hexToRgb(onlyStore.color) || [16, 185, 129]) : [16, 185, 129];
+  doc.setFillColor(...coverColor);
   doc.rect(0, 0, W, 50, 'F');
-  doc.setFillColor(13, 148, 103);
+  doc.setFillColor(Math.max(0, coverColor[0] - 15), Math.max(0, coverColor[1] - 25), Math.max(0, coverColor[2] - 15));
   doc.rect(0, 45, W, 5, 'F');
   doc.setFontSize(28);
   doc.setTextColor(...COLORS.white);
@@ -74,7 +79,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   doc.text('7S STORES', W / 2, 22, { align: 'center' });
   doc.setFontSize(14);
   doc.setFont('helvetica', 'normal');
-  doc.text('Business Performance Report', W / 2, 32, { align: 'center' });
+  doc.text(isSingleStore ? `${onlyStore.name} — Performance Report` : 'Business Performance Report', W / 2, 32, { align: 'center' });
   doc.setFontSize(11);
   doc.text(`${range.start}  to  ${range.end}`, W / 2, 42, { align: 'center' });
 
@@ -85,20 +90,29 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   doc.setTextColor(...COLORS.muted);
   doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, W / 2, 78, { align: 'center' });
 
-  // Store chips
-  const storeColors = {};
-  (stores || []).forEach(s => { storeColors[s.id] = s.color; });
-  let chipX = 40;
-  doc.setFontSize(10);
-  (storeRows || []).forEach((s, i) => {
-    const c = hexToRgb(s.color) || COLORS.muted;
+  // Scope label — either the list of stores in the report, or the single store
+  if (isSingleStore) {
+    const c = hexToRgb(onlyStore.color) || COLORS.muted;
     doc.setFillColor(...c);
-    doc.circle(chipX, 100, 3, 'F');
+    doc.circle(W / 2 - 30, 100, 4, 'F');
     doc.setTextColor(...COLORS.text);
-    doc.text(s.name, chipX + 6, 102);
-    chipX += 42;
-    if (i === 2) { chipX = 60; doc.setFontSize(10); }
-  });
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(onlyStore.name, W / 2 - 22, 102);
+    doc.setFont('helvetica', 'normal');
+  } else {
+    let chipX = 40;
+    doc.setFontSize(10);
+    (storeRows || []).forEach((s, i) => {
+      const c = hexToRgb(s.color) || COLORS.muted;
+      doc.setFillColor(...c);
+      doc.circle(chipX, 100, 3, 'F');
+      doc.setTextColor(...COLORS.text);
+      doc.text(s.name, chipX + 6, 102);
+      chipX += 42;
+      if (i === 2) { chipX = 60; doc.setFontSize(10); }
+    });
+  }
 
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
@@ -172,17 +186,18 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     }
   }
 
-  // ── PAGE 3: STORE PERFORMANCE ──
-  doc.addPage();
-  page++;
-  headerFooter(doc, range, page);
-  doc.setFontSize(16);
-  doc.setTextColor(...COLORS.text);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Store Performance', 20, 22);
-  doc.setFont('helvetica', 'normal');
+  // ── PAGE 3: STORE PERFORMANCE (skipped when only one store, since the
+  // per-store detail page covers the same ground) ──
+  if (storeRows?.length > 1) {
+    doc.addPage();
+    page++;
+    headerFooter(doc, range, page);
+    doc.setFontSize(16);
+    doc.setTextColor(...COLORS.text);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Store Performance', 20, 22);
+    doc.setFont('helvetica', 'normal');
 
-  if (storeRows?.length) {
     autoTable(doc, {
       startY: 28,
       head: [['#', 'Store', 'Revenue', 'Product Buying', 'Expenses', 'Profit', 'Margin']],
