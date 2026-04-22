@@ -1,11 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import { useAuth } from '@/components/AuthProvider';
 import { generatePDF } from './generatePDF';
 import { DateBar, useDateRange, Loading } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
 import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
+import { generateStyledPLReport } from './generateStyledExcel';
 
 export default function ReportsPage() {
   const { supabase, isOwner, effectiveStoreId } = useAuth();
@@ -406,88 +406,28 @@ export default function ReportsPage() {
     downloadCSV(`${fileTag(bundle.scopeName)}.csv`, rows[0], rows.slice(1));
   };
 
-  const handleExportExcel = () => {
-    const bundle = buildExportBundle();
-    const fullRows = buildFullReportRows(bundle);
-    if (!fullRows.length) return;
-    const { rawSales: bSales, rawPurch: bPurch, rawExp: bExp, rawCash: bCash, scopeName } = bundle;
-    const wb = XLSX.utils.book_new();
-
-    // Sheet 1 — Full Report
-    const ws1 = XLSX.utils.aoa_to_sheet(fullRows);
-    // Widen columns so the first sheet is readable.
-    ws1['!cols'] = [
-      { wch: 36 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
-      { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
-    ];
-    XLSX.utils.book_append_sheet(wb, ws1, 'Full Report');
-
-    // Sheet 2 — Daily Sales (raw)
-    const dailySalesRows = [
-      ['Date', 'Store', 'Cash Sales', 'Card Sales', 'CashApp/Check', 'Total Sales', 'Credits', 'Tax', 'Entered By'],
-      ...[...bSales]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .map(s => [
-          s.date,
-          stores.find(st => st.id === s.store_id)?.name || '',
-          Number(s.cash_sales || 0),
-          Number(s.card_sales || 0),
-          Number(s.cashapp_check || 0),
-          Number(s.total_sales || 0),
-          Number(s.credits || 0),
-          Number(s.tax_collected || 0),
-          s.entered_by || '',
-        ]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailySalesRows), 'Daily Sales');
-
-    // Sheet 3 — Purchase Details
-    const purchRows = [
-      ['Week', 'Store', 'Item', 'Vendor', 'Quantity', 'Unit Cost', 'Total Cost'],
-      ...[...bPurch]
-        .sort((a, b) => (b.week_of || '').localeCompare(a.week_of || ''))
-        .map(p => [
-          p.week_of,
-          stores.find(st => st.id === p.store_id)?.name || '',
-          p.item,
-          p.supplier || '',
-          Number(p.quantity || 0),
-          Number(p.unit_cost || 0),
-          Number(p.total_cost || 0),
-        ]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(purchRows), 'Purchase Details');
-
-    // Sheet 4 — Expense Details
-    const expRows = [
-      ['Month', 'Store', 'Category', 'Amount', 'Note'],
-      ...[...bExp]
-        .sort((a, b) => (b.month || '').localeCompare(a.month || ''))
-        .map(e => [
-          e.month,
-          stores.find(st => st.id === e.store_id)?.name || '',
-          EXPENSE_CATEGORIES.find(c => c.id === e.category)?.label || e.category,
-          Number(e.amount || 0),
-          e.note || '',
-        ]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expRows), 'Expense Details');
-
-    // Sheet 5 — Cash Collections
-    const cashRows = [
-      ['Date', 'Store', 'Cash Collected', 'Note'],
-      ...[...bCash]
-        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-        .map(c => [
-          c.date,
-          stores.find(st => st.id === c.store_id)?.name || '',
-          Number(c.cash_collected || 0),
-          c.note || '',
-        ]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cashRows), 'Cash Collections');
-
-    XLSX.writeFile(wb, `${fileTag(scopeName)}.xlsx`);
+  const handleExportExcel = async () => {
+    try {
+      const bundle = {
+        ...buildExportBundle(),
+        expenseCategories: EXPENSE_CATEGORIES,
+        fixedExpenseIds: FIXED_EXPENSE_IDS,
+        stores,
+      };
+      const buffer = await generateStyledPLReport(bundle, range);
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileTag(bundle.scopeName)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('[reports] Excel export failed:', e);
+      alert('Excel export failed: ' + (e?.message || 'unknown'));
+    }
   };
 
   if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
