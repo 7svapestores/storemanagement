@@ -229,8 +229,8 @@ export default function SalesPage() {
     r1Required.forEach(k => { if (form[k] === '') errs[k] = true; });
 
     if (usesReg2) {
-      if (form.r2_net === '')          errs.r2_net = true;
-      if (form.register2_cash === '')  errs.register2_cash = true;
+      // R2 Net and Cash auto-derive from R1 Canceled Basket — cashier only
+      // enters R2 Safe Drop.
       if (form.r2_safe_drop === '')    errs.r2_safe_drop = true;
     }
 
@@ -244,7 +244,7 @@ export default function SalesPage() {
       setFieldErrors(errs);
       setModalError('Please fill all required fields.');
       // Jump to whichever tab has the first error.
-      if (errs.r2_net || errs.register2_cash || errs.r2_safe_drop) {
+      if (errs.r2_safe_drop) {
         setActiveTab('r2');
       } else {
         setActiveTab('r1');
@@ -318,10 +318,12 @@ export default function SalesPage() {
       r1_house_account_name: houseAccounts.length ? (resolveHAName(houseAccounts[0]) || null) : null,
       r1_house_account_amount: haTotal,
       credits: haTotal,
-      // Register 2 (zeros for single-register stores)
-      r2_net: usesReg2 ? num(form.r2_net) : 0,
-      r2_gross: usesReg2 ? num(form.r2_net) : 0, // legacy column kept in sync
-      register2_cash: usesReg2 ? num(form.register2_cash) : 0,
+      // Register 2 (manual cash register). R2 Net and R2 Cash always equal
+      // R1 Canceled Basket: cash rung on R1 is canceled and re-rung on R2.
+      // Zeros for single-register stores.
+      r2_net: usesReg2 ? num(form.r1_canceled_basket) : 0,
+      r2_gross: usesReg2 ? num(form.r1_canceled_basket) : 0, // legacy column kept in sync
+      register2_cash: usesReg2 ? num(form.r1_canceled_basket) : 0,
       r2_safe_drop: usesReg2 ? num(form.r2_safe_drop) : 0,
       register2_card: 0,
       register2_credits: 0,
@@ -572,10 +574,6 @@ export default function SalesPage() {
   const r1HouseAmount  = haTotal;
   const r1Credits      = haTotal;
 
-  const r2Net          = num(form.r2_net);
-  const r2Cash         = num(form.register2_cash);
-  const r2SafeDrop     = num(form.r2_safe_drop);
-
   // Determine the currently-targeted store for form logic (R2 visibility,
   // banner label, save destination). Order of precedence:
   //   - employees: always their own assigned store
@@ -586,6 +584,13 @@ export default function SalesPage() {
     : (editItem?.store_id || effectiveStoreId || formStoreId);
   const currentStoreObj = stores.find(s => s.id === currentStoreId);
   const currentUsesReg2 = !!currentStoreObj?.has_register2;
+
+  // R2 is a manual cash-only register. Cash customers are canceled in R1 and
+  // re-rung on R2, so R2 Net and R2 Cash always equal R1 Canceled Basket.
+  // Cashier only enters R2 Safe Drop.
+  const r2Net          = currentUsesReg2 ? r1CancelBasket : num(form.r2_net);
+  const r2Cash         = currentUsesReg2 ? r1CancelBasket : num(form.register2_cash);
+  const r2SafeDrop     = num(form.r2_safe_drop);
 
   // Short/over — positive = SHORT (red), negative = OVER (green).
   //   r1 = cash_sales - (r1_safe_drop + r1_house_account_amount)
@@ -820,14 +825,17 @@ export default function SalesPage() {
 
         {activeTab === 'r2' && usesReg2 && (
           <div>
+            <div className="bg-sw-blueD/40 border border-sw-blue/20 rounded-lg p-2.5 mb-3 text-[11px] text-sw-sub">
+              R2 is the manual cash register. Net and Cash auto-fill from R1 Canceled Basket — only enter R2 Safe Drop.
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <Field label={<>R2 Net Sales {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_net} onChange={onNum('r2_net')} className={errCls('r2_net')} />
-                {errHint('r2_net')}
+              <Field label={<>R2 Net Sales <span className="text-sw-dim text-[10px]">(auto)</span></>}>
+                <input type="number" value={form.r1_canceled_basket || ''} readOnly tabIndex={-1} className="opacity-60 cursor-not-allowed" placeholder="0.00" />
+                <div className="text-[10px] text-sw-dim mt-1">= R1 Canceled Basket</div>
               </Field>
-              <Field label={<>Cash {reqMark}</>}>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.register2_cash} onChange={onNum('register2_cash')} className={errCls('register2_cash')} />
-                {errHint('register2_cash')}
+              <Field label={<>Cash <span className="text-sw-dim text-[10px]">(auto)</span></>}>
+                <input type="number" value={form.r1_canceled_basket || ''} readOnly tabIndex={-1} className="opacity-60 cursor-not-allowed" placeholder="0.00" />
+                <div className="text-[10px] text-sw-dim mt-1">= R1 Canceled Basket</div>
               </Field>
               <Field label={<>R2 Safe Drop {reqMark}</>}>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.r2_safe_drop} onChange={onNum('r2_safe_drop')} className={errCls('r2_safe_drop')} />
@@ -835,12 +843,12 @@ export default function SalesPage() {
               </Field>
             </div>
 
-            {/* Live R2 short/over preview — R2 Net Sales minus R2 Safe Drop. */}
-            {(form.r2_safe_drop !== '' || form.r2_net !== '') && (
+            {/* Live R2 short/over preview — Canceled Basket minus R2 Safe Drop. */}
+            {(form.r2_safe_drop !== '' || form.r1_canceled_basket !== '') && (
               <div className="mt-3 bg-sw-card2 border border-sw-border rounded-lg p-2.5 flex justify-between items-center">
                 <span className="text-sw-sub text-[11px] font-semibold uppercase">R2 Short/Over</span>
                 {(() => {
-                  const v = (parseFloat(form.r2_net) || 0) - (parseFloat(form.r2_safe_drop) || 0);
+                  const v = (parseFloat(form.r1_canceled_basket) || 0) - (parseFloat(form.r2_safe_drop) || 0);
                   if (Math.abs(v) < 0.01) return <span className="text-sw-dim font-mono font-bold">Matched {fmt(0)}</span>;
                   if (v > 0) return <span className="text-sw-red font-mono font-bold">Short -{fmt(v)}</span>;
                   return <span className="text-sw-green font-mono font-bold">Over +{fmt(Math.abs(v))}</span>;
