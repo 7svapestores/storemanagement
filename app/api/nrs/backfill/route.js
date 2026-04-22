@@ -1,5 +1,5 @@
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { fetchNRSDailyStats, parseNRSStatsToDailySales, applyRegister2AutoSync } from '@/lib/nrs-client';
 import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +45,7 @@ export async function POST(req) {
     return new Response(JSON.stringify({ error: 'store_ids, start_date, end_date required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
   }
 
-  const { data: storesData } = await admin.from('stores').select('id, name, nrs_store_id').in('id', store_ids);
+  const { data: storesData } = await admin.from('stores').select('id, name, nrs_store_id, has_register2').in('id', store_ids);
   const storesWithNrs = (storesData || []).filter(s => s.nrs_store_id);
   const dates = dateRange(start_date, end_date);
 
@@ -81,7 +81,10 @@ export async function POST(req) {
           }
 
           const nrsData = await fetchNRSDailyStats(store.nrs_store_id, date);
-          const parsed = parseNRSStatsToDailySales(nrsData, store.id, date);
+          const parsed = applyRegister2AutoSync(
+            parseNRSStatsToDailySales(nrsData, store.id, date),
+            store.has_register2,
+          );
           parsed.entered_by = userId;
 
           const { data: inserted, error } = await admin.from('daily_sales').insert(parsed).select().single();

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { fetchNRSDailyStats, parseNRSStatsToDailySales, applyRegister2AutoSync } from '@/lib/nrs-client';
 import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 
 export async function POST(req) {
@@ -15,7 +15,7 @@ export async function POST(req) {
     const admin = createAdminClient();
 
     const { data: profile } = await admin.from('profiles').select('id, name, role').eq('id', user.id).single();
-    const { data: store } = await admin.from('stores').select('id, name, nrs_store_id').eq('id', store_id).single();
+    const { data: store } = await admin.from('stores').select('id, name, nrs_store_id, has_register2').eq('id', store_id).single();
     if (!store?.nrs_store_id) return NextResponse.json({ error: 'Store has no NRS ID configured' }, { status: 400 });
 
     const { data: existing } = await admin.from('daily_sales').select('id').eq('store_id', store_id).eq('date', date).maybeSingle();
@@ -24,7 +24,10 @@ export async function POST(req) {
     }
 
     const nrsData = await fetchNRSDailyStats(store.nrs_store_id, date);
-    const parsed = parseNRSStatsToDailySales(nrsData, store_id, date);
+    const parsed = applyRegister2AutoSync(
+      parseNRSStatsToDailySales(nrsData, store_id, date),
+      store.has_register2,
+    );
     parsed.entered_by = user.id;
 
     let result;

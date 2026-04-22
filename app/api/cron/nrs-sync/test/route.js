@@ -1,6 +1,6 @@
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
-import { fetchNRSDailyStats, parseNRSStatsToDailySales } from '@/lib/nrs-client';
+import { fetchNRSDailyStats, parseNRSStatsToDailySales, applyRegister2AutoSync } from '@/lib/nrs-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +29,7 @@ export async function GET(request) {
 
     const { data: stores } = await admin
       .from('stores')
-      .select('id, name, nrs_store_id')
+      .select('id, name, nrs_store_id, has_register2')
       .not('nrs_store_id', 'is', null)
       .order('created_at');
 
@@ -43,7 +43,10 @@ export async function GET(request) {
         }
 
         const nrsData = await fetchNRSDailyStats(store.nrs_store_id, targetDate);
-        const parsed = parseNRSStatsToDailySales(nrsData, store.id, targetDate);
+        const parsed = applyRegister2AutoSync(
+          parseNRSStatsToDailySales(nrsData, store.id, targetDate),
+          store.has_register2,
+        );
         parsed.entered_by = user.id;
 
         const { data: inserted, error } = await admin.from('daily_sales').insert(parsed).select().single();
