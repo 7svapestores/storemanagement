@@ -207,7 +207,7 @@ export default function DashboardPage() {
           <p className="text-[var(--text-muted)] text-[12px] mt-1">Margin: <span className={stats.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>{stats.margin.toFixed(1)}%</span></p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
             <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(stats.totalNet)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">COGS</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(stats.totalPurch)}</p></div>
+            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(stats.totalPurch)}</p></div>
             <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fK(stats.totalExp)}</p></div>
             <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Tax Collected</p><p className="text-[var(--color-info)] text-[16px] font-bold tabular-nums">{fK(stats.totalTax)}</p></div>
           </div>

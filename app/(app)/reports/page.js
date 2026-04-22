@@ -568,7 +568,7 @@ export default function ReportsPage() {
           { id: 'stores', label: '🏪 Stores' },
           { id: 'store-detail', label: '📍 Detail' },
           { id: 'expenses', label: '💸 Expenses' },
-          { id: 'purchases', label: '📦 COGS' },
+          { id: 'purchases', label: '📦 Product Buying' },
           { id: 'watchouts', label: '⚠️ Watchouts' },
         ].map(t => (
           <button
@@ -605,7 +605,7 @@ export default function ReportsPage() {
             )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(summary.totalRevenue)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">COGS</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(summary.totalPurchases)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(summary.totalPurchases)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fK(summary.totalExpenses)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p><p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[16px] font-bold tabular-nums">{summary.margin.toFixed(1)}%</p></div>
             </div>
@@ -613,7 +613,7 @@ export default function ReportsPage() {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <V2StatCard label="Gross Sales" value={fK(summary.totalRevenue)} variant="success" icon="💰" />
-            <V2StatCard label="COGS" value={fK(summary.totalPurchases)} variant="warning" icon="📦" />
+            <V2StatCard label="Product Buying" value={fK(summary.totalPurchases)} variant="warning" icon="📦" />
             <V2StatCard label="Operating Expenses" value={fK(summary.totalExpenses)} variant="danger" icon="📋" />
             <V2StatCard label="Tax Collected" value={fK(summary.totalTax)} variant="info" icon="🏛️" />
           </div>
@@ -649,7 +649,7 @@ export default function ReportsPage() {
         <div className="overflow-x-auto">
           <table>
             <thead>
-              <tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>COGS</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr>
+              <tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>Product Buying</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr>
             </thead>
             <tbody>
               {storeRows.map((s, i) => (
@@ -727,7 +727,7 @@ export default function ReportsPage() {
 
       </>}
 
-      {/* ── TAB: PURCHASES/COGS ─────────────────────── */}
+      {/* ── TAB: PRODUCT BUYING ─────────────────────── */}
       {(activeTab === 'purchases' || activeTab === 'overview') && <>
 
       {/* ── Section 4 — Purchases breakdown ─────────────── */}
@@ -785,7 +785,7 @@ export default function ReportsPage() {
             const cogsPct = rev > 0 ? ((summary.totalPurchases / rev) * 100).toFixed(1) : '0';
             const lines = [
               { label: 'Revenue', amount: rev, pct: '100', color: '#34D399', bold: true },
-              { label: '− COGS (Purchases)', amount: -summary.totalPurchases, pct: cogsPct, color: '#FBBF24' },
+              { label: '− Product Buying', amount: -summary.totalPurchases, pct: cogsPct, color: '#FBBF24' },
               { label: '= Gross Profit', amount: summary.grossProfit, pct: grossPct, color: summary.grossProfit >= 0 ? '#34D399' : '#F87171', bold: true },
               { label: '− Operating Expenses', amount: -summary.totalExpenses, pct: expPct, color: '#F87171' },
               { label: '= Net Profit', amount: summary.netProfit, pct: netPct, color: summary.netProfit >= 0 ? '#34D399' : '#F87171', bold: true },
@@ -933,7 +933,7 @@ export default function ReportsPage() {
 
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
                   <StatCard label="Revenue" value={fK(stRevenue)} icon="💰" color="#34D399" />
-                  <StatCard label="COGS" value={fK(stCOGS)} icon="📦" color="#FBBF24" />
+                  <StatCard label="Product Buying" value={fK(stCOGS)} icon="📦" color="#FBBF24" />
                   <StatCard label="Expenses" value={fK(stExpenses)} icon="📋" color="#F87171" />
                   <StatCard label="Net Profit" value={fK(stNet)} icon={stNet >= 0 ? '✅' : '⚠️'} color={stNet >= 0 ? '#34D399' : '#F87171'} />
                   <StatCard label="Margin" value={`${stMargin}%`} icon="📊" color={Number(stMargin) >= 20 ? '#34D399' : '#FBBF24'} />
@@ -946,7 +946,7 @@ export default function ReportsPage() {
                     <div className="space-y-1.5 text-[12px]">
                       {[
                         { label: 'Revenue', val: stRevenue, color: '#34D399' },
-                        { label: '− COGS', val: -stCOGS, color: '#FBBF24' },
+                        { label: '− Product Buying', val: -stCOGS, color: '#FBBF24' },
                         { label: '= Gross Profit', val: stRevenue - stCOGS, color: '#34D399' },
                         { label: '− Expenses', val: -stExpenses, color: '#F87171' },
                         { label: '= Net Profit', val: stNet, color: stNet >= 0 ? '#34D399' : '#F87171' },
@@ -980,7 +980,7 @@ export default function ReportsPage() {
                   </div>
                   {/* Top vendors */}
                   <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Vendors (COGS)</h3>
+                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Vendors</h3>
                     <div className="space-y-1.5">
                       {stVendors.map(([vend, amt]) => (
                         <div key={vend} className="flex items-center gap-2">

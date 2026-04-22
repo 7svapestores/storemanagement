@@ -118,7 +118,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   if (summary) {
     const bw = 52, bh = 34, gap = 5, startX = 20;
     drawStatBox(doc, startX, 30, bw, bh, 'Revenue', $(summary.totalRevenue), [220, 252, 231]);
-    drawStatBox(doc, startX + bw + gap, 30, bw, bh, 'COGS', $(summary.totalPurchases), [254, 249, 195]);
+    drawStatBox(doc, startX + bw + gap, 30, bw, bh, 'Product Buying', $(summary.totalPurchases), [254, 249, 195]);
     drawStatBox(doc, startX + (bw + gap) * 2, 30, bw, bh, 'Expenses', $(summary.totalExpenses), [254, 226, 226]);
     drawStatBox(doc, startX + 26, 30 + bh + gap, bw, bh, 'Net Profit', $(summary.netProfit), summary.netProfit >= 0 ? [220, 252, 231] : [254, 226, 226]);
     drawStatBox(doc, startX + 26 + bw + gap, 30 + bh + gap, bw, bh, 'Margin', pct(summary.margin), [219, 234, 254], summary.revenueChange != null ? `${summary.revenueChange >= 0 ? '↑' : '↓'} ${Math.abs(summary.revenueChange).toFixed(1)}% vs prev` : '');
@@ -135,7 +135,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     const rev = summary.totalRevenue || 1;
     const lines = [
       { label: 'Revenue', val: summary.totalRevenue, color: COLORS.green },
-      { label: 'COGS', val: summary.totalPurchases, color: COLORS.amber },
+      { label: 'Product Buying', val: summary.totalPurchases, color: COLORS.amber },
       { label: 'Gross Profit', val: summary.grossProfit, color: COLORS.green },
       { label: 'Expenses', val: summary.totalExpenses, color: COLORS.red },
       { label: 'Net Profit', val: summary.netProfit, color: summary.netProfit >= 0 ? COLORS.green : COLORS.red },
@@ -185,7 +185,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   if (storeRows?.length) {
     autoTable(doc, {
       startY: 28,
-      head: [['#', 'Store', 'Revenue', 'COGS', 'Expenses', 'Profit', 'Margin']],
+      head: [['#', 'Store', 'Revenue', 'Product Buying', 'Expenses', 'Profit', 'Margin']],
       body: storeRows.map((s, i) => [
         i === 0 ? '🏆' : String(i + 1),
         s.name, $(s.revenue), $(s.purchases), $(s.expenses), $(s.net), pct(s.margin),
@@ -246,7 +246,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     let vy = (doc.lastAutoTable?.finalY || 28) + 15;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text('Top Vendors (COGS)', 20, vy);
+    doc.text('Top Vendors', 20, vy);
     doc.setFont('helvetica', 'normal');
 
     autoTable(doc, {
@@ -279,7 +279,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
 
     const bw = 32, bh = 28;
     drawStatBox(doc, 20, 28, bw, bh, 'Revenue', $(s.revenue), [220, 252, 231]);
-    drawStatBox(doc, 20 + bw + 4, 28, bw, bh, 'COGS', $(s.purchases), [254, 249, 195]);
+    drawStatBox(doc, 20 + bw + 4, 28, bw, bh, 'Product Buying', $(s.purchases), [254, 249, 195]);
     drawStatBox(doc, 20 + (bw + 4) * 2, 28, bw, bh, 'Expenses', $(s.expenses), [254, 226, 226]);
     drawStatBox(doc, 20 + (bw + 4) * 3, 28, bw, bh, 'Profit', $(s.net), s.net >= 0 ? [220, 252, 231] : [254, 226, 226]);
     drawStatBox(doc, 20 + (bw + 4) * 4, 28, bw, bh, 'Margin', pct(s.margin), [219, 234, 254]);
@@ -289,7 +289,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
     doc.setFontSize(10);
     const stLines = [
       ['Revenue', $(s.revenue)],
-      ['− COGS', $(s.purchases)],
+      ['− Product Buying', $(s.purchases)],
       ['= Gross Profit', $(s.revenue - s.purchases)],
       ['− Expenses', $(s.expenses)],
       ['= Net Profit', $(s.net)],
@@ -388,7 +388,7 @@ export function generatePDF({ summary, storeRows, expenseRows, byVendor, dailyTr
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
   doc.text('Report generated from live data. Sources: NRS POS (7S Agent), manual entries.', 20, wy);
-  doc.text('COGS = Cost of Goods Sold (product purchases). Gross Profit = Revenue - COGS. Net Profit = Gross Profit - Expenses.', 20, wy + 5);
+  doc.text('Product Buying = inventory purchased for resale. Gross Profit = Revenue - Product Buying. Net Profit = Gross Profit - Expenses.', 20, wy + 5);
   doc.text(`Generated on ${new Date().toLocaleString('en-US')} | Total pages: ${page}`, 20, wy + 10);
 
   return doc;
