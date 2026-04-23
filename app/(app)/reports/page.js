@@ -547,21 +547,23 @@ export default function ReportsPage() {
         <>
           <Card padding="lg" className="mb-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(99,91,255,0.12), rgba(124,58,237,0.06))' }}>
             <div className="absolute top-0 right-0 w-40 h-40 opacity-10" style={{ background: 'radial-gradient(circle, var(--brand-primary), transparent 70%)', filter: 'blur(40px)' }} />
-            <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Net Profit · {range.start} to {range.end}</p>
-            <div className="flex items-baseline gap-6 flex-wrap">
-              <p className={`text-[36px] font-bold tracking-tight tabular-nums ${summary.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                {summary.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(summary.netProfit))}
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-6 items-end">
               <div>
-                <p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p>
-                <p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[24px] font-bold tabular-nums leading-none">{summary.margin.toFixed(1)}%</p>
+                <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Net Profit · {range.start} to {range.end}</p>
+                <p className={`text-[36px] font-bold tracking-tight tabular-nums leading-none ${summary.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                  {summary.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(summary.netProfit))}
+                </p>
+                {summary.revenueChange != null && (
+                  <Badge variant={summary.revenueChange >= 0 ? 'success' : 'danger'} className="mt-2">
+                    {summary.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(summary.revenueChange).toFixed(1)}% vs previous
+                  </Badge>
+                )}
+              </div>
+              <div className="sm:border-l sm:pl-6 border-[var(--border-subtle)]">
+                <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Margin</p>
+                <p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[36px] font-bold tracking-tight tabular-nums leading-none">{summary.margin.toFixed(1)}%</p>
               </div>
             </div>
-            {summary.revenueChange != null && (
-              <Badge variant={summary.revenueChange >= 0 ? 'success' : 'danger'} className="mt-2">
-                {summary.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(summary.revenueChange).toFixed(1)}% vs previous
-              </Badge>
-            )}
           </Card>
 
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3">
