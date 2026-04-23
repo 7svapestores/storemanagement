@@ -25,10 +25,8 @@ export default function ReportsPage() {
   const [rawPurch, setRawPurch] = useState([]);
   const [rawExp, setRawExp] = useState([]);
   const [rawCash, setRawCash] = useState([]);
-  // Previous-period aggregates for side-by-side comparisons.
+  // Previous-period aggregate for side-by-side comparison.
   const [byVendorPrev, setByVendorPrev] = useState([]);
-  const [byItem, setByItem] = useState([]);
-  const [byItemPrev, setByItemPrev] = useState([]);
   // Export scope: 'all' to export every store in the loaded range, or a
   // specific store id to export just that store. Overrides the sidebar
   // filter for CSV/Excel/PDF only — does not re-query data.
@@ -62,7 +60,7 @@ export default function ReportsPage() {
           scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
           scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
           scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
-          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier, item').gte('week_of', prev.start).lte('week_of', prev.end)),
+          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier').gte('week_of', prev.start).lte('week_of', prev.end)),
           scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
           scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
           scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
@@ -150,12 +148,8 @@ export default function ReportsPage() {
         };
         const vendAggCur  = aggBy(purchCur, 'supplier');
         const vendAggPrev = aggBy(purchPrev, 'supplier');
-        const itemAggCur  = aggBy(purchCur, 'item');
-        const itemAggPrev = aggBy(purchPrev, 'item');
         setByVendor(Object.entries(vendAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
         setByVendorPrev(Object.entries(vendAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
-        setByItem(Object.entries(itemAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
-        setByItemPrev(Object.entries(itemAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
 
         // ── Section 5 — Daily trend ─────────────────────
         const byDay = {};
@@ -642,29 +636,33 @@ export default function ReportsPage() {
       </Card>
       )}
 
-      {/* ── Section 3 — Expenses drill-down (this vs last period) ── */}
-      <div className="mb-4">
-        <ComparisonList
-          title="Expenses by Category"
-          current={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.current }))}
-          previous={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.previous }))}
+      {/* ── Section 3 — Expenses: this month | last month ────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <PeriodList
+          title="Expenses by Category — This Period"
+          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.current }))}
           empty="No expenses in this period."
+        />
+        <PeriodList
+          title="Expenses by Category — Last Period"
+          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.previous }))}
+          muted
+          empty="No expenses in the previous period."
         />
       </div>
 
-      {/* ── Section 4 — Product Buying drill-down ─────────────────── */}
+      {/* ── Section 4 — Product Buying: this month | last month ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <ComparisonList
-          title="Product Buying by Item"
-          current={byItem}
-          previous={byItemPrev}
-          empty="No purchases."
+        <PeriodList
+          title="Product Buying by Vendor — This Period"
+          rows={byVendor}
+          empty="No purchases in this period."
         />
-        <ComparisonList
-          title="Product Buying by Vendor"
-          current={byVendor}
-          previous={byVendorPrev}
-          empty="No data."
+        <PeriodList
+          title="Product Buying by Vendor — Last Period"
+          rows={byVendorPrev}
+          muted
+          empty="No purchases in the previous period."
         />
       </div>
 
@@ -776,37 +774,35 @@ export default function ReportsPage() {
   );
 }
 
-// Two-column list of amounts for current vs previous period. Rows merge
-// on name and sort by current desc, previous rows with zero current fall
-// to the bottom.
-function ComparisonList({ title, current, previous, limit, empty }) {
-  const prevMap = Object.fromEntries((previous || []).map(r => [r.name, r.total]));
-  const curMap = Object.fromEntries((current || []).map(r => [r.name, r.total]));
-  const names = Array.from(new Set([...(current || []).map(r => r.name), ...(previous || []).map(r => r.name)]));
-  const merged = names.map(name => ({
-    name,
-    current: curMap[name] || 0,
-    previous: prevMap[name] || 0,
-  })).sort((a, b) => (b.current - a.current) || (b.previous - a.previous));
-  const rows = limit ? merged.slice(0, limit) : merged;
+// Single-period list of { name, total } rows, sorted by total desc and with
+// zero rows hidden. Used twice side-by-side to show this period next to last
+// period without merging them into one comparison row.
+function PeriodList({ title, rows, empty, muted }) {
+  const visible = (rows || [])
+    .filter(r => Math.abs(r.total || 0) > 0.005)
+    .sort((a, b) => (b.total || 0) - (a.total || 0));
+  const total = visible.reduce((s, r) => s + (r.total || 0), 0);
+  const amountColor = muted ? 'var(--text-secondary)' : 'var(--color-warning)';
   return (
     <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
       <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">{title}</h3>
-      {rows.length === 0 ? <p className="text-[var(--text-muted)] text-xs">{empty}</p> : (
+      {visible.length === 0 ? <p className="text-[var(--text-muted)] text-xs">{empty}</p> : (
         <>
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-[10px] uppercase font-semibold text-[var(--text-muted)] tracking-wider pb-1 mb-1 border-b border-[var(--border-subtle)]">
+          <div className="grid grid-cols-[1fr_auto] gap-x-3 text-[10px] uppercase font-semibold text-[var(--text-muted)] tracking-wider pb-1 mb-1 border-b border-[var(--border-subtle)]">
             <span>Name</span>
-            <span className="text-right">This period</span>
-            <span className="text-right">Last period</span>
+            <span className="text-right">Amount</span>
           </div>
           <div className="space-y-1">
-            {rows.map((r, i) => (
-              <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-[12px]">
+            {visible.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-3 text-[12px]">
                 <span className="text-[var(--text-primary)] truncate">{r.name}</span>
-                <span className="text-[var(--color-warning)] font-mono text-right tabular-nums">{fmt(r.current)}</span>
-                <span className="text-[var(--text-secondary)] font-mono text-right tabular-nums">{fmt(r.previous)}</span>
+                <span className="font-mono text-right tabular-nums" style={{ color: amountColor }}>{fmt(r.total || 0)}</span>
               </div>
             ))}
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-x-3 text-[12px] pt-2 mt-2 border-t border-[var(--border-subtle)]">
+            <span className="text-[var(--text-muted)] uppercase font-semibold text-[10px] tracking-wider self-center">Total</span>
+            <span className="font-mono font-bold text-right tabular-nums" style={{ color: amountColor }}>{fmt(total)}</span>
           </div>
         </>
       )}
