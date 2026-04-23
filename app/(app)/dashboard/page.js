@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
-import { fmt, weekRangeLabel, today } from '@/lib/utils';
+import { fmt, weekRangeLabel, startOfWeekMonday, today } from '@/lib/utils';
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -98,33 +98,21 @@ export default function DashboardPage() {
           setTopEmployees([]);
         }
 
-        // Always bucket by Monday–Sunday weeks. The user buys stock weekly, so
-        // comparing a full week's sales to that week's purchases is the key
-        // signal. Key = Monday of the week (YYYY-MM-DD).
-        const startOfWeek = (d) => {
-          const dd = new Date(d); const day = dd.getDay();
-          dd.setDate(dd.getDate() - day + (day === 0 ? -6 : 1));
-          return dd.toISOString().split('T')[0];
-        };
-
-        // Pre-seed every week that falls in the range so empty weeks still
-        // appear as zero bars.
+        // Always bucket by Monday–Sunday weeks. Key = Monday of the week.
         const weekMap = {};
-        const seed = new Date(startOfWeek(range.start + 'T12:00:00'));
+        const seed = new Date(startOfWeekMonday(range.start) + 'T12:00:00');
         const endAt = new Date(range.end + 'T12:00:00');
         while (seed <= endAt) {
-          weekMap[seed.toISOString().split('T')[0]] = { sales: 0, purchases: 0 };
+          weekMap[startOfWeekMonday(seed)] = { sales: 0, purchases: 0 };
           seed.setDate(seed.getDate() + 7);
         }
         sales?.forEach(s => {
-          const wk = startOfWeek(s.date);
+          const wk = startOfWeekMonday(s.date);
           if (!weekMap[wk]) weekMap[wk] = { sales: 0, purchases: 0 };
           weekMap[wk].sales += (s.total_sales ?? s.net_sales ?? 0);
         });
         purch?.forEach(p => {
-          // purchases.week_of is already a Monday, but guard just in case.
-          const raw = typeof p.week_of === 'string' ? p.week_of.split('T')[0] : new Date(p.week_of).toISOString().split('T')[0];
-          const wk = startOfWeek(raw);
+          const wk = startOfWeekMonday(p.week_of);
           if (!weekMap[wk]) weekMap[wk] = { sales: 0, purchases: 0 };
           weekMap[wk].purchases += (p.total_cost || p.unit_cost || 0);
         });
