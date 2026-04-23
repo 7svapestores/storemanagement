@@ -308,7 +308,21 @@ export default function DashboardPage() {
             const collected = stats.cashInHand || 0;
             const d = collected - expected;
             const matched = Math.abs(d) < 0.01;
-            const sub = `Expected ${fmt(expected)} · ${matched ? 'Matched' : `${d < 0 ? 'Short' : 'Over'} ${fmt(Math.abs(d))}`}`;
+            const short = d < 0;
+            const sub = (
+              <span>
+                <span className="text-[var(--text-muted)]">Expected </span>
+                <span className="text-[var(--color-info)] font-semibold">{fmt(expected)}</span>
+                {' · '}
+                {matched ? (
+                  <span className="text-[var(--text-muted)] font-semibold">Matched</span>
+                ) : (
+                  <span className={`font-semibold ${short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>
+                    {short ? 'Short' : 'Over'} {fmt(Math.abs(d))}
+                  </span>
+                )}
+              </span>
+            );
             return <V2StatCard className="h-full" label="Cash in Hand" value={fmt(collected)} variant="info" icon="🏦" sub={sub} />;
           })()}
         </div>

@@ -610,13 +610,7 @@ export default function ReportsPage() {
                 value={fmt(cashRecon?.collected || 0)}
                 variant="info"
                 icon="🏦"
-                sub={(() => {
-                  if (!cashRecon) return 'From Cash Collection';
-                  const expected = `Expected ${fmt(cashRecon.expected)}`;
-                  const d = cashRecon.diff;
-                  if (Math.abs(d) < 0.01) return `${expected} · Matched`;
-                  return `${expected} · ${d < 0 ? 'Short' : 'Over'} ${fmt(Math.abs(d))}`;
-                })()}
+                sub={cashRecon ? <CashInHandSub expected={cashRecon.expected} diff={cashRecon.diff} /> : 'From Cash Collection'}
               />
             </a>
           </div>
@@ -751,6 +745,33 @@ export default function ReportsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Sub-line rendered under the Cash in Hand panel. Expected is neutral,
+// Short is red, Over is green, Matched is muted — so the user can see at
+// a glance whether their collected cash lines up with POS cash sales.
+function CashInHandSub({ expected, diff }) {
+  const matched = Math.abs(diff) < 0.01;
+  const short = diff < 0;
+  return (
+    <span>
+      <span className="text-[var(--text-muted)]">Expected </span>
+      <span className="text-[var(--color-info)] font-semibold">{fmt(expected)}</span>
+      {' · '}
+      {matched ? (
+        <span className="text-[var(--text-muted)] font-semibold">Matched</span>
+      ) : (
+        <>
+          <span className={short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}>
+            {short ? 'Short' : 'Over'}{' '}
+          </span>
+          <span className={`font-semibold ${short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>
+            {fmt(Math.abs(diff))}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 
