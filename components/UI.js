@@ -468,10 +468,9 @@ export function TrendChart({ data, height = 170 }) {
   const bw = Math.min(24, Math.max(10, 350 / data.length / 2.5));
 
   const hoverData = hover != null ? data[hover.i] : null;
-  const hoverDiff = hoverData ? (hoverData.diff ?? (hoverData.sales || 0) - (hoverData.purchases || 0)) : 0;
 
   const TOOLTIP_W = 180;
-  const TOOLTIP_H = 96;
+  const TOOLTIP_H = 76;
 
   const updateHover = (e, i) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -511,18 +510,14 @@ export function TrendChart({ data, height = 170 }) {
           <div className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{hoverData.label || weekRangeLabel(hoverData.week)}</div>
           <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Sales</span><span className="font-mono" style={{ color: 'var(--color-success)' }}>{fmt(hoverData.sales || 0)}</span></div>
           <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Purchases</span><span className="font-mono" style={{ color: 'var(--color-warning)' }}>{fmt(hoverData.purchases || 0)}</span></div>
-          <div className="flex justify-between gap-4 pt-1 mt-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-            <span style={{ color: 'var(--text-muted)' }}>Net</span>
-            <span className="font-mono font-bold" style={{ color: hoverDiff < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span>
-          </div>
         </div>
       )}
       <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 78 : 'auto' }}>
         {data.map((d, i) => {
-          const pH = ((d.purchases || 0) / mx) * (height - 36);
-          const sH = ((d.sales || 0) / mx) * (height - 36);
-          const loss = (d.diff || d.sales - d.purchases) < 0;
-          const diff = d.diff ?? (d.sales || 0) - (d.purchases || 0);
+          const purchases = d.purchases || 0;
+          const sales = d.sales || 0;
+          const pH = (purchases / mx) * (height - 48);
+          const sH = (sales / mx) * (height - 48);
           return (
             <div
               key={i}
@@ -531,11 +526,12 @@ export function TrendChart({ data, height = 170 }) {
               onMouseMove={(e) => updateHover(e, i)}
               onMouseLeave={() => setHover(h => (h && h.i === i ? null : h))}
             >
-              <div className={`text-[9px] font-mono font-bold px-1 rounded ${loss ? 'text-sw-red bg-sw-redD' : 'text-sw-green bg-sw-greenD'}`}>
-                {loss ? '−' : '+'}{fmt(Math.abs(diff))}
+              <div className="flex flex-col items-center leading-tight text-[9px] font-mono font-bold whitespace-nowrap">
+                <span className="text-sw-green">{fmt(sales)}</span>
+                <span className="text-sw-amber">{fmt(purchases)}</span>
               </div>
               <div className="flex items-end gap-0.5">
-                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: loss ? '#F87171bb' : '#FBBF2488' }} />
+                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: '#FBBF2488' }} />
                 <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
               </div>
               <span className="text-[8px] text-sw-dim whitespace-nowrap">{d.label || weekRangeLabel(d.week)}</span>
