@@ -512,27 +512,30 @@ export function TrendChart({ data, height = 170 }) {
           <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Purchases</span><span className="font-mono" style={{ color: 'var(--color-warning)' }}>{fmt(hoverData.purchases || 0)}</span></div>
         </div>
       )}
-      <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 78 : 'auto' }}>
+      <div className="flex items-end gap-3 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 130 : 'auto' }}>
         {data.map((d, i) => {
           const purchases = d.purchases || 0;
           const sales = d.sales || 0;
-          const pH = (purchases / mx) * (height - 48);
-          const sH = (sales / mx) * (height - 48);
+          const barsH = height - 30;
+          const pH = (purchases / mx) * (barsH - 14);
+          const sH = (sales / mx) * (barsH - 14);
           return (
             <div
               key={i}
-              className="flex flex-col items-center gap-0.5 cursor-pointer"
+              className="flex flex-col items-center gap-1 cursor-pointer"
               onMouseEnter={(e) => updateHover(e, i)}
               onMouseMove={(e) => updateHover(e, i)}
               onMouseLeave={() => setHover(h => (h && h.i === i ? null : h))}
             >
-              <div className="flex flex-col items-center leading-tight text-[9px] font-mono font-bold whitespace-nowrap">
-                <span className="text-sw-green">{fmt(sales)}</span>
-                <span className="text-sw-amber">{fmt(purchases)}</span>
-              </div>
-              <div className="flex items-end gap-0.5">
-                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: '#FBBF2488' }} />
-                <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
+              <div className="flex items-end gap-2" style={{ height: barsH }}>
+                <div className="flex flex-col items-center justify-end h-full">
+                  {purchases > 0 && <span className="text-[9px] font-mono font-bold text-sw-amber whitespace-nowrap leading-tight mb-0.5">{fmt(purchases)}</span>}
+                  <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: '#FBBF2488' }} />
+                </div>
+                <div className="flex flex-col items-center justify-end h-full">
+                  {sales > 0 && <span className="text-[9px] font-mono font-bold text-sw-green whitespace-nowrap leading-tight mb-0.5">{fmt(sales)}</span>}
+                  <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
+                </div>
               </div>
               <span className="text-[8px] text-sw-dim whitespace-nowrap">{d.label || weekRangeLabel(d.week)}</span>
             </div>

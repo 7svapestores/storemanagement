@@ -213,7 +213,8 @@ export default function DashboardPage() {
 
   if (loading) return <Loading />;
 
-  const totalToday = todaySales.reduce((s, r) => s + (r.total_sales ?? r.gross_sales ?? 0), 0);
+  const rangeDays = Math.max(1, Math.round((new Date(range.end + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
+  const dailyAvg = stats ? (stats.totalNet || 0) / rangeDays : 0;
 
   return (
     <div>
@@ -279,9 +280,9 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
           <V2StatCard label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
-          <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" />
+          <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" sub={`Daily avg ${fmt(dailyAvg)} · ${rangeDays} day${rangeDays === 1 ? '' : 's'}`} />
           {(() => {
             // Convention: positive short_over = SHORT (missing cash, red with −),
             // negative = OVER (extra cash, green with +), zero = matched.
@@ -293,7 +294,6 @@ export default function DashboardPage() {
             const icon = matched ? '⚖️' : short ? '🔴' : '🟢';
             return <V2StatCard label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
           })()}
-          <V2StatCard label="Today" value={fmt(totalToday)} variant={totalToday > 0 ? 'success' : 'warning'} icon="📅" />
         </div>
       )}
 
