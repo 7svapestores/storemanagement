@@ -2,9 +2,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { generatePDF } from './generatePDF';
-import { DateBar, useDateRange, Loading } from '@/components/UI';
+import { DateBar, useDateRange, Loading, StorePills, StatCard } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
-import { fmt, fK, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
+import { fmt, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
 import { generateStyledPLReport } from './generateStyledExcel';
 
 export default function ReportsPage() {
@@ -105,7 +105,10 @@ export default function ReportsPage() {
         });
 
         // ── Section 2 — Store breakdown ─────────────────
-        const rows = (st || []).map(s => {
+        // When a single store is scoped, only build a row for that store —
+        // otherwise the Stores table renders empty rows for everyone else.
+        const storesInScope = filterStoreId ? (st || []).filter(s => s.id === filterStoreId) : (st || []);
+        const rows = storesInScope.map(s => {
           const storeSales = (salesCur || []).filter(r => r.store_id === s.id);
           const rev = storeSales.reduce((a, r) => a + (r.total_sales || 0), 0);
           const cash = storeSales.reduce((a, r) => a + (r.cash_sales || 0), 0);
@@ -476,7 +479,7 @@ export default function ReportsPage() {
     if (expRatio > 35) insights.push({ type: 'warn', text: `Operating expenses at ${expRatio.toFixed(0)}% of revenue (target: <30%)` });
     if (summary.netProfit > 0 && trendStats?.dayCount) {
       const dailyProfit = summary.netProfit / trendStats.dayCount;
-      insights.push({ type: 'info', text: `On track for ~${fK(dailyProfit * 30)}/month net profit` });
+      insights.push({ type: 'info', text: `On track for ~${fmt(dailyProfit * 30)}/month net profit` });
     }
     expenseRows.forEach(r => {
       if (r.previous > 100 && r.change > 30) insights.push({ type: 'warn', text: `${r.label} expenses up ${r.change.toFixed(0)}% vs previous period` });
@@ -523,26 +526,21 @@ export default function ReportsPage() {
         <div>
           <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Reports / P&L</p>
           <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Business Performance Report</h1>
-          <p className="text-[var(--text-secondary)] text-[12px]">{range.start} to {range.end} · {storeRows.length} stores</p>
+          <p className="text-[var(--text-secondary)] text-[12px]">{range.start} to {range.end} · {storeRows.length} {storeRows.length === 1 ? 'store' : 'stores'}</p>
         </div>
         <div className="flex gap-1.5 flex-wrap items-center print:hidden">
-          <select
-            value={exportScope}
-            onChange={(e) => setExportScope(e.target.value)}
-            className="px-2 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-primary)] text-[11px] font-semibold"
-            title="Scope the P&L view and the downloads to one store"
-          >
-            <option value="all">All Stores</option>
-            {stores.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
           <button onClick={handlePDF} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white" style={{ background: 'var(--brand-primary)' }}>Export PDF</button>
           <button onClick={handleExportExcel} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">Excel</button>
           <button onClick={handleExportCSV} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">CSV</button>
           <button onClick={() => window.print()} className="px-3 py-1.5 rounded-lg bg-[var(--bg-hover)] border border-[var(--border-default)] text-[var(--text-secondary)] text-[11px] font-semibold">Print</button>
         </div>
       </div>
+
+      <StorePills
+        stores={stores}
+        value={exportScope === 'all' ? '' : exportScope}
+        onChange={(v) => { setExportScope(v || 'all'); setSelectedStoreId(v || ''); }}
+      />
 
       {loadError && <V2Alert type="danger" className="mb-3">{loadError}</V2Alert>}
       {summary && (
@@ -596,18 +594,18 @@ export default function ReportsPage() {
               </Badge>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(summary.totalRevenue)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(summary.totalPurchases)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fK(summary.totalExpenses)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(summary.totalRevenue)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fmt(summary.totalPurchases)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fmt(summary.totalExpenses)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p><p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[16px] font-bold tabular-nums">{summary.margin.toFixed(1)}%</p></div>
             </div>
           </Card>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-            <V2StatCard label="Gross Sales" value={fK(summary.totalRevenue)} variant="success" icon="💰" />
-            <V2StatCard label="Product Buying" value={fK(summary.totalPurchases)} variant="warning" icon="📦" />
-            <V2StatCard label="Operating Expenses" value={fK(summary.totalExpenses)} variant="danger" icon="📋" />
-            <V2StatCard label="Tax Collected" value={fK(summary.totalTax)} variant="info" icon="🏛️" />
+            <V2StatCard label="Gross Sales" value={fmt(summary.totalRevenue)} variant="success" icon="💰" />
+            <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
+            <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
+            <V2StatCard label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
           </div>
 
           {summary.totalRevenue > 0 && (
@@ -933,10 +931,10 @@ export default function ReportsPage() {
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
-                  <StatCard label="Revenue" value={fK(stRevenue)} icon="💰" color="#34D399" />
-                  <StatCard label="Product Buying" value={fK(stCOGS)} icon="📦" color="#FBBF24" />
-                  <StatCard label="Expenses" value={fK(stExpenses)} icon="📋" color="#F87171" />
-                  <StatCard label="Net Profit" value={fK(stNet)} icon={stNet >= 0 ? '✅' : '⚠️'} color={stNet >= 0 ? '#34D399' : '#F87171'} />
+                  <StatCard label="Revenue" value={fmt(stRevenue)} icon="💰" color="#34D399" />
+                  <StatCard label="Product Buying" value={fmt(stCOGS)} icon="📦" color="#FBBF24" />
+                  <StatCard label="Expenses" value={fmt(stExpenses)} icon="📋" color="#F87171" />
+                  <StatCard label="Net Profit" value={fmt(stNet)} icon={stNet >= 0 ? '✅' : '⚠️'} color={stNet >= 0 ? '#34D399' : '#F87171'} />
                   <StatCard label="Margin" value={`${stMargin}%`} icon="📊" color={Number(stMargin) >= 20 ? '#34D399' : '#FBBF24'} />
                 </div>
 
