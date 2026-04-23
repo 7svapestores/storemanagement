@@ -604,7 +604,20 @@ export default function ReportsPage() {
               <V2StatCard className="h-full" label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
             </div>
             <a href="#drill-cash" className="block h-full transition-transform hover:-translate-y-0.5">
-              <V2StatCard className="h-full" label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+              <V2StatCard
+                className="h-full"
+                label="Cash in Hand"
+                value={fmt(cashRecon?.collected || 0)}
+                variant="info"
+                icon="🏦"
+                sub={(() => {
+                  if (!cashRecon) return 'From Cash Collection';
+                  const expected = `Expected ${fmt(cashRecon.expected)}`;
+                  const d = cashRecon.diff;
+                  if (Math.abs(d) < 0.01) return `${expected} · Matched`;
+                  return `${expected} · ${d < 0 ? 'Short' : 'Over'} ${fmt(Math.abs(d))}`;
+                })()}
+              />
             </a>
           </div>
 

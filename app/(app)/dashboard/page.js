@@ -303,7 +303,14 @@ export default function DashboardPage() {
             const icon = matched ? '⚖️' : short ? '🔴' : '🟢';
             return <V2StatCard className="h-full" label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
           })()}
-          <V2StatCard className="h-full" label="Cash in Hand" value={fmt(stats.cashInHand || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+          {(() => {
+            const expected = stats.totalCash || 0;
+            const collected = stats.cashInHand || 0;
+            const d = collected - expected;
+            const matched = Math.abs(d) < 0.01;
+            const sub = `Expected ${fmt(expected)} · ${matched ? 'Matched' : `${d < 0 ? 'Short' : 'Over'} ${fmt(Math.abs(d))}`}`;
+            return <V2StatCard className="h-full" label="Cash in Hand" value={fmt(collected)} variant="info" icon="🏦" sub={sub} />;
+          })()}
         </div>
       )}
 
