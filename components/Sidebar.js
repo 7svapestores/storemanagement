@@ -3,6 +3,14 @@ import { useAuth } from './AuthProvider';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import ThemeToggle from './ThemeToggle';
+import {
+  LayoutDashboard, TrendingUp, DollarSign, Coins, ShoppingCart, FileText,
+  Receipt, BarChart3, GitCompare, Activity, Download, Package, Users, Shield,
+  Mail, Zap, Bot, RefreshCw, Settings, LogOut, Power, MoreHorizontal,
+} from 'lucide-react';
+
+const ICON_SIZE = 16;
+const ICON_STROKE = 1.5;
 
 export default function Sidebar({ selectedStore, onStoreChange }) {
   const { profile, signOut, isOwner, supabase } = useAuth();
@@ -15,30 +23,62 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     supabase.from('stores').select('*').order('created_at').then(({ data }) => setStores(data || []));
   }, []);
 
-  const nav = isOwner ? [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
-    { path: '/trends',    icon: '📈', label: 'Trends' },
-    { path: '/sales',     icon: '💰', label: 'Daily Sales' },
-    { path: '/cash',      icon: '🏦', label: 'Cash Collection' },
-    { path: '/purchases', icon: '🛒', label: 'Product Buying' },
-    { path: '/invoices',  icon: '🧾', label: 'Invoices' },
-    { path: '/expenses',  icon: '📋', label: 'Expenses' },
-    { path: '/reports',   icon: '📑', label: 'P&L Report' },
-    { path: '/compare',   icon: '📊', label: 'Compare Stores' },
-    { path: '/activity',  icon: '🕐', label: 'Activity Log' },
-    { path: '/exports',   icon: '📥', label: 'Export Data' },
-    { path: '/inventory',        icon: '📦', label: 'Inventory' },
-    { path: '/employee-tracking', icon: '🕐', label: 'Employee Tracking' },
-    { path: '/team',             icon: '👤', label: 'Admin' },
-    { path: '/email',            icon: '📧', label: 'Email Reports' },
-    { path: '/nrs-backfill',       icon: '⚡', label: 'NRS Backfill' },
-    { path: '/nrs-sync-history',  icon: '🤖', label: '7S Agent Logs' },
-    { path: '/cron-setup',        icon: '🔄', label: '7S Agent Setup' },
-    { path: '/settings',         icon: '⚙️', label: 'Settings' },
-  ] : [
-    { path: '/sales',     icon: '💰', label: 'Enter Sales' },
-    { path: '/inventory', icon: '📦', label: 'Inventory' },
+  // Grouped nav for desktop sidebar. Icon is a Lucide component.
+  const ownerGroups = [
+    {
+      label: 'Overview',
+      items: [
+        { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { path: '/trends',    icon: TrendingUp,      label: 'Trends' },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { path: '/sales',     icon: DollarSign,   label: 'Daily Sales' },
+        { path: '/cash',      icon: Coins,        label: 'Cash Collection' },
+        { path: '/purchases', icon: ShoppingCart, label: 'Product Buying' },
+        { path: '/invoices',  icon: FileText,     label: 'Invoices' },
+        { path: '/expenses',  icon: Receipt,      label: 'Expenses' },
+      ],
+    },
+    {
+      label: 'Reports',
+      items: [
+        { path: '/reports',  icon: BarChart3,  label: 'P&L Report' },
+        { path: '/compare',  icon: GitCompare, label: 'Compare Stores' },
+        { path: '/activity', icon: Activity,   label: 'Activity Log' },
+        { path: '/exports',  icon: Download,   label: 'Export Data' },
+      ],
+    },
+    {
+      label: 'Management',
+      items: [
+        { path: '/inventory',         icon: Package, label: 'Inventory' },
+        { path: '/employee-tracking', icon: Users,   label: 'Employee Tracking' },
+        { path: '/team',              icon: Shield,  label: 'Admin' },
+        { path: '/email',             icon: Mail,    label: 'Email Reports' },
+      ],
+    },
+    {
+      label: 'Agent',
+      items: [
+        { path: '/nrs-backfill',      icon: Zap,     label: 'NRS Backfill' },
+        { path: '/nrs-sync-history',  icon: Bot,     label: '7S Agent Logs' },
+        { path: '/cron-setup',        icon: RefreshCw, label: '7S Agent Setup' },
+        { path: '/settings',          icon: Settings, label: 'Settings' },
+      ],
+    },
   ];
+  const employeeGroups = [{
+    label: 'Work',
+    items: [
+      { path: '/sales',     icon: DollarSign, label: 'Enter Sales' },
+      { path: '/inventory', icon: Package,    label: 'Inventory' },
+    ],
+  }];
+  const groups = isOwner ? ownerGroups : employeeGroups;
+  const nav = groups.flatMap(g => g.items);
 
   // Bottom nav shows 4 primary items + More (owner only); employees just get their single item.
   const primaryPaths = ['/dashboard', '/sales', '/cash', '/inventory'];
@@ -82,18 +122,37 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
           </div>
         )}
 
-        {/* Nav */}
+        {/* Nav — grouped with section labels, Lucide icons, active accent bar */}
         <nav className="p-1.5 flex-1">
-          {nav.map(n => {
-            const active = pathname === n.path;
-            return (
-              <button key={n.path} onClick={() => router.push(n.path)}
-                className={`w-full flex items-center gap-2 py-[7px] px-2.5 mb-px rounded-md text-[12px] text-left transition-colors
-                  ${active ? 'bg-sw-blueD text-sw-blue font-semibold border border-sw-blue/20' : 'text-sw-sub border border-transparent hover:bg-sw-card2'}`}>
-                <span className="text-[13px]">{n.icon}</span>{n.label}
-              </button>
-            );
-          })}
+          {groups.map(group => (
+            <div key={group.label} className="mb-3">
+              <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
+                {group.label}
+              </div>
+              {group.items.map(n => {
+                const active = pathname === n.path;
+                const Icon = n.icon;
+                return (
+                  <button
+                    key={n.path}
+                    onClick={() => router.push(n.path)}
+                    className="w-full relative flex items-center gap-2 py-[7px] pl-3 pr-2 mb-px rounded-md text-[12px] text-left transition-colors"
+                    style={{
+                      color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      background: active ? 'var(--bg-hover)' : 'transparent',
+                    }}
+                    aria-label={n.label}
+                  >
+                    {active && (
+                      <span aria-hidden="true" className="absolute left-0 top-1 bottom-1 rounded-r" style={{ width: 2, background: 'var(--color-success)' }} />
+                    )}
+                    <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE} className="flex-shrink-0" />
+                    <span className="truncate">{n.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* User */}
@@ -113,9 +172,10 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
           </div>
           <button
             onClick={signOut}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-md text-[12px] font-bold bg-sw-redD text-sw-red border border-sw-red/30 hover:bg-sw-red/20 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-md text-[12px] font-semibold bg-sw-redD text-sw-red border border-sw-red/30 hover:bg-sw-red/20 transition-colors"
+            aria-label="Sign out"
           >
-            <span className="text-[13px]">⏻</span>
+            <LogOut size={ICON_SIZE} strokeWidth={ICON_STROKE} />
             Sign Out
           </button>
         </div>
@@ -149,27 +209,31 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-sw-card border-t border-sw-border flex items-stretch h-[60px] pb-[env(safe-area-inset-bottom)]">
         {primary.map(n => {
           const active = pathname === n.path;
+          const Icon = n.icon;
           return (
             <button key={n.path} onClick={() => go(n.path)}
               className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px]
-                ${active ? 'text-sw-blue' : 'text-sw-sub'}`}>
-              <span className="text-[18px] leading-none">{n.icon}</span>
+                ${active ? 'text-sw-blue' : 'text-sw-sub'}`}
+              aria-label={n.label}>
+              <Icon size={20} strokeWidth={ICON_STROKE} />
               <span className="text-[9px] font-semibold uppercase tracking-wide">{n.label.split(' ')[0]}</span>
             </button>
           );
         })}
         {overflow.length > 0 && (
           <button onClick={() => setMoreOpen(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-sw-sub">
-            <span className="text-[18px] leading-none">⋯</span>
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-sw-sub"
+            aria-label="More options">
+            <MoreHorizontal size={20} strokeWidth={ICON_STROKE} />
             <span className="text-[9px] font-semibold uppercase tracking-wide">More</span>
           </button>
         )}
         {/* Employees have no overflow menu — give them a direct Sign Out tab. */}
         {!isOwner && (
           <button onClick={signOut}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-sw-red">
-            <span className="text-[18px] leading-none">⏻</span>
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] text-sw-red"
+            aria-label="Sign out">
+            <Power size={20} strokeWidth={ICON_STROKE} />
             <span className="text-[9px] font-semibold uppercase tracking-wide">Sign Out</span>
           </button>
         )}
@@ -197,18 +261,21 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
             <div className="grid grid-cols-3 gap-2">
               {overflow.map(n => {
                 const active = pathname === n.path;
+                const Icon = n.icon;
                 return (
                   <button key={n.path} onClick={() => go(n.path)}
                     className={`flex flex-col items-center justify-center gap-1 p-3 rounded-lg border min-h-[72px]
-                      ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue/20' : 'text-sw-sub border-sw-border bg-sw-card2'}`}>
-                    <span className="text-xl">{n.icon}</span>
+                      ${active ? 'bg-sw-blueD text-sw-blue border-sw-blue/20' : 'text-sw-sub border-sw-border bg-sw-card2'}`}
+                    aria-label={n.label}>
+                    <Icon size={22} strokeWidth={ICON_STROKE} />
                     <span className="text-[10px] font-semibold text-center leading-tight">{n.label}</span>
                   </button>
                 );
               })}
               <button onClick={() => { setMoreOpen(false); signOut(); }}
-                className="flex flex-col items-center justify-center gap-1 p-3 rounded-lg border text-sw-red border-sw-red/20 bg-sw-redD min-h-[72px]">
-                <span className="text-xl">⏻</span>
+                className="flex flex-col items-center justify-center gap-1 p-3 rounded-lg border text-sw-red border-sw-red/20 bg-sw-redD min-h-[72px]"
+                aria-label="Logout">
+                <Power size={22} strokeWidth={ICON_STROKE} />
                 <span className="text-[10px] font-semibold">Logout</span>
               </button>
             </div>

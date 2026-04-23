@@ -16,6 +16,7 @@
   --text-primary: #E2E8F0;
   --text-secondary: #94A3B8;
   --text-muted: #475569;
+  --text-dim: #52525b;
   --text-disabled: #334155;
   --brand-primary: #39FF14;
   --brand-primary-hover: #4dff33;
@@ -27,6 +28,20 @@
   --color-danger-bg: rgba(248,113,113,0.10);
   --color-info: #3b82f6;
   --color-info-bg: rgba(59,130,246,0.10);
+  /* Brand — "Vape Love" */
+  --brand-pink: #ec4899;
+  --brand-purple: #a855f7;
+  --brand-gradient: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+  /* Store colors — preserved mapping */
+  --store-bells: #ef4444;
+  --store-kerens: #3b82f6;
+  --store-denison: #22c55e;
+  --store-reno: #f59e0b;
+  --store-troup: #a855f7;
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 }
 
 [data-theme='light'] {

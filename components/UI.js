@@ -466,20 +466,44 @@ export function TrendChart({ data, height = 170 }) {
   const mx = Math.max(...data.flatMap(d => [d.purchases || 0, d.sales || 0]), 1);
   const bw = Math.min(24, Math.max(10, 350 / data.length / 2.5));
 
+  // Highlight the best (largest positive diff) and worst (most negative)
+  // bars only — other bars have no label above them.
+  let bestIdx = -1, worstIdx = -1;
+  data.forEach((d, i) => {
+    const diff = d.diff ?? (d.sales || 0) - (d.purchases || 0);
+    if (bestIdx === -1 || diff > (data[bestIdx].diff ?? (data[bestIdx].sales || 0) - (data[bestIdx].purchases || 0))) bestIdx = i;
+    if (worstIdx === -1 || diff < (data[worstIdx].diff ?? (data[worstIdx].sales || 0) - (data[worstIdx].purchases || 0))) worstIdx = i;
+  });
+
   const hoverData = hover != null ? data[hover] : null;
   const hoverDiff = hoverData ? (hoverData.diff ?? (hoverData.sales || 0) - (hoverData.purchases || 0)) : 0;
 
   return (
     <div className="overflow-x-auto relative">
-      {/* Custom hover tooltip — shows week, sales, purchases, diff with full numbers */}
+      {/* Custom hover tooltip — spec-compliant card with monospace numbers */}
       {hoverData && (
-        <div className="absolute top-1 right-2 z-10 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-lg shadow-lg p-2.5 text-[11px] pointer-events-none" style={{ minWidth: 160 }}>
-          <div className="text-[var(--text-primary)] font-bold mb-1">{hoverData.label || weekLabel(hoverData.week)}</div>
-          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Sales</span><span className="font-mono text-[var(--color-success)]">{fmt(hoverData.sales || 0)}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Purchases</span><span className="font-mono text-[var(--color-warning)]">{fmt(hoverData.purchases || 0)}</span></div>
-          <div className="flex justify-between gap-4 border-t border-[var(--border-subtle)] mt-1 pt-1"><span className="text-[var(--text-muted)]">Net</span><span className={`font-mono font-bold ${hoverDiff < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span></div>
+        <div
+          className="absolute top-1 right-2 z-10 pointer-events-none"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)',
+            padding: 12,
+            fontSize: 12,
+            minWidth: 170,
+          }}
+        >
+          <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{hoverData.label || weekLabel(hoverData.week)}</div>
+          <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Sales</span><span className="font-mono" style={{ color: 'var(--color-success)' }}>{fmt(hoverData.sales || 0)}</span></div>
+          <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Purchases</span><span className="font-mono" style={{ color: 'var(--color-warning)' }}>{fmt(hoverData.purchases || 0)}</span></div>
+          <div className="flex justify-between gap-4 pt-1 mt-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Net</span>
+            <span className="font-mono font-medium" style={{ color: hoverDiff < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span>
+          </div>
         </div>
       )}
+      {/* Zero reference line (dashed) */}
+      <div className="absolute left-0 right-0 pointer-events-none" style={{ top: height - 16, borderTop: '1px dashed var(--border-default)', opacity: 0.6 }} />
       <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 60 : 'auto' }}>
         {data.map((d, i) => {
           const pH = ((d.purchases || 0) / mx) * (height - 36);
@@ -487,6 +511,7 @@ export function TrendChart({ data, height = 170 }) {
           const loss = (d.diff || d.sales - d.purchases) < 0;
           const diff = d.diff ?? (d.sales || 0) - (d.purchases || 0);
           const titleText = `${d.label || weekLabel(d.week)}\nSales: ${fmt(d.sales || 0)}\nPurchases: ${fmt(d.purchases || 0)}\nNet: ${diff < 0 ? '−' : '+'}${fmt(Math.abs(diff))}`;
+          const isHighlight = (i === bestIdx && diff > 0) || (i === worstIdx && diff < 0);
           return (
             <div
               key={i}
@@ -495,12 +520,14 @@ export function TrendChart({ data, height = 170 }) {
               onMouseLeave={() => setHover(h => h === i ? null : h)}
               title={titleText}
             >
-              <div className={`text-[9px] font-mono font-bold px-1 rounded ${loss ? 'text-sw-red bg-sw-redD' : 'text-sw-green bg-sw-greenD'}`}>
-                {loss ? '−' : '+'}{fmt(Math.abs(diff))}
-              </div>
+              {isHighlight ? (
+                <div className={`text-[9px] font-mono font-medium px-1 rounded`} style={{ color: loss ? 'var(--color-danger)' : 'var(--color-success)', background: loss ? 'var(--color-danger-bg)' : 'var(--color-success-bg)' }}>
+                  {loss ? '−' : '+'}{fmt(Math.abs(diff))}
+                </div>
+              ) : <div className="h-[14px]" />}
               <div className="flex items-end gap-0.5">
-                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: loss ? '#F87171bb' : '#FBBF2488' }} />
-                <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
+                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: 2, background: loss ? '#F87171bb' : '#FBBF2488' }} />
+                <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: 2, background: '#34D39999' }} />
               </div>
               <span className="text-[8px] text-sw-dim">{d.label || weekLabel(d.week)}</span>
             </div>
@@ -508,8 +535,8 @@ export function TrendChart({ data, height = 170 }) {
         })}
       </div>
       <div className="flex justify-center gap-4 mt-2">
-        <span className="flex items-center gap-1 text-[10px] text-sw-sub"><span className="w-2 h-2 rounded-sm bg-sw-amber" />Purchases</span>
-        <span className="flex items-center gap-1 text-[10px] text-sw-sub"><span className="w-2 h-2 rounded-sm bg-sw-green" />Sales</span>
+        <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}><span className="w-2 h-2 rounded-sm" style={{ background: '#FBBF24' }} />Purchases</span>
+        <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}><span className="w-2 h-2 rounded-sm" style={{ background: '#34D399' }} />Sales</span>
       </div>
     </div>
   );
@@ -945,20 +972,22 @@ export function StoreBadge({ name, color }) {
   );
 }
 
-// ── Store Pills — horizontal pill row: [All Stores] [• Bells] [• Kerens] … ──
+// ── Store Pills — rounded-full pill row: [All Stores] [• Bells] [• Kerens] … ──
 // Single-select. Clicking the active pill again unselects (returns to All).
 // Pass `showAll={false}` to hide the All Stores pill.
 export function StorePills({ stores = [], value = '', onChange, showAll = true, className = '' }) {
-  const pillBase = 'px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors';
-  const inactive = 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]';
+  const pillBase = 'rounded-full text-[13px] font-medium whitespace-nowrap flex-shrink-0 transition-colors';
+  const inactivePill = { background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' };
+  const activeAll = { background: 'var(--color-success)', color: '#052e16', border: '1px solid var(--color-success)' };
+  const activeStore = (color) => ({ background: color || 'var(--color-success)', color: '#0a0a0b', border: `1px solid ${color || 'var(--color-success)'}` });
   return (
-    <div className={`flex gap-1.5 overflow-x-auto mb-3 pb-1 ${className}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className={`flex gap-1.5 overflow-x-auto pb-1 mb-3 ${className}`} style={{ WebkitOverflowScrolling: 'touch' }}>
       {showAll && (
         <button
           type="button"
           onClick={() => onChange?.('')}
-          className={`${pillBase} ${!value ? 'text-white shadow-sm' : inactive}`}
-          style={!value ? { background: 'var(--brand-primary)' } : undefined}
+          className={pillBase}
+          style={{ padding: '6px 14px', ...(!value ? activeAll : inactivePill) }}
         >
           All Stores
         </button>
@@ -971,10 +1000,10 @@ export function StorePills({ stores = [], value = '', onChange, showAll = true, 
             key={s.id}
             type="button"
             onClick={() => onChange?.(selected ? '' : s.id)}
-            className={`${pillBase} flex items-center gap-1.5 ${selected ? 'text-white shadow-sm' : inactive}`}
-            style={selected ? { background: s.color || 'var(--brand-primary)' } : undefined}
+            className={`${pillBase} flex items-center gap-2`}
+            style={{ padding: '6px 14px', ...(selected ? activeStore(s.color) : inactivePill) }}
           >
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: selected ? 'rgba(0,0,0,0.35)' : s.color }} />
             {short}
           </button>
         );
