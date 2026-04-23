@@ -290,8 +290,28 @@ export default function DashboardPage() {
       {/* Stat Cards */}
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5 items-stretch">
-          <V2StatCard className="h-full" label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
-          <V2StatCard className="h-full" label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" sub={`Daily avg ${fmt(dailyAvg)} · ${rangeDays} day${rangeDays === 1 ? '' : 's'}`} />
+          <V2StatCard
+            className="h-full"
+            label="Gross Sales"
+            value={fmt(stats.totalGross)}
+            variant="success"
+            icon="💰"
+            sub={<TwoLineSub lines={[
+              { label: 'Cash', value: fmt(stats.totalCash), color: 'text-[var(--color-success)]' },
+              { label: 'Card', value: fmt(stats.totalCard), color: 'text-[var(--color-info)]' },
+            ]} />}
+          />
+          <V2StatCard
+            className="h-full"
+            label="Total Sales"
+            value={fmt(stats.totalNet)}
+            variant="success"
+            icon="📊"
+            sub={<TwoLineSub lines={[
+              { label: 'Daily avg', value: fmt(dailyAvg) },
+              { label: 'Days tracked', value: String(rangeDays) },
+            ]} />}
+          />
           {(() => {
             // Convention: positive short_over = SHORT (missing cash, red with −),
             // negative = OVER (extra cash, green with +), zero = matched.
@@ -309,21 +329,23 @@ export default function DashboardPage() {
             const d = collected - expected;
             const matched = Math.abs(d) < 0.01;
             const short = d < 0;
-            const sub = (
-              <span>
-                <span className="text-[var(--text-muted)]">Expected </span>
-                <span className="text-[var(--color-info)] font-semibold">{fmt(expected)}</span>
-                {' · '}
-                {matched ? (
-                  <span className="text-[var(--text-muted)] font-semibold">Matched</span>
-                ) : (
-                  <span className={`font-semibold ${short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>
-                    {short ? 'Short' : 'Over'} {fmt(Math.abs(d))}
-                  </span>
-                )}
-              </span>
+            const diffColor = matched
+              ? 'text-[var(--text-muted)]'
+              : short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]';
+            const diffLabel = matched ? 'Matched' : (short ? 'Short' : 'Over');
+            return (
+              <V2StatCard
+                className="h-full"
+                label="Cash in Hand"
+                value={fmt(collected)}
+                variant="info"
+                icon="🏦"
+                sub={<TwoLineSub lines={[
+                  { label: 'Expected', value: fmt(expected), color: 'text-[var(--color-info)]' },
+                  { label: diffLabel, value: matched ? '—' : fmt(Math.abs(d)), color: diffColor },
+                ]} />}
+              />
             );
-            return <V2StatCard className="h-full" label="Cash in Hand" value={fmt(collected)} variant="info" icon="🏦" sub={sub} />;
           })()}
         </div>
       )}
@@ -468,5 +490,20 @@ export default function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// Two-line stat-card sub with aligned label/value rows. Label is muted on
+// the left, value on the right with its own color.
+function TwoLineSub({ lines }) {
+  return (
+    <span className="block space-y-0.5">
+      {lines.map((l, i) => (
+        <span key={i} className="flex items-baseline justify-between gap-2">
+          <span className="text-[var(--text-muted)]">{l.label}</span>
+          <span className={`font-semibold tabular-nums ${l.color || 'text-[var(--text-primary)]'}`}>{l.value}</span>
+        </span>
+      ))}
+    </span>
   );
 }

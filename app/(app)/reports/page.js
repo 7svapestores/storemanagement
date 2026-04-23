@@ -589,7 +589,17 @@ export default function ReportsPage() {
 
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3 items-stretch">
             <a href="#drill-sales" className="block h-full transition-transform hover:-translate-y-0.5">
-              <V2StatCard className="h-full" label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
+              <V2StatCard
+                className="h-full"
+                label="Gross Sales"
+                value={fmt(summary.totalGross)}
+                variant="success"
+                icon="💰"
+                sub={<TwoLineSub lines={[
+                  { label: 'Cash', value: fmt(summary.totalCash), color: 'text-[var(--color-success)]' },
+                  { label: 'Card', value: fmt(summary.totalCard), color: 'text-[var(--color-info)]' },
+                ]} />}
+              />
             </a>
             <a href="#drill-sales" className="block h-full transition-transform hover:-translate-y-0.5">
               <V2StatCard className="h-full" label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
@@ -610,7 +620,20 @@ export default function ReportsPage() {
                 value={fmt(cashRecon?.collected || 0)}
                 variant="info"
                 icon="🏦"
-                sub={cashRecon ? <CashInHandSub expected={cashRecon.expected} diff={cashRecon.diff} /> : 'From Cash Collection'}
+                sub={cashRecon ? (() => {
+                  const matched = Math.abs(cashRecon.diff) < 0.01;
+                  const short = cashRecon.diff < 0;
+                  const diffColor = matched
+                    ? 'text-[var(--text-muted)]'
+                    : short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]';
+                  const diffLabel = matched ? 'Matched' : (short ? 'Short' : 'Over');
+                  return (
+                    <TwoLineSub lines={[
+                      { label: 'Expected', value: fmt(cashRecon.expected), color: 'text-[var(--color-info)]' },
+                      { label: diffLabel, value: matched ? '—' : fmt(Math.abs(cashRecon.diff)), color: diffColor },
+                    ]} />
+                  );
+                })() : 'From Cash Collection'}
               />
             </a>
           </div>
@@ -748,29 +771,18 @@ export default function ReportsPage() {
   );
 }
 
-// Sub-line rendered under the Cash in Hand panel. Expected is neutral,
-// Short is red, Over is green, Matched is muted — so the user can see at
-// a glance whether their collected cash lines up with POS cash sales.
-function CashInHandSub({ expected, diff }) {
-  const matched = Math.abs(diff) < 0.01;
-  const short = diff < 0;
+// Two-line stat-card sub with colored values. Keeps the layout predictable
+// across panels — labels align under each other and long numbers never
+// force a mid-item wrap.
+function TwoLineSub({ lines }) {
   return (
-    <span>
-      <span className="text-[var(--text-muted)]">Expected </span>
-      <span className="text-[var(--color-info)] font-semibold">{fmt(expected)}</span>
-      {' · '}
-      {matched ? (
-        <span className="text-[var(--text-muted)] font-semibold">Matched</span>
-      ) : (
-        <>
-          <span className={short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}>
-            {short ? 'Short' : 'Over'}{' '}
-          </span>
-          <span className={`font-semibold ${short ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>
-            {fmt(Math.abs(diff))}
-          </span>
-        </>
-      )}
+    <span className="block space-y-0.5">
+      {lines.map((l, i) => (
+        <span key={i} className="flex items-baseline justify-between gap-2">
+          <span className="text-[var(--text-muted)]">{l.label}</span>
+          <span className={`font-semibold tabular-nums ${l.color || 'text-[var(--text-primary)]'}`}>{l.value}</span>
+        </span>
+      ))}
     </span>
   );
 }
