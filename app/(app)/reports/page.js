@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { generatePDF } from './generatePDF';
-import { DateBar, useDateRange, Loading, StorePills, StatCard } from '@/components/UI';
+import { DateBar, useDateRange, Loading, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
 import { fmt, downloadCSV, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS, previousRange } from '@/lib/utils';
 import { generateStyledPLReport } from './generateStyledExcel';
@@ -27,8 +27,10 @@ export default function ReportsPage() {
   const [rawPurch, setRawPurch] = useState([]);
   const [rawExp, setRawExp] = useState([]);
   const [rawCash, setRawCash] = useState([]);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [selectedStoreId, setSelectedStoreId] = useState('');
+  // Previous-period aggregates for side-by-side comparisons.
+  const [topItemsPrev, setTopItemsPrev] = useState([]);
+  const [byCategoryPrev, setByCategoryPrev] = useState([]);
+  const [byVendorPrev, setByVendorPrev] = useState([]);
   // Export scope: 'all' to export every store in the loaded range, or a
   // specific store id to export just that store. Overrides the sidebar
   // filter for CSV/Excel/PDF only — does not re-query data.
@@ -62,7 +64,7 @@ export default function ReportsPage() {
           scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
           scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
           scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
-          scope(supabase.from('purchases').select('total_cost').gte('week_of', prev.start).lte('week_of', prev.end)),
+          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier, category, item').gte('week_of', prev.start).lte('week_of', prev.end)),
           scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
           scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
           scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
@@ -79,6 +81,7 @@ export default function ReportsPage() {
         });
 
         // ── Section 1 — Summary ─────────────────────────
+        const totalGross = (salesCur || []).reduce((s, r) => s + (r.gross_sales ?? r.total_sales ?? 0), 0);
         const totalRevenue = (salesCur || []).reduce((s, r) => s + (r.total_sales || 0), 0);
         const totalCash = (salesCur || []).reduce((s, r) => s + (r.cash_sales || 0), 0);
         const totalCard = (salesCur || []).reduce((s, r) => s + (r.card_sales || 0), 0);
@@ -98,7 +101,7 @@ export default function ReportsPage() {
         const prevExpenses = (expPrev || []).reduce((s, r) => s + (r.amount || 0), 0);
 
         setSummary({
-          totalRevenue, totalCash, totalCard, totalCheck, totalTax,
+          totalGross, totalRevenue, totalCash, totalCard, totalCheck, totalTax,
           totalPurchases, totalExpenses,
           grossProfit, netProfit, margin, cashPct, cardPct, checkPct,
           revenueChange: prevRevenue > 0 ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 : null,
@@ -137,18 +140,28 @@ export default function ReportsPage() {
         }).sort((a, b) => b.current - a.current);
         setExpenseRows(catRows);
 
-        // ── Section 4 — Purchase breakdown ──────────────
-        const itemAgg = {};
-        const catAgg = {};
-        const vendAgg = {};
-        (purchCur || []).forEach(r => {
-          itemAgg[r.item] = (itemAgg[r.item] || 0) + (r.total_cost || r.unit_cost || 0);
-          if (r.category) catAgg[r.category] = (catAgg[r.category] || 0) + (r.total_cost || r.unit_cost || 0);
-          if (r.supplier) vendAgg[r.supplier] = (vendAgg[r.supplier] || 0) + (r.total_cost || r.unit_cost || 0);
-        });
-        setTopItems(Object.entries(itemAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10));
-        setByCategory(Object.entries(catAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
-        setByVendor(Object.entries(vendAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        // ── Section 4 — Purchase breakdown (current + previous) ────
+        const aggBy = (rows, key) => {
+          const out = {};
+          (rows || []).forEach(r => {
+            const k = r[key];
+            if (!k) return;
+            out[k] = (out[k] || 0) + (r.total_cost || r.unit_cost || 0);
+          });
+          return out;
+        };
+        const itemAggCur = aggBy(purchCur, 'item');
+        const catAggCur  = aggBy(purchCur, 'category');
+        const vendAggCur = aggBy(purchCur, 'supplier');
+        const itemAggPrev = aggBy(purchPrev, 'item');
+        const catAggPrev  = aggBy(purchPrev, 'category');
+        const vendAggPrev = aggBy(purchPrev, 'supplier');
+        setTopItems(Object.entries(itemAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10));
+        setByCategory(Object.entries(catAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setByVendor(Object.entries(vendAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setTopItemsPrev(Object.entries(itemAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setByCategoryPrev(Object.entries(catAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setByVendorPrev(Object.entries(vendAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
 
         // ── Section 5 — Daily trend ─────────────────────
         const byDay = {};
@@ -448,18 +461,7 @@ export default function ReportsPage() {
   const maxCatCurrent = Math.max(1, ...expenseRows.map(r => r.current));
   const soColor = (v) => Math.abs(v) < 0.01 ? 'var(--text-muted)' : v >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
 
-  // Selected store detail
-  const ss = selectedStoreId ? storeRows.find(s => s.id === selectedStoreId) : null;
-  const ssExp = ss ? rawExp.filter(r => r.store_id === ss.id) : [];
-  const ssPurch = ss ? rawPurch.filter(r => r.store_id === ss.id) : [];
-  const ssExpByCat = {};
-  ssExp.forEach(r => { ssExpByCat[r.category] = (ssExpByCat[r.category] || 0) + (r.amount || 0); });
-  const ssExpCats = Object.entries(ssExpByCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const ssVendMap = {};
-  ssPurch.forEach(r => { ssVendMap[r.supplier || 'Unknown'] = (ssVendMap[r.supplier || 'Unknown'] || 0) + (r.total_cost || r.unit_cost || 0); });
-  const ssVendors = Object.entries(ssVendMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total));
-  const maxVendor = Math.max(1, ...byVendor.map(v => v.total));
 
   // ── Auto-generated insights ──
   const insights = [];
@@ -539,7 +541,7 @@ export default function ReportsPage() {
       <StorePills
         stores={stores}
         value={exportScope === 'all' ? '' : exportScope}
-        onChange={(v) => { setExportScope(v || 'all'); setSelectedStoreId(v || ''); }}
+        onChange={(v) => setExportScope(v || 'all')}
       />
 
       {loadError && <V2Alert type="danger" className="mb-3">{loadError}</V2Alert>}
@@ -551,33 +553,7 @@ export default function ReportsPage() {
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto mb-5 pb-1 print:hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {[
-          { id: 'overview', label: '📊 Overview' },
-          { id: 'stores', label: '🏪 Stores' },
-          { id: 'store-detail', label: '📍 Detail' },
-          { id: 'expenses', label: '💸 Expenses' },
-          { id: 'purchases', label: '📦 Product Buying' },
-          { id: 'watchouts', label: '⚠️ Watchouts' },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-              activeTab === t.id
-                ? 'text-white shadow-sm'
-                : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
-            }`}
-            style={activeTab === t.id ? { background: 'var(--brand-primary)' } : undefined}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── TAB: OVERVIEW ─────────────────────── */}
-      {activeTab === 'overview' && <>
+      <div className="mb-5" />
 
       {/* ── Hero + Stats ─────────────────────── */}
       {summary && (
@@ -593,16 +569,18 @@ export default function ReportsPage() {
                 {summary.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(summary.revenueChange).toFixed(1)}% vs previous
               </Badge>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(summary.totalRevenue)}</p></div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Gross Sales</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(summary.totalGross)}</p></div>
+              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Total Sales</p><p className="text-[var(--color-success)] text-[16px] font-bold tabular-nums">{fmt(summary.totalRevenue)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fmt(summary.totalPurchases)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fmt(summary.totalExpenses)}</p></div>
               <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p><p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[16px] font-bold tabular-nums">{summary.margin.toFixed(1)}%</p></div>
             </div>
           </Card>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-            <V2StatCard label="Gross Sales" value={fmt(summary.totalRevenue)} variant="success" icon="💰" />
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+            <V2StatCard label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
+            <V2StatCard label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
             <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
             <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
             <V2StatCard label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
@@ -637,11 +615,6 @@ export default function ReportsPage() {
         </div>
       )}
 
-      </>}
-
-      {/* ── TAB: BY STORE ─────────────────────── */}
-      {(activeTab === 'stores' || activeTab === 'overview') && <>
-
       {/* ── Store Performance ─────────────── */}
       <Card padding="md" className="mb-5 overflow-hidden">
         <SectionHeader title="Store Performance" />
@@ -652,7 +625,7 @@ export default function ReportsPage() {
             </thead>
             <tbody>
               {storeRows.map((s, i) => (
-                <tr key={s.id} style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined} className="cursor-pointer" onClick={() => { setSelectedStoreId(s.id); setActiveTab('store-detail'); }}>
+                <tr key={s.id} style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
                   <td className="text-[var(--text-muted)] text-center">{i === 0 ? '🏆' : i + 1}</td>
                   <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold">{s.name}</span></span></td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-success)] font-semibold">{fmt(s.revenue)}</td>
@@ -673,11 +646,6 @@ export default function ReportsPage() {
           </div>
         )}
       </Card>
-
-      </>}
-
-      {/* ── TAB: EXPENSES ─────────────────────── */}
-      {(activeTab === 'expenses' || activeTab === 'overview') && <>
 
       {/* ── Section 3 — Expenses by category ───────────── */}
       <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
@@ -724,52 +692,27 @@ export default function ReportsPage() {
         )}
       </div>
 
-      </>}
-
-      {/* ── TAB: PRODUCT BUYING ─────────────────────── */}
-      {(activeTab === 'purchases' || activeTab === 'overview') && <>
-
-      {/* ── Section 4 — Purchases breakdown ─────────────── */}
+      {/* ── Section 4 — Purchases breakdown (current vs previous) ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Items (by cost)</h3>
-          {topItems.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No purchases.</p> : (
-            <ul className="space-y-1">
-              {topItems.map((r, i) => (
-                <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-[var(--text-primary)] truncate mr-2">{i + 1}. {r.name}</span>
-                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">By Category</h3>
-          {byCategory.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No data.</p> : (
-            <ul className="space-y-1">
-              {byCategory.map((r, i) => (
-                <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-[var(--text-primary)] truncate mr-2">{r.name}</span>
-                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">By Vendor</h3>
-          {byVendor.length === 0 ? <p className="text-[var(--text-muted)] text-xs">No data.</p> : (
-            <ul className="space-y-1">
-              {byVendor.map((r, i) => (
-                <li key={i} className="flex justify-between text-[12px]">
-                  <span className="text-[var(--text-primary)] truncate mr-2">{r.name}</span>
-                  <span className="text-[var(--color-warning)] font-mono">{fmt(r.total)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <ComparisonList
+          title="Top Items (by cost)"
+          current={topItems}
+          previous={topItemsPrev}
+          limit={10}
+          empty="No purchases."
+        />
+        <ComparisonList
+          title="By Category"
+          current={byCategory}
+          previous={byCategoryPrev}
+          empty="No data."
+        />
+        <ComparisonList
+          title="By Vendor"
+          current={byVendor}
+          previous={byVendorPrev}
+          empty="No data."
+        />
       </div>
 
       {/* ── P&L Waterfall ─────────────────────────── */}
@@ -833,11 +776,6 @@ export default function ReportsPage() {
         </div>
       )}
 
-      </>}
-
-      {/* ── TAB: OVERVIEW cont — trend ─────────────────── */}
-      {activeTab === 'overview' && <>
-
       {/* ── Section 5 — Daily trend ─────────────────── */}
       <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
         <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Sales Trend</h3>
@@ -863,11 +801,6 @@ export default function ReportsPage() {
         ) : <p className="text-[var(--text-muted)] text-xs text-center py-4">No sales in this period.</p>}
       </div>
 
-      </>}
-
-      {/* ── TAB: OVERVIEW cont — cash ─────────────────── */}
-      {activeTab === 'overview' && <>
-
       {/* ── Section 6 — Cash reconciliation ─────────────── */}
       {cashRecon && (
         <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
@@ -886,157 +819,42 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
-      </>}
+    </div>
+  );
+}
 
-      {/* ── TAB: STORE DETAIL ─────────────────────── */}
-      {activeTab === 'store-detail' && (() => {
-        const ss = selectedStoreId ? storeRows.find(s => s.id === selectedStoreId) : null;
-        const stSales = ss ? rawSales.filter(r => r.store_id === ss.id) : [];
-        const stPurch = ss ? rawPurch.filter(r => r.store_id === ss.id) : [];
-        const stExp = ss ? rawExp.filter(r => r.store_id === ss.id) : [];
-        const stRevenue = stSales.reduce((s, r) => s + (r.total_sales || 0), 0);
-        const stCOGS = stPurch.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
-        const stExpenses = stExp.reduce((s, r) => s + (r.amount || 0), 0);
-        const stNet = stRevenue - stCOGS - stExpenses;
-        const stMargin = stRevenue > 0 ? (stNet / stRevenue * 100).toFixed(1) : '0';
-
-        // Top expense categories for this store
-        const stExpByCat = {};
-        stExp.forEach(r => { stExpByCat[r.category] = (stExpByCat[r.category] || 0) + (r.amount || 0); });
-        const stExpCats = Object.entries(stExpByCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const stExpMax = Math.max(1, ...stExpCats.map(([_, v]) => v));
-
-        // Top vendors for this store
-        const stVendMap = {};
-        stPurch.forEach(r => { stVendMap[r.supplier || 'Unknown'] = (stVendMap[r.supplier || 'Unknown'] || 0) + (r.total_cost || r.unit_cost || 0); });
-        const stVendors = Object.entries(stVendMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const stVendMax = Math.max(1, ...stVendors.map(([_, v]) => v));
-
-        return (
-          <>
-            <div className="bg-sw-card rounded-lg p-2.5 border border-[var(--border-subtle)] mb-4 flex gap-2 items-center flex-wrap">
-              <label className="text-[var(--text-secondary)] text-[10px] font-bold uppercase">Store</label>
-              <select value={selectedStoreId} onChange={e => setSelectedStoreId(e.target.value)} className="!w-auto !min-w-[200px] !py-1.5 !text-[11px]">
-                <option value="">Select a store…</option>
-                {storeRows.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-
-            {ss ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-4 h-4 rounded" style={{ background: ss.color }} />
-                  <h2 className="text-[var(--text-primary)] text-[18px] font-bold">{ss.name}</h2>
-                  {storeRows.indexOf(ss) === 0 && <span className="text-[14px]">🏆</span>}
-                </div>
-
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
-                  <StatCard label="Revenue" value={fmt(stRevenue)} icon="💰" color="#34D399" />
-                  <StatCard label="Product Buying" value={fmt(stCOGS)} icon="📦" color="#FBBF24" />
-                  <StatCard label="Expenses" value={fmt(stExpenses)} icon="📋" color="#F87171" />
-                  <StatCard label="Net Profit" value={fmt(stNet)} icon={stNet >= 0 ? '✅' : '⚠️'} color={stNet >= 0 ? '#34D399' : '#F87171'} />
-                  <StatCard label="Margin" value={`${stMargin}%`} icon="📊" color={Number(stMargin) >= 20 ? '#34D399' : '#FBBF24'} />
-                </div>
-
-                {/* Mini waterfall */}
-                {stRevenue > 0 && (
-                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">P&L Breakdown</h3>
-                    <div className="space-y-1.5 text-[12px]">
-                      {[
-                        { label: 'Revenue', val: stRevenue, color: '#34D399' },
-                        { label: '− Product Buying', val: -stCOGS, color: '#FBBF24' },
-                        { label: '= Gross Profit', val: stRevenue - stCOGS, color: '#34D399' },
-                        { label: '− Expenses', val: -stExpenses, color: '#F87171' },
-                        { label: '= Net Profit', val: stNet, color: stNet >= 0 ? '#34D399' : '#F87171' },
-                      ].map((l, i) => (
-                        <div key={i} className="flex justify-between">
-                          <span className="text-[var(--text-secondary)]">{l.label}</span>
-                          <span className="font-mono font-bold" style={{ color: l.color }}>{l.val >= 0 ? '' : '−'}{fmt(Math.abs(l.val))}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Top expense categories */}
-                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Expenses</h3>
-                    <div className="space-y-1.5">
-                      {stExpCats.map(([cat, amt]) => {
-                        const meta = EXPENSE_CATEGORIES.find(c => c.id === cat);
-                        return (
-                          <div key={cat} className="flex items-center gap-2">
-                            <span className="w-24 text-[var(--text-secondary)] text-[11px] truncate">{meta?.icon || '📋'} {meta?.label || cat}</span>
-                            <div className="flex-1 bg-[var(--bg-card)] rounded h-3"><div className="h-full bg-[var(--color-danger)]/40 rounded" style={{ width: `${(amt / stExpMax) * 100}%` }} /></div>
-                            <span className="w-16 text-right font-mono text-[11px] text-[var(--text-primary)]">{fmt(amt)}</span>
-                          </div>
-                        );
-                      })}
-                      {stExpCats.length === 0 && <p className="text-[var(--text-muted)] text-[11px]">No expenses</p>}
-                    </div>
-                  </div>
-                  {/* Top vendors */}
-                  <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
-                    <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Top Vendors</h3>
-                    <div className="space-y-1.5">
-                      {stVendors.map(([vend, amt]) => (
-                        <div key={vend} className="flex items-center gap-2">
-                          <span className="w-24 text-[var(--text-secondary)] text-[11px] truncate">{vend}</span>
-                          <div className="flex-1 bg-[var(--bg-card)] rounded h-3"><div className="h-full bg-[var(--color-warning)]/40 rounded" style={{ width: `${(amt / stVendMax) * 100}%` }} /></div>
-                          <span className="w-16 text-right font-mono text-[11px] text-[var(--text-primary)]">{fmt(amt)}</span>
-                        </div>
-                      ))}
-                      {stVendors.length === 0 && <p className="text-[var(--text-muted)] text-[11px]">No purchases</p>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-sw-card border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
-                Select a store above to see its detailed P&L breakdown.
-              </div>
-            )}
-          </>
-        );
-      })()}
-
-      {/* ── TAB: WATCHOUTS ─────────────────────── */}
-      {activeTab === 'watchouts' && (
+// Two-column list of amounts for current vs previous period. Rows merge
+// on name and sort by current desc, previous rows with zero current fall
+// to the bottom.
+function ComparisonList({ title, current, previous, limit, empty }) {
+  const prevMap = Object.fromEntries((previous || []).map(r => [r.name, r.total]));
+  const curMap = Object.fromEntries((current || []).map(r => [r.name, r.total]));
+  const names = Array.from(new Set([...(current || []).map(r => r.name), ...(previous || []).map(r => r.name)]));
+  const merged = names.map(name => ({
+    name,
+    current: curMap[name] || 0,
+    previous: prevMap[name] || 0,
+  })).sort((a, b) => (b.current - a.current) || (b.previous - a.previous));
+  const rows = limit ? merged.slice(0, limit) : merged;
+  return (
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+      <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">{title}</h3>
+      {rows.length === 0 ? <p className="text-[var(--text-muted)] text-xs">{empty}</p> : (
         <>
-          {watchouts.length > 0 ? (
-            <div className="space-y-2">
-              {watchouts.map((w, i) => (
-                <a key={i} href={w.link} className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 flex items-start gap-3 hover:border-sw-blue/30 transition-colors block">
-                  <span className="text-[18px] flex-shrink-0">{w.sev === 'red' ? '🔴' : '🟡'}</span>
-                  <div>
-                    <div className="text-[var(--text-primary)] text-[13px] font-semibold">{w.text}</div>
-                    <div className="text-[var(--text-muted)] text-[10px] mt-0.5">Click to investigate →</div>
-                  </div>
-                </a>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-sw-greenD border border-sw-green/20 rounded-xl p-8 text-center">
-              <div className="text-[28px] mb-2">✅</div>
-              <div className="text-[var(--color-success)] text-[14px] font-bold">All metrics look healthy</div>
-              <div className="text-[var(--text-muted)] text-[11px] mt-1">No watchouts this period</div>
-            </div>
-          )}
-          {insights.length > 0 && (
-            <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mt-4">
-              <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">All Insights</h3>
-              <div className="space-y-1.5">
-                {insights.map((ins, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[12px]">
-                    <span className="flex-shrink-0">{ins.type === 'good' ? '✅' : ins.type === 'bad' ? '🔴' : ins.type === 'warn' ? '⚠️' : '📈'}</span>
-                    <span className="text-[var(--text-primary)]">{ins.text}</span>
-                  </div>
-                ))}
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-[10px] uppercase font-semibold text-[var(--text-muted)] tracking-wider pb-1 mb-1 border-b border-[var(--border-subtle)]">
+            <span>Name</span>
+            <span className="text-right">This period</span>
+            <span className="text-right">Last period</span>
+          </div>
+          <div className="space-y-1">
+            {rows.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-[12px]">
+                <span className="text-[var(--text-primary)] truncate">{r.name}</span>
+                <span className="text-[var(--color-warning)] font-mono text-right tabular-nums">{fmt(r.current)}</span>
+                <span className="text-[var(--text-secondary)] font-mono text-right tabular-nums">{fmt(r.previous)}</span>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </>
       )}
     </div>
