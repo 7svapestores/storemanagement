@@ -213,7 +213,10 @@ export default function DashboardPage() {
 
   if (loading) return <Loading />;
 
-  const rangeDays = Math.max(1, Math.round((new Date(range.end + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
+  // Daily-avg denominator = days between the range start and the last
+  // synced date (not today), so partial/un-synced days don't dilute it.
+  const avgEnd = lastSync?.date && lastSync.date < range.end ? lastSync.date : range.end;
+  const rangeDays = Math.max(1, Math.round((new Date(avgEnd + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
   const dailyAvg = stats ? (stats.totalNet || 0) / rangeDays : 0;
 
   return (
@@ -303,11 +306,10 @@ export default function DashboardPage() {
           <SectionHeader title="Attention Needed" />
           <div className="space-y-2">
             {alerts.map((a, i) => (
-              <button key={i} onClick={() => router.push(a.link)} className="w-full flex items-center gap-3 p-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--color-info)] transition-colors text-left">
+              <div key={i} className="w-full flex items-center gap-3 p-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]">
                 <span className="text-[16px]">{a.type === 'danger' ? '🔴' : a.type === 'warning' ? '🟡' : 'ℹ️'}</span>
                 <span className="text-[var(--text-primary)] text-[12px] font-medium flex-1">{a.text}</span>
-                <span className="text-[var(--text-muted)] text-[10px]">→</span>
-              </button>
+              </div>
             ))}
           </div>
         </Card>
@@ -382,7 +384,7 @@ export default function DashboardPage() {
               <thead><tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>Product Buying</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr></thead>
               <tbody>
                 {sortedStores.map((s, i) => (
-                  <tr key={s.id} onClick={() => { setSelectedStore(s.id); }} className="cursor-pointer" style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
+                  <tr key={s.id} style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
                     <td className="text-[var(--text-muted)] text-center">{i === 0 ? '🏆' : i + 1}</td>
                     <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold text-[13px]">{s.name?.split(' - ').pop()?.trim() || s.name}</span></span></td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--text-primary)] font-semibold">{fmt(s.revenue)}</td>
