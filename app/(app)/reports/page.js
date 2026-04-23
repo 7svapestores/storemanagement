@@ -588,12 +588,22 @@ export default function ReportsPage() {
           </Card>
 
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3">
-            <V2StatCard label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
-            <V2StatCard label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
-            <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
-            <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
+            <a href="#drill-sales" className="block transition-transform hover:-translate-y-0.5">
+              <V2StatCard label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
+            </a>
+            <a href="#drill-sales" className="block transition-transform hover:-translate-y-0.5">
+              <V2StatCard label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
+            </a>
+            <a href="#drill-product-buying" className="block transition-transform hover:-translate-y-0.5">
+              <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
+            </a>
+            <a href="#drill-expenses" className="block transition-transform hover:-translate-y-0.5">
+              <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
+            </a>
             <V2StatCard label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
-            <V2StatCard label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+            <a href="#drill-cash" className="block transition-transform hover:-translate-y-0.5">
+              <V2StatCard label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+            </a>
           </div>
 
           {summary.totalRevenue > 0 && (
@@ -605,24 +615,6 @@ export default function ReportsPage() {
             </div>
           )}
         </>
-      )}
-
-      {/* ── Key Insights ─────────────────────────── */}
-      {insights.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-          {insights.slice(0, 3).map((ins, i) => {
-            const bg = { good: 'var(--color-success-bg)', bad: 'var(--color-danger-bg)', warn: 'var(--color-warning-bg)', info: 'var(--color-info-bg)' }[ins.type] || 'var(--bg-hover)';
-            const color = { good: 'var(--color-success)', bad: 'var(--color-danger)', warn: 'var(--color-warning)', info: 'var(--color-info)' }[ins.type] || 'var(--text-secondary)';
-            const icon = { good: '✅', bad: '🔴', warn: '⚠️', info: '📈' }[ins.type] || '📈';
-            const labels = ['GROWTH', 'INSIGHT', 'PROJECTION'];
-            return (
-              <Card key={i} padding="md" style={{ background: bg, borderColor: color + '33' }}>
-                <p className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color }}>{labels[i] || 'INSIGHT'}</p>
-                <p className="text-[var(--text-primary)] text-[13px] font-semibold">{icon} {ins.text}</p>
-              </Card>
-            );
-          })}
-        </div>
       )}
 
       {/* ── Store Performance — only in All-Stores view ── */}
@@ -659,23 +651,14 @@ export default function ReportsPage() {
       </Card>
       )}
 
-      {/* ── Section 3 — Expenses: this month | last month ────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <PeriodList
-          title="Expenses by Category — This Period"
-          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.current }))}
-          empty="No expenses in this period."
-        />
-        <PeriodList
-          title="Expenses by Category — Last Period"
-          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.previous }))}
-          muted
-          empty="No expenses in the previous period."
-        />
+      {/* ── Drill-down 1 — Sales Trend (from Gross / Total Sales) ── */}
+      <div id="drill-sales" className="scroll-mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <SalesTrendBox title="Sales Trend — This Period" days={dailyTrend} stats={trendStats} maxDay={maxTrendDay} />
+        <SalesTrendBox title="Sales Trend — Last Period" days={dailyTrendPrev} stats={trendStatsPrev} maxDay={maxTrendDay} muted />
       </div>
 
-      {/* ── Section 4 — Product Buying: this month | last month ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      {/* ── Drill-down 2 — Product Buying ───────────────────── */}
+      <div id="drill-product-buying" className="scroll-mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
         <PeriodList
           title="Product Buying by Vendor — This Period"
           rows={byVendor}
@@ -689,13 +672,52 @@ export default function ReportsPage() {
         />
       </div>
 
-      {/* ── P&L Waterfall: this period | last period ──────── */}
+      {/* ── Drill-down 3 — Expenses ─────────────────────────── */}
+      <div id="drill-expenses" className="scroll-mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <PeriodList
+          title="Expenses by Category — This Period"
+          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.current }))}
+          empty="No expenses in this period."
+        />
+        <PeriodList
+          title="Expenses by Category — Last Period"
+          rows={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.previous }))}
+          muted
+          empty="No expenses in the previous period."
+        />
+      </div>
+
+      {/* ── Drill-down 4 — Cash Reconciliation (from Cash in Hand) ── */}
+      <div id="drill-cash" className="scroll-mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <CashReconBox title="Cash Reconciliation — This Period" recon={cashRecon} />
+        <CashReconBox title="Cash Reconciliation — Last Period" recon={cashReconPrev} muted />
+      </div>
+
+      {/* ── P&L Waterfall: summary, below the drill-downs ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
         <WaterfallBox title="P&L Waterfall — This Period" data={summary} />
         <WaterfallBox title="P&L Waterfall — Last Period" data={summaryPrev} muted />
       </div>
 
-      {/* ── Watchouts ─────────────────────────── */}
+      {/* ── Growth / Insights ─────────────────────── */}
+      {insights.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          {insights.slice(0, 3).map((ins, i) => {
+            const bg = { good: 'var(--color-success-bg)', bad: 'var(--color-danger-bg)', warn: 'var(--color-warning-bg)', info: 'var(--color-info-bg)' }[ins.type] || 'var(--bg-hover)';
+            const color = { good: 'var(--color-success)', bad: 'var(--color-danger)', warn: 'var(--color-warning)', info: 'var(--color-info)' }[ins.type] || 'var(--text-secondary)';
+            const icon = { good: '✅', bad: '🔴', warn: '⚠️', info: '📈' }[ins.type] || '📈';
+            const labels = ['GROWTH', 'INSIGHT', 'PROJECTION'];
+            return (
+              <Card key={i} padding="md" style={{ background: bg, borderColor: color + '33' }}>
+                <p className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color }}>{labels[i] || 'INSIGHT'}</p>
+                <p className="text-[var(--text-primary)] text-[13px] font-semibold">{icon} {ins.text}</p>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Watchouts — at the bottom ─────────────────────── */}
       {watchouts.length > 0 ? (
         <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
           <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Watchouts</h3>
@@ -713,18 +735,6 @@ export default function ReportsPage() {
           ✅ All metrics look healthy — no watchouts this period
         </div>
       )}
-
-      {/* ── Sales Trend: this period | last period ──────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <SalesTrendBox title="Sales Trend — This Period" days={dailyTrend} stats={trendStats} maxDay={maxTrendDay} />
-        <SalesTrendBox title="Sales Trend — Last Period" days={dailyTrendPrev} stats={trendStatsPrev} maxDay={maxTrendDay} muted />
-      </div>
-
-      {/* ── Cash Reconciliation: this period | last period ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <CashReconBox title="Cash Reconciliation — This Period" recon={cashRecon} />
-        <CashReconBox title="Cash Reconciliation — Last Period" recon={cashReconPrev} muted />
-      </div>
     </div>
   );
 }
