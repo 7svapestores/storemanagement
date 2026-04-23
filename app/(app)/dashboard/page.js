@@ -184,7 +184,14 @@ export default function DashboardPage() {
     const a = [];
     storePerf.forEach(s => {
       if (s.margin < 40 && s.revenue > 100) a.push({ type: 'warning', text: `${s.name} margin only ${s.margin.toFixed(0)}%`, link: '/reports' });
-      if (Math.abs(s.shortOver) > 50) a.push({ type: s.shortOver > 0 ? 'warning' : 'danger', text: `${s.name} short/over: ${s.shortOver > 0 ? '-' : '+'}${fmt(Math.abs(s.shortOver))}`, link: '/cash' });
+      if (Math.abs(s.shortOver) > 50) {
+        const short = s.shortOver > 0;
+        a.push({
+          type: short ? 'danger' : 'warning',
+          text: `${s.name} short/over: ${short ? '−' : '+'}${fmt(Math.abs(s.shortOver))}`,
+          link: '/cash',
+        });
+      }
     });
     const relevantStores = storeId ? stores.filter(st => st.id === storeId) : stores;
     const missingToday = relevantStores.filter(st => !todaySales.find(r => r.store_id === st.id));
@@ -199,9 +206,12 @@ export default function DashboardPage() {
     }
     // Scoped mode: surface this store's own short/over if material.
     if (storeId && stats && Math.abs(stats.totalShortOver) > 50) {
+      // Positive short_over = SHORT (missing cash → danger).
+      // Negative = OVER (extra cash → warning — still worth a review).
+      const short = stats.totalShortOver > 0;
       a.push({
-        type: stats.totalShortOver > 0 ? 'warning' : 'danger',
-        text: `Short/over: ${stats.totalShortOver > 0 ? '-' : '+'}${fmt(Math.abs(stats.totalShortOver))}`,
+        type: short ? 'danger' : 'warning',
+        text: `Short/over: ${short ? '−' : '+'}${fmt(Math.abs(stats.totalShortOver))}`,
         link: '/cash',
       });
     }
@@ -288,7 +298,17 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           <V2StatCard label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
           <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" />
-          <V2StatCard label="Short / Over" value={`${stats.totalShortOver >= 0 ? '+' : ''}${fmt(stats.totalShortOver)}`} variant={stats.totalShortOver < 0 ? 'danger' : stats.totalShortOver > 0 ? 'warning' : 'default'} icon={stats.totalShortOver < 0 ? '🔴' : stats.totalShortOver > 0 ? '🟡' : '⚖️'} />
+          {(() => {
+            // Convention: positive short_over = SHORT (missing cash, red with −),
+            // negative = OVER (extra cash, green with +), zero = matched.
+            const n = stats.totalShortOver;
+            const matched = Math.abs(n) < 0.01;
+            const short = n > 0;
+            const displayValue = matched ? fmt(0) : (short ? `−${fmt(Math.abs(n))}` : `+${fmt(Math.abs(n))}`);
+            const variant = matched ? 'default' : short ? 'danger' : 'success';
+            const icon = matched ? '⚖️' : short ? '🔴' : '🟢';
+            return <V2StatCard label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
+          })()}
           <V2StatCard label="Today" value={fmt(totalToday)} variant={totalToday > 0 ? 'success' : 'warning'} icon="📅" />
         </div>
       )}
