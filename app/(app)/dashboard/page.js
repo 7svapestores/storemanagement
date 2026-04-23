@@ -289,9 +289,9 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          <V2StatCard label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
-          <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" sub={`Daily avg ${fmt(dailyAvg)} · ${rangeDays} day${rangeDays === 1 ? '' : 's'}`} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5 items-stretch">
+          <V2StatCard className="h-full" label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
+          <V2StatCard className="h-full" label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" sub={`Daily avg ${fmt(dailyAvg)} · ${rangeDays} day${rangeDays === 1 ? '' : 's'}`} />
           {(() => {
             // Convention: positive short_over = SHORT (missing cash, red with −),
             // negative = OVER (extra cash, green with +), zero = matched.
@@ -301,9 +301,9 @@ export default function DashboardPage() {
             const displayValue = matched ? fmt(0) : (short ? `−${fmt(Math.abs(n))}` : `+${fmt(Math.abs(n))}`);
             const variant = matched ? 'default' : short ? 'danger' : 'success';
             const icon = matched ? '⚖️' : short ? '🔴' : '🟢';
-            return <V2StatCard label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
+            return <V2StatCard className="h-full" label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
           })()}
-          <V2StatCard label="Cash in Hand" value={fmt(stats.cashInHand || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+          <V2StatCard className="h-full" label="Cash in Hand" value={fmt(stats.cashInHand || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
         </div>
       )}
 

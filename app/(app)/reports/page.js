@@ -587,22 +587,24 @@ export default function ReportsPage() {
             </div>
           </Card>
 
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3">
-            <a href="#drill-sales" className="block transition-transform hover:-translate-y-0.5">
-              <V2StatCard label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3 items-stretch">
+            <a href="#drill-sales" className="block h-full transition-transform hover:-translate-y-0.5">
+              <V2StatCard className="h-full" label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
             </a>
-            <a href="#drill-sales" className="block transition-transform hover:-translate-y-0.5">
-              <V2StatCard label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
+            <a href="#drill-sales" className="block h-full transition-transform hover:-translate-y-0.5">
+              <V2StatCard className="h-full" label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
             </a>
-            <a href="#drill-product-buying" className="block transition-transform hover:-translate-y-0.5">
-              <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
+            <a href="#drill-product-buying" className="block h-full transition-transform hover:-translate-y-0.5">
+              <V2StatCard className="h-full" label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
             </a>
-            <a href="#drill-expenses" className="block transition-transform hover:-translate-y-0.5">
-              <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
+            <a href="#drill-expenses" className="block h-full transition-transform hover:-translate-y-0.5">
+              <V2StatCard className="h-full" label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
             </a>
-            <V2StatCard label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
-            <a href="#drill-cash" className="block transition-transform hover:-translate-y-0.5">
-              <V2StatCard label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
+            <div className="block h-full">
+              <V2StatCard className="h-full" label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
+            </div>
+            <a href="#drill-cash" className="block h-full transition-transform hover:-translate-y-0.5">
+              <V2StatCard className="h-full" label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
             </a>
           </div>
 
