@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, Modal, Field, Button, Loading, StoreBadge, Alert, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, Modal, Field, Button, Loading, StoreBadge, Alert, MultiSelect, SmartDatePicker, SortDropdown, StorePills } from '@/components/UI';
 import { V2StatCard } from '@/components/ui';
 import { fmt, fK, dayLabel, today } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -252,6 +252,11 @@ export default function CashPage() {
       <Button onClick={tryOpenCollect}>+ Collect</Button>
     </div>
     {loadError && <Alert type="error">{loadError}</Alert>}
+    <StorePills
+      stores={stores}
+      value={storeFilter.length === 1 ? storeFilter[0] : ''}
+      onChange={(id) => setStoreFilter(id ? [id] : [])}
+    />
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Filter bar */}

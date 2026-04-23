@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal, MultiSelect } from '@/components/UI';
+import { PageHeader, DateBar, useDateRange, Loading, Alert, ImageViewer, ConfirmModal, MultiSelect, StorePills } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { dateLabel } from '@/lib/utils';
 
@@ -145,17 +145,15 @@ export default function InvoicesPage() {
 
       {loadError && <Alert type="error">{loadError}</Alert>}
 
+      <StorePills
+        stores={stores}
+        value={storeFilter.length === 1 ? storeFilter[0] : ''}
+        onChange={(id) => setStoreFilter(id ? [id] : [])}
+      />
+
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
       <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
-        <MultiSelect
-          label="Store"
-          placeholder="All Stores"
-          unitLabel="store"
-          value={storeFilter}
-          onChange={setStoreFilter}
-          options={stores.map(s => ({ value: s.id, label: s.name }))}
-        />
         <MultiSelect
           label="Vendor"
           placeholder="All Vendors"

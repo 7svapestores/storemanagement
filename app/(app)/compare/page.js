@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DateBar, useDateRange, Loading, Alert } from '@/components/UI';
+import { DateBar, useDateRange, Loading, Alert, StorePills } from '@/components/UI';
 import { V2StatCard } from '@/components/ui';
 import { fmt, fK } from '@/lib/utils';
 
@@ -11,6 +11,8 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [rows, setRows] = useState([]);
+  const [storesList, setStoresList] = useState([]);
+  const [selectedStore, setSelectedStore] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -18,6 +20,7 @@ export default function ComparePage() {
       setLoadError('');
       try {
         const { data: stores } = await supabase.from('stores').select('*').eq('is_active', true);
+        setStoresList(stores || []);
         const [{ data: sales }, { data: purch }, { data: exps }] = await Promise.all([
           supabase.from('daily_sales').select('store_id, total_sales, tax_collected').gte('date', range.start).lte('date', range.end),
           supabase.from('purchases').select('store_id, total_cost').gte('week_of', range.start).lte('week_of', range.end),
@@ -48,11 +51,14 @@ export default function ComparePage() {
   if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
 
-  const maxRev = Math.max(1, ...rows.map(r => r.revenue));
-  const maxExp = Math.max(1, ...rows.map(r => r.expenses));
-  const maxNet = Math.max(1, ...rows.map(r => Math.abs(r.net)));
-  const best = rows.length ? rows[0] : null;
-  const worst = rows.length ? rows[rows.length - 1] : null;
+  // When a store is picked in the pill row, narrow the comparison to just
+  // that store. All Stores shows the full ranking.
+  const visibleRows = selectedStore ? rows.filter(r => r.id === selectedStore) : rows;
+  const maxRev = Math.max(1, ...visibleRows.map(r => r.revenue));
+  const maxExp = Math.max(1, ...visibleRows.map(r => r.expenses));
+  const maxNet = Math.max(1, ...visibleRows.map(r => Math.abs(r.net)));
+  const best = visibleRows.length ? visibleRows[0] : null;
+  const worst = visibleRows.length ? visibleRows[visibleRows.length - 1] : null;
 
   const Bar = ({ value, max, color, negative }) => (
     <div className="bg-[var(--bg-card)] rounded h-3 overflow-hidden relative">
@@ -70,9 +76,11 @@ export default function ComparePage() {
 
       {loadError && <Alert type="error">{loadError}</Alert>}
 
+      <StorePills stores={storesList} value={selectedStore} onChange={setSelectedStore} />
+
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-8 text-center text-[var(--text-muted)]">
           No store data for this period.
         </div>
@@ -98,7 +106,7 @@ export default function ComparePage() {
             <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
               <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Revenue</h3>
               <div className="space-y-2">
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
@@ -115,7 +123,7 @@ export default function ComparePage() {
             <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
               <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Expenses</h3>
               <div className="space-y-2">
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />
@@ -132,7 +140,7 @@ export default function ComparePage() {
             <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
               <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Net Profit</h3>
               <div className="space-y-2">
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <div key={r.id} className="flex items-center gap-2">
                     <div className="w-40 flex items-center gap-1.5 flex-shrink-0">
                       <span className="w-2 h-2 rounded-sm" style={{ background: r.color }} />

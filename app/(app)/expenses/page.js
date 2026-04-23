@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, PageHeader, Modal, Field, Button, Loading, ConfirmModal, Alert, DateBar, useDateRange, StoreBadge, MultiSelect, SmartDatePicker, SortDropdown, StorePills } from '@/components/UI';
 import { fmt, monthLabel, dateLabel, downloadCSV, today, EXPENSE_CATEGORIES, FIXED_EXPENSE_IDS } from '@/lib/utils';
 import { logActivity, fmtMoney } from '@/lib/activity';
 import { compressImage, uploadReceipt } from '@/lib/storage';
@@ -509,16 +509,11 @@ export default function ExpensesPage() {
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
 
       {/* Page-level store selector */}
-      <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
-        <MultiSelect
-          label="Store"
-          placeholder="All Stores"
-          unitLabel="store"
-          value={pageStoreIds}
-          onChange={setPageStoreIds}
-          options={stores.map(s => ({ value: s.id, label: s.name }))}
-        />
-      </div>
+      <StorePills
+        stores={stores}
+        value={pageStoreIds.length === 1 ? pageStoreIds[0] : ''}
+        onChange={(id) => setPageStoreIds(id ? [id] : [])}
+      />
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
