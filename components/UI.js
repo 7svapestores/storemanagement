@@ -461,28 +461,46 @@ export function MultiSelect({ options, value = [], onChange, placeholder = 'All'
 
 // ── Trend Chart ─────────────────────────────────────────────
 export function TrendChart({ data, height = 170 }) {
+  const [hover, setHover] = useState(null); // index of hovered group
   if (!data?.length) return <div className="text-sw-dim text-center py-8 text-sm">No data</div>;
   const mx = Math.max(...data.flatMap(d => [d.purchases || 0, d.sales || 0]), 1);
   const bw = Math.min(24, Math.max(10, 350 / data.length / 2.5));
 
+  const hoverData = hover != null ? data[hover] : null;
+  const hoverDiff = hoverData ? (hoverData.diff ?? (hoverData.sales || 0) - (hoverData.purchases || 0)) : 0;
+
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto relative">
+      {/* Custom hover tooltip — shows week, sales, purchases, diff with full numbers */}
+      {hoverData && (
+        <div className="absolute top-1 right-2 z-10 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-lg shadow-lg p-2.5 text-[11px] pointer-events-none" style={{ minWidth: 160 }}>
+          <div className="text-[var(--text-primary)] font-bold mb-1">{hoverData.label || weekLabel(hoverData.week)}</div>
+          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Sales</span><span className="font-mono text-[var(--color-success)]">{fmt(hoverData.sales || 0)}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Purchases</span><span className="font-mono text-[var(--color-warning)]">{fmt(hoverData.purchases || 0)}</span></div>
+          <div className="flex justify-between gap-4 border-t border-[var(--border-subtle)] mt-1 pt-1"><span className="text-[var(--text-muted)]">Net</span><span className={`font-mono font-bold ${hoverDiff < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span></div>
+        </div>
+      )}
       <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 60 : 'auto' }}>
         {data.map((d, i) => {
           const pH = ((d.purchases || 0) / mx) * (height - 36);
           const sH = ((d.sales || 0) / mx) * (height - 36);
           const loss = (d.diff || d.sales - d.purchases) < 0;
           const diff = d.diff ?? (d.sales || 0) - (d.purchases || 0);
+          const titleText = `${d.label || weekLabel(d.week)}\nSales: ${fmt(d.sales || 0)}\nPurchases: ${fmt(d.purchases || 0)}\nNet: ${diff < 0 ? '−' : '+'}${fmt(Math.abs(diff))}`;
           return (
-            <div key={i} className="flex flex-col items-center gap-0.5">
+            <div
+              key={i}
+              className="flex flex-col items-center gap-0.5 cursor-pointer"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(h => h === i ? null : h)}
+              title={titleText}
+            >
               <div className={`text-[9px] font-mono font-bold px-1 rounded ${loss ? 'text-sw-red bg-sw-redD' : 'text-sw-green bg-sw-greenD'}`}>
-                {loss ? '' : '+'}{fK(diff)}
+                {loss ? '−' : '+'}{fmt(Math.abs(diff))}
               </div>
               <div className="flex items-end gap-0.5">
-                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: loss ? '#F87171bb' : '#FBBF2488' }}
-                  title={`Purchases: ${fmt(d.purchases || 0)}`} />
-                <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }}
-                  title={`Sales: ${fmt(d.sales || 0)}`} />
+                <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: loss ? '#F87171bb' : '#FBBF2488' }} />
+                <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
               </div>
               <span className="text-[8px] text-sw-dim">{d.label || weekLabel(d.week)}</span>
             </div>

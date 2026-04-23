@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
-import { fK, fmt, weekLabel, today } from '@/lib/utils';
+import { fmt, weekLabel, today } from '@/lib/utils';
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -91,6 +91,11 @@ export default function DashboardPage() {
             return { ...st, revenue: rev, buying: cogs, expenses: exp, profit, margin: mg, shortOver: so };
           }).sort((a, b) => b.revenue - a.revenue);
           setStorePerf(perf);
+        } else {
+          // When scoped to a specific store, the per-store ranking doesn't
+          // make sense — clear it so the Store Performance card stays hidden.
+          setStorePerf([]);
+          setTopEmployees([]);
         }
 
         const weekMap = {};
@@ -112,11 +117,14 @@ export default function DashboardPage() {
         const { data: todayRows } = await todayQ;
         setTodaySales(todayRows || []);
 
-        // Top employees
-        const { data: shifts } = await supabase
+        // Top employees — only fetched in multi-store mode; cleared above
+        // when a specific store is selected.
+        let shiftQ = supabase
           .from('employee_shifts')
           .select('employee_name, store_id, daily_sales(total_sales, net_sales)')
           .gte('shift_date', range.start).lte('shift_date', range.end);
+        if (storeId) shiftQ = shiftQ.eq('store_id', storeId);
+        const { data: shifts } = storeId ? { data: [] } : await shiftQ;
         if (shifts?.length) {
           const empMap = {};
           shifts.forEach(s => {
@@ -146,17 +154,34 @@ export default function DashboardPage() {
     return { cash: stats.totalCash, card: stats.totalCard, cashPct: (stats.totalCash / total * 100).toFixed(0), cardPct: (stats.totalCard / total * 100).toFixed(0) };
   }, [stats]);
 
-  // Alerts
+  // Alerts — when scoped to a specific store, only show alerts for that store.
   const alerts = useMemo(() => {
     const a = [];
     storePerf.forEach(s => {
       if (s.margin < 40 && s.revenue > 100) a.push({ type: 'warning', text: `${s.name} margin only ${s.margin.toFixed(0)}%`, link: '/reports' });
       if (Math.abs(s.shortOver) > 50) a.push({ type: s.shortOver > 0 ? 'warning' : 'danger', text: `${s.name} short/over: ${s.shortOver > 0 ? '-' : '+'}${fmt(Math.abs(s.shortOver))}`, link: '/cash' });
     });
-    const missingToday = stores.filter(st => !todaySales.find(r => r.store_id === st.id));
-    if (missingToday.length > 0) a.push({ type: 'info', text: `${missingToday.length} store${missingToday.length > 1 ? 's' : ''} missing today's entry`, link: '/sales' });
+    const relevantStores = storeId ? stores.filter(st => st.id === storeId) : stores;
+    const missingToday = relevantStores.filter(st => !todaySales.find(r => r.store_id === st.id));
+    if (missingToday.length > 0) {
+      a.push({
+        type: 'info',
+        text: storeId
+          ? `${missingToday[0].name} has no entry for today yet`
+          : `${missingToday.length} store${missingToday.length > 1 ? 's' : ''} missing today's entry`,
+        link: '/sales',
+      });
+    }
+    // Scoped mode: surface this store's own short/over if material.
+    if (storeId && stats && Math.abs(stats.totalShortOver) > 50) {
+      a.push({
+        type: stats.totalShortOver > 0 ? 'warning' : 'danger',
+        text: `Short/over: ${stats.totalShortOver > 0 ? '-' : '+'}${fmt(Math.abs(stats.totalShortOver))}`,
+        link: '/cash',
+      });
+    }
     return a;
-  }, [storePerf, stores, todaySales]);
+  }, [storePerf, stores, todaySales, storeId, stats]);
 
   const sortedStores = useMemo(() => {
     const s = [...storePerf];
@@ -219,16 +244,16 @@ export default function DashboardPage() {
               const projected = dailyAvg * daysInMonth;
               return (
                 <span className="ml-3">
-                  · {daysLeft}d left · Pace: <span className={projected >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fK(projected)}/mo</span>
+                  · {daysLeft}d left · Pace: <span className={projected >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fmt(projected)}/mo</span>
                 </span>
               );
             })()}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fK(stats.totalNet)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fK(stats.totalPurch)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fK(stats.totalExp)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Tax Collected</p><p className="text-[var(--color-info)] text-[16px] font-bold tabular-nums">{fK(stats.totalTax)}</p></div>
+            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(stats.totalNet)}</p></div>
+            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fmt(stats.totalPurch)}</p></div>
+            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fmt(stats.totalExp)}</p></div>
+            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Tax Collected</p><p className="text-[var(--color-info)] text-[16px] font-bold tabular-nums">{fmt(stats.totalTax)}</p></div>
           </div>
         </Card>
       )}
@@ -236,9 +261,9 @@ export default function DashboardPage() {
       {/* Stat Cards */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          <V2StatCard label="Gross Sales" value={fK(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fK(stats.totalCash)} · Card ${fK(stats.totalCard)}`} />
-          <V2StatCard label="Total Sales" value={fK(stats.totalNet)} variant="success" icon="📊" />
-          <V2StatCard label="Short / Over" value={`${stats.totalShortOver >= 0 ? '+' : ''}${fK(stats.totalShortOver)}`} variant={stats.totalShortOver < 0 ? 'danger' : stats.totalShortOver > 0 ? 'warning' : 'default'} icon={stats.totalShortOver < 0 ? '🔴' : stats.totalShortOver > 0 ? '🟡' : '⚖️'} />
+          <V2StatCard label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
+          <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" />
+          <V2StatCard label="Short / Over" value={`${stats.totalShortOver >= 0 ? '+' : ''}${fmt(stats.totalShortOver)}`} variant={stats.totalShortOver < 0 ? 'danger' : stats.totalShortOver > 0 ? 'warning' : 'default'} icon={stats.totalShortOver < 0 ? '🔴' : stats.totalShortOver > 0 ? '🟡' : '⚖️'} />
           <V2StatCard label="Today" value={fmt(totalToday)} variant={totalToday > 0 ? 'success' : 'warning'} icon="📅" />
         </div>
       )}
@@ -334,7 +359,7 @@ export default function DashboardPage() {
                     <div className="text-[var(--text-primary)] text-[13px] font-semibold truncate">{e.name}</div>
                     <div className="text-[var(--text-muted)] text-[10px]">{e.storeName} · {e.shifts} shifts</div>
                   </div>
-                  <span className="text-[var(--color-success)] font-mono font-bold text-[13px] tabular-nums">{fK(e.sales)}</span>
+                  <span className="text-[var(--color-success)] font-mono font-bold text-[13px] tabular-nums">{fmt(e.sales)}</span>
                 </div>
               ))}
             </div>
