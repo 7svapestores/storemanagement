@@ -461,23 +461,60 @@ export function MultiSelect({ options, value = [], onChange, placeholder = 'All'
 
 // ── Trend Chart ─────────────────────────────────────────────
 export function TrendChart({ data, height = 170 }) {
-  const [hover, setHover] = useState(null); // index of hovered group
+  const [hover, setHover] = useState(null); // { i, x, y } relative to container
+  const containerRef = useRef(null);
   if (!data?.length) return <div className="text-sw-dim text-center py-8 text-sm">No data</div>;
   const mx = Math.max(...data.flatMap(d => [d.purchases || 0, d.sales || 0]), 1);
   const bw = Math.min(24, Math.max(10, 350 / data.length / 2.5));
 
-  const hoverData = hover != null ? data[hover] : null;
+  const hoverData = hover != null ? data[hover.i] : null;
   const hoverDiff = hoverData ? (hoverData.diff ?? (hoverData.sales || 0) - (hoverData.purchases || 0)) : 0;
 
+  const TOOLTIP_W = 180;
+  const TOOLTIP_H = 96;
+
+  const updateHover = (e, i) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHover({ i, x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  // Nudge the tooltip so it stays inside the container.
+  let tipLeft = 0, tipTop = 0;
+  if (hover) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const w = rect?.width || 600;
+    tipLeft = hover.x + 14;
+    tipTop = hover.y - TOOLTIP_H - 10;
+    if (tipTop < 4) tipTop = hover.y + 16;
+    if (tipLeft + TOOLTIP_W > w - 4) tipLeft = hover.x - TOOLTIP_W - 14;
+    if (tipLeft < 4) tipLeft = 4;
+  }
+
   return (
-    <div className="overflow-x-auto relative">
-      {/* Custom hover tooltip — shows week, sales, purchases, diff with full numbers */}
+    <div ref={containerRef} className="overflow-x-auto relative">
+      {/* Custom hover tooltip — follows the cursor and clamps to bounds */}
       {hoverData && (
-        <div className="absolute top-1 right-2 z-10 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-lg shadow-lg p-2.5 text-[11px] pointer-events-none" style={{ minWidth: 160 }}>
-          <div className="text-[var(--text-primary)] font-bold mb-1">{hoverData.label || weekLabel(hoverData.week)}</div>
-          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Sales</span><span className="font-mono text-[var(--color-success)]">{fmt(hoverData.sales || 0)}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-[var(--text-muted)]">Purchases</span><span className="font-mono text-[var(--color-warning)]">{fmt(hoverData.purchases || 0)}</span></div>
-          <div className="flex justify-between gap-4 border-t border-[var(--border-subtle)] mt-1 pt-1"><span className="text-[var(--text-muted)]">Net</span><span className={`font-mono font-bold ${hoverDiff < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span></div>
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            left: tipLeft, top: tipTop,
+            width: TOOLTIP_W,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 10,
+            padding: 10,
+            fontSize: 12,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
+          }}
+        >
+          <div className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{hoverData.label || weekLabel(hoverData.week)}</div>
+          <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Sales</span><span className="font-mono" style={{ color: 'var(--color-success)' }}>{fmt(hoverData.sales || 0)}</span></div>
+          <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Purchases</span><span className="font-mono" style={{ color: 'var(--color-warning)' }}>{fmt(hoverData.purchases || 0)}</span></div>
+          <div className="flex justify-between gap-4 pt-1 mt-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Net</span>
+            <span className="font-mono font-bold" style={{ color: hoverDiff < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{hoverDiff < 0 ? '−' : '+'}{fmt(Math.abs(hoverDiff))}</span>
+          </div>
         </div>
       )}
       <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 60 : 'auto' }}>
@@ -486,14 +523,13 @@ export function TrendChart({ data, height = 170 }) {
           const sH = ((d.sales || 0) / mx) * (height - 36);
           const loss = (d.diff || d.sales - d.purchases) < 0;
           const diff = d.diff ?? (d.sales || 0) - (d.purchases || 0);
-          const titleText = `${d.label || weekLabel(d.week)}\nSales: ${fmt(d.sales || 0)}\nPurchases: ${fmt(d.purchases || 0)}\nNet: ${diff < 0 ? '−' : '+'}${fmt(Math.abs(diff))}`;
           return (
             <div
               key={i}
               className="flex flex-col items-center gap-0.5 cursor-pointer"
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover(h => h === i ? null : h)}
-              title={titleText}
+              onMouseEnter={(e) => updateHover(e, i)}
+              onMouseMove={(e) => updateHover(e, i)}
+              onMouseLeave={() => setHover(h => (h && h.i === i ? null : h))}
             >
               <div className={`text-[9px] font-mono font-bold px-1 rounded ${loss ? 'text-sw-red bg-sw-redD' : 'text-sw-green bg-sw-greenD'}`}>
                 {loss ? '−' : '+'}{fmt(Math.abs(diff))}
