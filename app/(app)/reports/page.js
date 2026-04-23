@@ -554,29 +554,29 @@ export default function ReportsPage() {
           <Card padding="lg" className="mb-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(99,91,255,0.12), rgba(124,58,237,0.06))' }}>
             <div className="absolute top-0 right-0 w-40 h-40 opacity-10" style={{ background: 'radial-gradient(circle, var(--brand-primary), transparent 70%)', filter: 'blur(40px)' }} />
             <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Net Profit · {range.start} to {range.end}</p>
-            <p className={`text-[36px] font-bold tracking-tight tabular-nums ${summary.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-              {summary.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(summary.netProfit))}
-            </p>
+            <div className="flex items-baseline gap-6 flex-wrap">
+              <p className={`text-[36px] font-bold tracking-tight tabular-nums ${summary.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                {summary.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(summary.netProfit))}
+              </p>
+              <div>
+                <p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p>
+                <p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[24px] font-bold tabular-nums leading-none">{summary.margin.toFixed(1)}%</p>
+              </div>
+            </div>
             {summary.revenueChange != null && (
-              <Badge variant={summary.revenueChange >= 0 ? 'success' : 'danger'} className="mt-1">
+              <Badge variant={summary.revenueChange >= 0 ? 'success' : 'danger'} className="mt-2">
                 {summary.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(summary.revenueChange).toFixed(1)}% vs previous
               </Badge>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Gross Sales</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(summary.totalGross)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Total Sales</p><p className="text-[var(--color-success)] text-[16px] font-bold tabular-nums">{fmt(summary.totalRevenue)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fmt(summary.totalPurchases)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fmt(summary.totalExpenses)}</p></div>
-              <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Margin</p><p style={{ color: summary.margin >= 20 ? 'var(--color-success)' : 'var(--color-warning)' }} className="text-[16px] font-bold tabular-nums">{summary.margin.toFixed(1)}%</p></div>
-            </div>
           </Card>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-3">
             <V2StatCard label="Gross Sales" value={fmt(summary.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(summary.totalCash)} · Card ${fmt(summary.totalCard)}`} />
             <V2StatCard label="Total Sales" value={fmt(summary.totalRevenue)} variant="success" icon="📊" />
             <V2StatCard label="Product Buying" value={fmt(summary.totalPurchases)} variant="warning" icon="📦" />
             <V2StatCard label="Operating Expenses" value={fmt(summary.totalExpenses)} variant="danger" icon="📋" />
             <V2StatCard label="Tax Collected" value={fmt(summary.totalTax)} variant="info" icon="🏛️" />
+            <V2StatCard label="Cash in Hand" value={fmt(cashRecon?.collected || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
           </div>
 
           {summary.totalRevenue > 0 && (

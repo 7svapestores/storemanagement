@@ -67,6 +67,11 @@ export default function DashboardPage() {
         if (storeId) expQ = expQ.eq('store_id', storeId);
         const { data: exps } = await expQ;
 
+        let cashQ = supabase.from('cash_collections').select('cash_collected, store_id')
+          .gte('date', range.start).lte('date', range.end);
+        if (storeId) cashQ = cashQ.eq('store_id', storeId);
+        const { data: cashRows } = await cashQ;
+
         const totalGross = sales?.reduce((s, r) => s + (r.gross_sales ?? r.total_sales ?? 0), 0) || 0;
         const totalCash = sales?.reduce((s, r) => s + (r.cash_sales || 0) + (r.register2_cash || 0), 0) || 0;
         const totalCard = sales?.reduce((s, r) => s + (r.card_sales || 0) + (r.register2_card || 0), 0) || 0;
@@ -75,10 +80,11 @@ export default function DashboardPage() {
         const totalTax = sales?.reduce((s, r) => s + (r.tax_collected || 0), 0) || 0;
         const totalPurch = purch?.reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0) || 0;
         const totalExp = exps?.reduce((s, r) => s + (r.amount || 0), 0) || 0;
+        const cashInHand = cashRows?.reduce((s, r) => s + (r.cash_collected || 0), 0) || 0;
         const netProfit = totalNet - totalPurch - totalExp;
         const margin = totalNet > 0 ? (netProfit / totalNet * 100) : 0;
 
-        setStats({ totalGross, totalNet, totalCash, totalCard, totalShortOver, totalTax, totalPurch, totalExp, netProfit, margin });
+        setStats({ totalGross, totalNet, totalCash, totalCard, totalShortOver, totalTax, totalPurch, totalExp, cashInHand, netProfit, margin });
 
         if (storeData?.length && !storeId) {
           const perf = storeData.map(st => {
@@ -283,7 +289,7 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           <V2StatCard label="Gross Sales" value={fmt(stats.totalGross)} variant="success" icon="💰" sub={`Cash ${fmt(stats.totalCash)} · Card ${fmt(stats.totalCard)}`} />
           <V2StatCard label="Total Sales" value={fmt(stats.totalNet)} variant="success" icon="📊" sub={`Daily avg ${fmt(dailyAvg)} · ${rangeDays} day${rangeDays === 1 ? '' : 's'}`} />
           {(() => {
@@ -297,6 +303,7 @@ export default function DashboardPage() {
             const icon = matched ? '⚖️' : short ? '🔴' : '🟢';
             return <V2StatCard label="Short / Over" value={displayValue} variant={variant} icon={icon} />;
           })()}
+          <V2StatCard label="Cash in Hand" value={fmt(stats.cashInHand || 0)} variant="info" icon="🏦" sub="From Cash Collection" />
         </div>
       )}
 
