@@ -25,8 +25,10 @@ export default function ReportsPage() {
   const [rawPurch, setRawPurch] = useState([]);
   const [rawExp, setRawExp] = useState([]);
   const [rawCash, setRawCash] = useState([]);
-  // Previous-period aggregate for side-by-side comparison.
+  // Previous-period aggregates for side-by-side comparisons.
   const [byVendorPrev, setByVendorPrev] = useState([]);
+  const [byItem, setByItem] = useState([]);
+  const [byItemPrev, setByItemPrev] = useState([]);
   // Export scope: 'all' to export every store in the loaded range, or a
   // specific store id to export just that store. Overrides the sidebar
   // filter for CSV/Excel/PDF only — does not re-query data.
@@ -60,7 +62,7 @@ export default function ReportsPage() {
           scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
           scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
           scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
-          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier').gte('week_of', prev.start).lte('week_of', prev.end)),
+          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier, item').gte('week_of', prev.start).lte('week_of', prev.end)),
           scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
           scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
           scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
@@ -148,8 +150,12 @@ export default function ReportsPage() {
         };
         const vendAggCur  = aggBy(purchCur, 'supplier');
         const vendAggPrev = aggBy(purchPrev, 'supplier');
+        const itemAggCur  = aggBy(purchCur, 'item');
+        const itemAggPrev = aggBy(purchPrev, 'item');
         setByVendor(Object.entries(vendAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
         setByVendorPrev(Object.entries(vendAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setByItem(Object.entries(itemAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
+        setByItemPrev(Object.entries(itemAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
 
         // ── Section 5 — Daily trend ─────────────────────
         const byDay = {};
@@ -446,7 +452,6 @@ export default function ReportsPage() {
     net: a.net + s.net,
   }), { revenue: 0, purchases: 0, expenses: 0, tax: 0, gross: 0, net: 0 });
 
-  const maxCatCurrent = Math.max(1, ...expenseRows.map(r => r.current));
   const soColor = (v) => Math.abs(v) < 0.01 ? 'var(--text-muted)' : v >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
 
   const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total));
@@ -637,55 +642,26 @@ export default function ReportsPage() {
       </Card>
       )}
 
-      {/* ── Section 3 — Expenses by category ───────────── */}
-      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
-        <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">Expense Breakdown</h3>
-        {expenseRows.length === 0 ? (
-          <div className="text-[var(--text-muted)] text-xs text-center py-6">No expenses in this period.</div>
-        ) : (
-          <>
-            <div className="space-y-1.5 mb-4">
-              {expenseRows.map(r => (
-                <div key={r.id} className="flex items-center gap-2">
-                  <div className="w-32 flex items-center gap-1 text-[var(--text-secondary)] text-[11px] flex-shrink-0">
-                    <span>{r.icon}</span><span className="truncate">{r.label}</span>
-                  </div>
-                  <div className="flex-1 bg-[var(--bg-card)] rounded h-4 relative overflow-hidden">
-                    <div className="h-full bg-[var(--color-danger)]/40" style={{ width: `${(r.current / maxCatCurrent) * 100}%` }} />
-                  </div>
-                  <span className="w-20 text-right text-[var(--text-primary)] font-mono text-[11px]">{fmt(r.current)}</span>
-                </div>
-              ))}
-            </div>
-            <table>
-              <thead>
-                <tr><th>Category</th><th style={{ textAlign: 'right' }}>This Period</th><th style={{ textAlign: 'right' }}>Previous</th><th style={{ textAlign: 'right' }}>Change</th></tr>
-              </thead>
-              <tbody>
-                {expenseRows.map(r => (
-                  <tr key={r.id}>
-                    <td>{r.icon} {r.label}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }}>{fmt(r.current)}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }} className="!text-[var(--text-secondary)]">{fmt(r.previous)}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono' }}>
-                      {r.previous > 0 ? (
-                        <span className={r.change > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}>
-                          {r.change > 0 ? '▲' : '▼'} {Math.abs(r.change).toFixed(1)}%
-                        </span>
-                      ) : <span className="text-[var(--text-muted)]">—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </div>
-
-      {/* ── Section 4 — Purchases breakdown (current vs previous) ── */}
+      {/* ── Section 3 — Expenses drill-down (this vs last period) ── */}
       <div className="mb-4">
         <ComparisonList
-          title="By Vendor"
+          title="Expenses by Category"
+          current={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.current }))}
+          previous={expenseRows.map(r => ({ name: `${r.icon} ${r.label}`, total: r.previous }))}
+          empty="No expenses in this period."
+        />
+      </div>
+
+      {/* ── Section 4 — Product Buying drill-down ─────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <ComparisonList
+          title="Product Buying by Item"
+          current={byItem}
+          previous={byItemPrev}
+          empty="No purchases."
+        />
+        <ComparisonList
+          title="Product Buying by Vendor"
           current={byVendor}
           previous={byVendorPrev}
           empty="No data."
