@@ -18,8 +18,12 @@ export default function ReportsPage() {
   const [expenseRows, setExpenseRows] = useState([]);
   const [byVendor, setByVendor] = useState([]);
   const [dailyTrend, setDailyTrend] = useState([]);
+  const [dailyTrendPrev, setDailyTrendPrev] = useState([]);
   const [trendStats, setTrendStats] = useState(null);
+  const [trendStatsPrev, setTrendStatsPrev] = useState(null);
   const [cashRecon, setCashRecon] = useState(null);
+  const [cashReconPrev, setCashReconPrev] = useState(null);
+  const [summaryPrev, setSummaryPrev] = useState(null);
   // Raw rows captured in state so the Excel/CSV export can emit detail sheets.
   const [rawSales, setRawSales] = useState([]);
   const [rawPurch, setRawPurch] = useState([]);
@@ -56,14 +60,16 @@ export default function ReportsPage() {
           { data: expCur },
           { data: expPrev },
           { data: cashCur },
+          { data: cashPrev },
         ] = await Promise.all([
           scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
-          scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
+          scope(supabase.from('daily_sales').select('date, store_id, total_sales, cash_sales, card_sales').gte('date', prev.start).lte('date', prev.end)),
           scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
           scope(supabase.from('purchases').select('total_cost, unit_cost, supplier').gte('week_of', prev.start).lte('week_of', prev.end)),
           scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
           scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
           scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
+          scope(supabase.from('cash_collections').select('store_id, date, cash_collected').gte('date', prev.start).lte('date', prev.end)),
         ]);
 
         setRawSales(salesCur || []);
@@ -93,14 +99,24 @@ export default function ReportsPage() {
         const checkPct = totalRevenue > 0 ? (totalCheck / totalRevenue) * 100 : 0;
 
         const prevRevenue = (salesPrev || []).reduce((s, r) => s + (r.total_sales || 0), 0);
+        const prevCash = (salesPrev || []).reduce((s, r) => s + (r.cash_sales || 0), 0);
+        const prevCard = (salesPrev || []).reduce((s, r) => s + (r.card_sales || 0), 0);
         const prevPurchases = (purchPrev || []).reduce((s, r) => s + (r.total_cost || r.unit_cost || 0), 0);
         const prevExpenses = (expPrev || []).reduce((s, r) => s + (r.amount || 0), 0);
+        const prevGrossProfit = prevRevenue - prevPurchases;
+        const prevNetProfit = prevRevenue - prevPurchases - prevExpenses;
+        const prevMargin = prevRevenue > 0 ? (prevNetProfit / prevRevenue) * 100 : 0;
 
         setSummary({
           totalGross, totalRevenue, totalCash, totalCard, totalCheck, totalTax,
           totalPurchases, totalExpenses,
           grossProfit, netProfit, margin, cashPct, cardPct, checkPct,
           revenueChange: prevRevenue > 0 ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 : null,
+        });
+        setSummaryPrev({
+          totalRevenue: prevRevenue, totalCash: prevCash, totalCard: prevCard,
+          totalPurchases: prevPurchases, totalExpenses: prevExpenses,
+          grossProfit: prevGrossProfit, netProfit: prevNetProfit, margin: prevMargin,
         });
 
         // ── Section 2 — Store breakdown ─────────────────
@@ -151,49 +167,54 @@ export default function ReportsPage() {
         setByVendor(Object.entries(vendAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
         setByVendorPrev(Object.entries(vendAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
 
-        // ── Section 5 — Daily trend ─────────────────────
-        const byDay = {};
-        (salesCur || []).forEach(r => {
-          byDay[r.date] = byDay[r.date] || { date: r.date, total: 0, cash: 0, card: 0 };
-          byDay[r.date].total += (r.total_sales || 0);
-          byDay[r.date].cash += (r.cash_sales || 0);
-          byDay[r.date].card += (r.card_sales || 0);
-        });
-        const days = Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
-        setDailyTrend(days);
-        if (days.length) {
+        // ── Section 5 — Daily trend (current + previous) ──────
+        const buildTrend = (rows) => {
+          const byDay = {};
+          (rows || []).forEach(r => {
+            byDay[r.date] = byDay[r.date] || { date: r.date, total: 0, cash: 0, card: 0 };
+            byDay[r.date].total += (r.total_sales || 0);
+            byDay[r.date].cash += (r.cash_sales || 0);
+            byDay[r.date].card += (r.card_sales || 0);
+          });
+          return Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
+        };
+        const statsFor = (days) => {
+          if (!days.length) return null;
           const best = days.reduce((a, b) => b.total > a.total ? b : a);
           const worst = days.reduce((a, b) => b.total < a.total ? b : a);
           const avg = days.reduce((s, d) => s + d.total, 0) / days.length;
-          setTrendStats({ best, worst, avg, dayCount: days.length });
-        } else {
-          setTrendStats(null);
-        }
+          return { best, worst, avg, dayCount: days.length };
+        };
+        const daysCur = buildTrend(salesCur);
+        const daysPrev = buildTrend(salesPrev);
+        setDailyTrend(daysCur);
+        setDailyTrendPrev(daysPrev);
+        setTrendStats(statsFor(daysCur));
+        setTrendStatsPrev(statsFor(daysPrev));
 
-        // ── Section 6 — Cash reconciliation ─────────────
-        const cashByKey = {};
-        (salesCur || []).forEach(r => {
-          const k = `${r.store_id}|${r.date}`;
-          cashByKey[k] = { expected: (cashByKey[k]?.expected || 0) + (r.cash_sales || 0), collected: cashByKey[k]?.collected || 0 };
-        });
-        (cashCur || []).forEach(r => {
-          const k = `${r.store_id}|${r.date}`;
-          cashByKey[k] = { expected: cashByKey[k]?.expected || 0, collected: (cashByKey[k]?.collected || 0) + (r.cash_collected || 0) };
-        });
-        let expectedTotal = 0, collectedTotal = 0, shortDays = 0, overDays = 0, pendingDays = 0;
-        Object.values(cashByKey).forEach(v => {
-          expectedTotal += v.expected;
-          collectedTotal += v.collected;
-          if (v.collected === 0 && v.expected > 0) pendingDays += 1;
-          else if (v.collected < v.expected - 0.01) shortDays += 1;
-          else if (v.collected > v.expected + 0.01) overDays += 1;
-        });
-        setCashRecon({
-          expected: expectedTotal,
-          collected: collectedTotal,
-          diff: collectedTotal - expectedTotal,
-          shortDays, overDays, pendingDays,
-        });
+        // ── Section 6 — Cash reconciliation (current + previous) ──
+        const buildRecon = (salesRows, cashRows) => {
+          const cashByKey = {};
+          (salesRows || []).forEach(r => {
+            const k = `${r.store_id}|${r.date}`;
+            cashByKey[k] = { expected: (cashByKey[k]?.expected || 0) + (r.cash_sales || 0), collected: cashByKey[k]?.collected || 0 };
+          });
+          (cashRows || []).forEach(r => {
+            const k = `${r.store_id}|${r.date}`;
+            cashByKey[k] = { expected: cashByKey[k]?.expected || 0, collected: (cashByKey[k]?.collected || 0) + (r.cash_collected || 0) };
+          });
+          let expected = 0, collected = 0, shortDays = 0, overDays = 0, pendingDays = 0;
+          Object.values(cashByKey).forEach(v => {
+            expected += v.expected;
+            collected += v.collected;
+            if (v.collected === 0 && v.expected > 0) pendingDays += 1;
+            else if (v.collected < v.expected - 0.01) shortDays += 1;
+            else if (v.collected > v.expected + 0.01) overDays += 1;
+          });
+          return { expected, collected, diff: collected - expected, shortDays, overDays, pendingDays };
+        };
+        setCashRecon(buildRecon(salesCur, cashCur));
+        setCashReconPrev(buildRecon(salesPrev, cashPrev));
       } catch (e) {
         console.error('[reports] load failed:', e);
         setLoadError(e?.message || 'Failed to load report');
@@ -448,7 +469,7 @@ export default function ReportsPage() {
 
   const soColor = (v) => Math.abs(v) < 0.01 ? 'var(--text-muted)' : v >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
 
-  const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total));
+  const maxTrendDay = Math.max(1, ...dailyTrend.map(d => d.total), ...dailyTrendPrev.map(d => d.total));
 
   // ── Auto-generated insights ──
   const insights = [];
@@ -668,47 +689,11 @@ export default function ReportsPage() {
         />
       </div>
 
-      {/* ── P&L Waterfall ─────────────────────────── */}
-      {summary && summary.totalRevenue > 0 && (
-        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
-          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">P&L Waterfall</h3>
-          {(() => {
-            const rev = summary.totalRevenue;
-            const grossPct = rev > 0 ? ((summary.grossProfit / rev) * 100).toFixed(1) : '0';
-            const expPct = rev > 0 ? ((summary.totalExpenses / rev) * 100).toFixed(1) : '0';
-            const netPct = rev > 0 ? ((summary.netProfit / rev) * 100).toFixed(1) : '0';
-            const cogsPct = rev > 0 ? ((summary.totalPurchases / rev) * 100).toFixed(1) : '0';
-            const lines = [
-              { label: 'Revenue', amount: rev, pct: '100', color: '#34D399', bold: true },
-              { label: '− Product Buying', amount: -summary.totalPurchases, pct: cogsPct, color: '#FBBF24' },
-              { label: '= Gross Profit', amount: summary.grossProfit, pct: grossPct, color: summary.grossProfit >= 0 ? '#34D399' : '#F87171', bold: true },
-              { label: '− Operating Expenses', amount: -summary.totalExpenses, pct: expPct, color: '#F87171' },
-              { label: '= Net Profit', amount: summary.netProfit, pct: netPct, color: summary.netProfit >= 0 ? '#34D399' : '#F87171', bold: true },
-            ];
-            return (
-              <div className="space-y-2">
-                {lines.map((l, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-44 text-[12px]" style={{ fontWeight: l.bold ? 700 : 400, color: l.bold ? '#E2E8F0' : '#94A3B8' }}>{l.label}</div>
-                    <div className="flex-1 bg-[var(--bg-card)] rounded h-6 relative overflow-hidden">
-                      <div className="h-full rounded" style={{ width: `${Math.min(100, Math.abs(Number(l.pct)))}%`, background: l.color + '55' }} />
-                    </div>
-                    <div className="w-28 text-right font-mono text-[13px]" style={{ color: l.color, fontWeight: l.bold ? 800 : 600 }}>
-                      {l.amount >= 0 ? '' : '−'}{fmt(Math.abs(l.amount))}
-                    </div>
-                    <div className="w-12 text-right text-[10px] text-[var(--text-muted)]">{l.pct}%</div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-          {summary.netProfit > 0 && (
-            <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] text-[12px] text-[var(--text-secondary)]">
-              Available to distribute: <span className="text-[var(--color-success)] font-mono font-bold text-[14px]">{fmt(summary.netProfit)}</span>
-            </div>
-          )}
-        </div>
-      )}
+      {/* ── P&L Waterfall: this period | last period ──────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <WaterfallBox title="P&L Waterfall — This Period" data={summary} />
+        <WaterfallBox title="P&L Waterfall — Last Period" data={summaryPrev} muted />
+      </div>
 
       {/* ── Watchouts ─────────────────────────── */}
       {watchouts.length > 0 ? (
@@ -729,47 +714,118 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* ── Section 5 — Daily trend ─────────────────── */}
-      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
-        <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Sales Trend</h3>
-        {trendStats ? (
-          <>
-            <div className="flex flex-wrap gap-4 text-[11px] mb-3">
-              <span>Best day: <span className="text-[var(--color-success)] font-mono font-bold">{fmt(trendStats.best.total)}</span> <span className="text-[var(--text-secondary)]">({trendStats.best.date})</span></span>
-              <span>Worst day: <span className="text-[var(--color-danger)] font-mono font-bold">{fmt(trendStats.worst.total)}</span> <span className="text-[var(--text-secondary)]">({trendStats.worst.date})</span></span>
-              <span>Daily avg: <span className="text-[var(--text-primary)] font-mono font-bold">{fmt(trendStats.avg)}</span></span>
-              <span className="text-[var(--text-secondary)]">{trendStats.dayCount} days tracked</span>
-            </div>
-            <div className="overflow-x-auto">
-              <div className="flex items-end gap-0.5 h-[120px]" style={{ minWidth: dailyTrend.length * 14 }}>
-                {dailyTrend.map(d => (
-                  <div key={d.date} className="flex flex-col items-center justify-end flex-shrink-0" style={{ width: 12 }}>
-                    <div style={{ height: `${(d.total / maxTrendDay) * 100}%`, width: 10, background: '#34D39988', borderRadius: '2px 2px 0 0' }}
-                      title={`${d.date}: ${fmt(d.total)}`} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        ) : <p className="text-[var(--text-muted)] text-xs text-center py-4">No sales in this period.</p>}
+      {/* ── Sales Trend: this period | last period ──────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <SalesTrendBox title="Sales Trend — This Period" days={dailyTrend} stats={trendStats} maxDay={maxTrendDay} />
+        <SalesTrendBox title="Sales Trend — Last Period" days={dailyTrendPrev} stats={trendStatsPrev} maxDay={maxTrendDay} muted />
       </div>
 
-      {/* ── Section 6 — Cash reconciliation ─────────────── */}
-      {cashRecon && (
-        <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
-          <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">Cash Reconciliation</h3>
-          <div className="flex flex-wrap gap-4 text-[12px]">
-            <span>Expected: <span className="font-mono font-bold">{fmt(cashRecon.expected)}</span></span>
-            <span>Collected: <span className="font-mono font-bold">{fmt(cashRecon.collected)}</span></span>
-            <span>
-              Net: <span className={`font-mono font-bold ${cashRecon.diff >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                {cashRecon.diff >= 0 ? '+' : ''}{fmt(cashRecon.diff)}
-              </span>
-            </span>
-            <span>Short days: <span className="text-[var(--color-danger)] font-bold">{cashRecon.shortDays}</span></span>
-            <span>Over days: <span className="text-[var(--color-success)] font-bold">{cashRecon.overDays}</span></span>
-            <span>Pending: <span className="text-[var(--color-warning)] font-bold">{cashRecon.pendingDays}</span></span>
+      {/* ── Cash Reconciliation: this period | last period ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <CashReconBox title="Cash Reconciliation — This Period" recon={cashRecon} />
+        <CashReconBox title="Cash Reconciliation — Last Period" recon={cashReconPrev} muted />
+      </div>
+    </div>
+  );
+}
+
+// One P&L waterfall column for a given period summary. Accepts either the
+// current-period `summary` shape (with all fields) or `summaryPrev` (a subset
+// — any missing prop falls back to 0).
+function WaterfallBox({ title, data, muted }) {
+  if (!data || !(data.totalRevenue > 0)) {
+    return (
+      <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+        <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">{title}</h3>
+        <p className="text-[var(--text-muted)] text-xs text-center py-4">No data.</p>
+      </div>
+    );
+  }
+  const rev = data.totalRevenue || 0;
+  const purchases = data.totalPurchases || 0;
+  const expenses = data.totalExpenses || 0;
+  const grossProfit = data.grossProfit ?? (rev - purchases);
+  const netProfit = data.netProfit ?? (rev - purchases - expenses);
+  const pct = (n) => rev > 0 ? (n / rev * 100).toFixed(1) : '0';
+  const opacity = muted ? '33' : '55';
+  const lines = [
+    { label: 'Revenue', amount: rev, pct: '100', color: '#34D399', bold: true },
+    { label: '− Product Buying', amount: -purchases, pct: pct(purchases), color: '#FBBF24' },
+    { label: '= Gross Profit', amount: grossProfit, pct: pct(grossProfit), color: grossProfit >= 0 ? '#34D399' : '#F87171', bold: true },
+    { label: '− Operating Expenses', amount: -expenses, pct: pct(expenses), color: '#F87171' },
+    { label: '= Net Profit', amount: netProfit, pct: pct(netProfit), color: netProfit >= 0 ? '#34D399' : '#F87171', bold: true },
+  ];
+  return (
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+      <h3 className="text-[var(--text-primary)] text-xs font-bold mb-3">{title}</h3>
+      <div className="space-y-2">
+        {lines.map((l, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="w-36 text-[11px]" style={{ fontWeight: l.bold ? 700 : 400, color: l.bold ? 'var(--text-primary)' : 'var(--text-muted)' }}>{l.label}</div>
+            <div className="flex-1 bg-[var(--bg-card)] rounded h-5 relative overflow-hidden">
+              <div className="h-full rounded" style={{ width: `${Math.min(100, Math.abs(Number(l.pct)))}%`, background: l.color + opacity }} />
+            </div>
+            <div className="w-24 text-right font-mono text-[12px]" style={{ color: muted ? 'var(--text-secondary)' : l.color, fontWeight: l.bold ? 800 : 600 }}>
+              {l.amount >= 0 ? '' : '−'}{fmt(Math.abs(l.amount))}
+            </div>
+            <div className="w-10 text-right text-[10px] text-[var(--text-muted)]">{l.pct}%</div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// One Sales Trend column. `maxDay` is a shared max across both periods so
+// the two bar charts are visually comparable at a glance.
+function SalesTrendBox({ title, days, stats, maxDay, muted }) {
+  const barColor = muted ? '#64748B99' : '#34D39988';
+  return (
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+      <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">{title}</h3>
+      {stats ? (
+        <>
+          <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-[11px] mb-3">
+            <span>Best day: <span className="text-[var(--color-success)] font-mono font-bold">{fmt(stats.best.total)}</span> <span className="text-[var(--text-muted)]">({stats.best.date})</span></span>
+            <span>Worst day: <span className="text-[var(--color-danger)] font-mono font-bold">{fmt(stats.worst.total)}</span> <span className="text-[var(--text-muted)]">({stats.worst.date})</span></span>
+            <span>Daily avg: <span className="text-[var(--text-primary)] font-mono font-bold">{fmt(stats.avg)}</span></span>
+            <span className="text-[var(--text-muted)]">{stats.dayCount} days tracked</span>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="flex items-end gap-0.5 h-[120px]" style={{ minWidth: (days || []).length * 14 }}>
+              {(days || []).map(d => (
+                <div key={d.date} className="flex flex-col items-center justify-end flex-shrink-0" style={{ width: 12 }}>
+                  <div style={{ height: `${(d.total / maxDay) * 100}%`, width: 10, background: barColor, borderRadius: '2px 2px 0 0' }}
+                    title={`${d.date}: ${fmt(d.total)}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : <p className="text-[var(--text-muted)] text-xs text-center py-4">No sales in this period.</p>}
+    </div>
+  );
+}
+
+// One Cash Reconciliation column.
+function CashReconBox({ title, recon, muted }) {
+  return (
+    <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4">
+      <h3 className="text-[var(--text-primary)] text-xs font-bold mb-2">{title}</h3>
+      {!recon || (recon.expected === 0 && recon.collected === 0 && !recon.pendingDays) ? (
+        <p className="text-[var(--text-muted)] text-xs">No cash activity.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-[12px]">
+          <span>Expected: <span className="font-mono font-bold" style={{ color: muted ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{fmt(recon.expected)}</span></span>
+          <span>Collected: <span className="font-mono font-bold" style={{ color: muted ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{fmt(recon.collected)}</span></span>
+          <span>
+            Net: <span className={`font-mono font-bold ${recon.diff >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+              {recon.diff >= 0 ? '+' : ''}{fmt(recon.diff)}
+            </span>
+          </span>
+          <span>Short days: <span className="text-[var(--color-danger)] font-bold">{recon.shortDays}</span></span>
+          <span>Over days: <span className="text-[var(--color-success)] font-bold">{recon.overDays}</span></span>
+          <span>Pending: <span className="text-[var(--color-warning)] font-bold">{recon.pendingDays}</span></span>
         </div>
       )}
     </div>
