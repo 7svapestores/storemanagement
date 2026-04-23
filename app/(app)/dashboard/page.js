@@ -98,18 +98,43 @@ export default function DashboardPage() {
           setTopEmployees([]);
         }
 
-        const weekMap = {};
-        sales?.forEach(s => {
-          const d = new Date(s.date); const day = d.getDay();
-          d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
-          const wk = d.toISOString().split('T')[0];
-          weekMap[wk] = { ...(weekMap[wk] || { sales: 0, purchases: 0 }), sales: (weekMap[wk]?.sales || 0) + (s.total_sales || 0) };
-        });
-        purch?.forEach(p => {
-          const wk = typeof p.week_of === 'string' ? p.week_of.split('T')[0] : new Date(p.week_of).toISOString().split('T')[0];
-          weekMap[wk] = { ...(weekMap[wk] || { sales: 0, purchases: 0 }), purchases: (weekMap[wk]?.purchases || 0) + (p.total_cost || p.unit_cost || 0) };
-        });
-        setTrends(Object.entries(weekMap).map(([week, d]) => ({ week, ...d, diff: d.sales - d.purchases, label: weekLabel(week) })).sort((a, b) => a.week.localeCompare(b.week)));
+        // Chart granularity: daily buckets for short ranges (≤ 35 days, which
+        // covers Today / This Week / This Month / Last Month / Last 2 Weeks
+        // etc.), otherwise weekly Mon–Sun buckets.
+        const rangeDays = Math.max(1, Math.round((new Date(range.end + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
+        const bucketDaily = rangeDays <= 35;
+        const bucketMap = {};
+        if (bucketDaily) {
+          // Pre-seed every day in the range so empty days still render as
+          // a zero bar (and the x-axis is continuous).
+          const startD = new Date(range.start + 'T12:00:00');
+          for (let i = 0; i < rangeDays; i++) {
+            const d = new Date(startD); d.setDate(d.getDate() + i);
+            bucketMap[d.toISOString().split('T')[0]] = { sales: 0, purchases: 0 };
+          }
+          sales?.forEach(s => {
+            if (bucketMap[s.date]) bucketMap[s.date].sales += (s.total_sales ?? s.net_sales ?? 0);
+          });
+          purch?.forEach(p => {
+            const key = typeof p.week_of === 'string' ? p.week_of.split('T')[0] : new Date(p.week_of).toISOString().split('T')[0];
+            if (bucketMap[key]) bucketMap[key].purchases += (p.total_cost || p.unit_cost || 0);
+          });
+        } else {
+          // Weekly Mon–Sun buckets (start-of-week key).
+          sales?.forEach(s => {
+            const d = new Date(s.date); const day = d.getDay();
+            d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+            const wk = d.toISOString().split('T')[0];
+            bucketMap[wk] = { ...(bucketMap[wk] || { sales: 0, purchases: 0 }), sales: (bucketMap[wk]?.sales || 0) + (s.total_sales || 0) };
+          });
+          purch?.forEach(p => {
+            const wk = typeof p.week_of === 'string' ? p.week_of.split('T')[0] : new Date(p.week_of).toISOString().split('T')[0];
+            bucketMap[wk] = { ...(bucketMap[wk] || { sales: 0, purchases: 0 }), purchases: (bucketMap[wk]?.purchases || 0) + (p.total_cost || p.unit_cost || 0) };
+          });
+        }
+        setTrends(Object.entries(bucketMap)
+          .map(([key, d]) => ({ week: key, ...d, diff: (d.sales || 0) - (d.purchases || 0), label: weekLabel(key) }))
+          .sort((a, b) => a.week.localeCompare(b.week)));
 
         const todayStr = today();
         let todayQ = supabase.from('daily_sales').select('store_id, total_sales, gross_sales').eq('date', todayStr);
@@ -291,7 +316,33 @@ export default function DashboardPage() {
       {/* Chart + Payment Mix */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5">
         <Card padding="md" className="lg:col-span-2">
-          <SectionHeader title="Weekly Sales vs Purchases" />
+          {(() => {
+            const totalSales = trends.reduce((s, d) => s + (d.sales || 0), 0);
+            const totalPurch = trends.reduce((s, d) => s + (d.purchases || 0), 0);
+            const rangeDays = Math.max(1, Math.round((new Date(range.end + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
+            const daily = rangeDays <= 35;
+            const title = daily ? 'Daily Sales vs Purchases' : 'Weekly Sales vs Purchases';
+            return (
+              <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                <div>
+                  <h3 className="text-[var(--text-primary)] text-[14px] font-bold">{title}</h3>
+                  <p className="text-[var(--text-muted)] text-[11px] mt-0.5">
+                    {daily ? 'Day-by-day' : 'Monday–Sunday weeks'} · {range.start} to {range.end}
+                  </p>
+                </div>
+                <div className="flex gap-4 text-[11px]">
+                  <div className="text-right">
+                    <div className="text-[var(--text-muted)] uppercase font-semibold text-[9px]">Total Sales</div>
+                    <div className="text-[var(--color-success)] font-mono font-bold tabular-nums">{fmt(totalSales)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[var(--text-muted)] uppercase font-semibold text-[9px]">Total Purchases</div>
+                    <div className="text-[var(--color-warning)] font-mono font-bold tabular-nums">{fmt(totalPurch)}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <div className="max-w-full overflow-x-auto"><TrendChart data={trends} /></div>
         </Card>
         {paymentMix && (
