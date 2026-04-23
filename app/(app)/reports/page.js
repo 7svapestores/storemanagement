@@ -16,8 +16,6 @@ export default function ReportsPage() {
   const [storeRows, setStoreRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [expenseRows, setExpenseRows] = useState([]);
-  const [topItems, setTopItems] = useState([]);
-  const [byCategory, setByCategory] = useState([]);
   const [byVendor, setByVendor] = useState([]);
   const [dailyTrend, setDailyTrend] = useState([]);
   const [trendStats, setTrendStats] = useState(null);
@@ -27,9 +25,7 @@ export default function ReportsPage() {
   const [rawPurch, setRawPurch] = useState([]);
   const [rawExp, setRawExp] = useState([]);
   const [rawCash, setRawCash] = useState([]);
-  // Previous-period aggregates for side-by-side comparisons.
-  const [topItemsPrev, setTopItemsPrev] = useState([]);
-  const [byCategoryPrev, setByCategoryPrev] = useState([]);
+  // Previous-period aggregate for side-by-side comparison.
   const [byVendorPrev, setByVendorPrev] = useState([]);
   // Export scope: 'all' to export every store in the loaded range, or a
   // specific store id to export just that store. Overrides the sidebar
@@ -64,7 +60,7 @@ export default function ReportsPage() {
           scope(supabase.from('daily_sales').select('*').gte('date', range.start).lte('date', range.end)),
           scope(supabase.from('daily_sales').select('total_sales').gte('date', prev.start).lte('date', prev.end)),
           scope(supabase.from('purchases').select('*').gte('week_of', range.start).lte('week_of', range.end)),
-          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier, category, item').gte('week_of', prev.start).lte('week_of', prev.end)),
+          scope(supabase.from('purchases').select('total_cost, unit_cost, supplier').gte('week_of', prev.start).lte('week_of', prev.end)),
           scope(supabase.from('expenses').select('*').gte('month', range.start.slice(0, 7)).lte('month', range.end.slice(0, 7))),
           scope(supabase.from('expenses').select('amount, category').gte('month', prev.start.slice(0, 7)).lte('month', prev.end.slice(0, 7))),
           scope(supabase.from('cash_collections').select('*').gte('date', range.start).lte('date', range.end)),
@@ -140,7 +136,7 @@ export default function ReportsPage() {
         }).sort((a, b) => b.current - a.current);
         setExpenseRows(catRows);
 
-        // ── Section 4 — Purchase breakdown (current + previous) ────
+        // ── Section 4 — Vendor breakdown (current + previous) ──────
         const aggBy = (rows, key) => {
           const out = {};
           (rows || []).forEach(r => {
@@ -150,17 +146,9 @@ export default function ReportsPage() {
           });
           return out;
         };
-        const itemAggCur = aggBy(purchCur, 'item');
-        const catAggCur  = aggBy(purchCur, 'category');
-        const vendAggCur = aggBy(purchCur, 'supplier');
-        const itemAggPrev = aggBy(purchPrev, 'item');
-        const catAggPrev  = aggBy(purchPrev, 'category');
+        const vendAggCur  = aggBy(purchCur, 'supplier');
         const vendAggPrev = aggBy(purchPrev, 'supplier');
-        setTopItems(Object.entries(itemAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10));
-        setByCategory(Object.entries(catAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
         setByVendor(Object.entries(vendAggCur).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
-        setTopItemsPrev(Object.entries(itemAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
-        setByCategoryPrev(Object.entries(catAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
         setByVendorPrev(Object.entries(vendAggPrev).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total));
 
         // ── Section 5 — Daily trend ─────────────────────
@@ -615,7 +603,8 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* ── Store Performance ─────────────── */}
+      {/* ── Store Performance — only in All-Stores view ── */}
+      {exportScope === 'all' && (
       <Card padding="md" className="mb-5 overflow-hidden">
         <SectionHeader title="Store Performance" />
         <div className="overflow-x-auto">
@@ -646,6 +635,7 @@ export default function ReportsPage() {
           </div>
         )}
       </Card>
+      )}
 
       {/* ── Section 3 — Expenses by category ───────────── */}
       <div className="bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 mb-4">
@@ -693,20 +683,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Section 4 — Purchases breakdown (current vs previous) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <ComparisonList
-          title="Top Items (by cost)"
-          current={topItems}
-          previous={topItemsPrev}
-          limit={10}
-          empty="No purchases."
-        />
-        <ComparisonList
-          title="By Category"
-          current={byCategory}
-          previous={byCategoryPrev}
-          empty="No data."
-        />
+      <div className="mb-4">
         <ComparisonList
           title="By Vendor"
           current={byVendor}
