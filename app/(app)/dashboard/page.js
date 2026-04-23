@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
-import { fmt, weekLabel, today } from '@/lib/utils';
+import { fmt, weekRangeLabel, today } from '@/lib/utils';
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -129,7 +129,7 @@ export default function DashboardPage() {
           weekMap[wk].purchases += (p.total_cost || p.unit_cost || 0);
         });
         setTrends(Object.entries(weekMap)
-          .map(([key, d]) => ({ week: key, ...d, diff: (d.sales || 0) - (d.purchases || 0), label: `Wk ${weekLabel(key)}` }))
+          .map(([key, d]) => ({ week: key, ...d, diff: (d.sales || 0) - (d.purchases || 0), label: weekRangeLabel(key) }))
           .sort((a, b) => a.week.localeCompare(b.week)));
 
         const todayStr = today();

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { DataTable, DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { V2StatCard } from '@/components/ui';
-import { fmt, fK, weekLabel } from '@/lib/utils';
+import { fmt, fK, weekRangeLabel } from '@/lib/utils';
 
 export default function TrendsPage() {
   const { supabase, isOwner, effectiveStoreId } = useAuth();
@@ -29,7 +29,7 @@ export default function TrendsPage() {
     const map = {};
     sales?.forEach(s => { const d = new Date(s.date); const dy = d.getDay(); d.setDate(d.getDate()-dy+(dy===0?-6:1)); const w = d.toISOString().split('T')[0]; map[w] = {...(map[w]||{sales:0,purchases:0}), sales: (map[w]?.sales||0)+(s.total_sales||0)}; });
     purch?.forEach(p => { const w = (typeof p.week_of === 'string' ? p.week_of : new Date(p.week_of).toISOString()).split('T')[0]; map[w] = {...(map[w]||{sales:0,purchases:0}), purchases: (map[w]?.purchases||0)+(p.total_cost||0)}; });
-    setTrends(Object.entries(map).map(([w,d]) => ({week:w,...d,diff:d.sales-d.purchases,label:weekLabel(w)})).sort((a,b) => a.week.localeCompare(b.week)));
+    setTrends(Object.entries(map).map(([w,d]) => ({week:w,...d,diff:d.sales-d.purchases,label:weekRangeLabel(w)})).sort((a,b) => a.week.localeCompare(b.week)));
     setLoading(false);
   })(); }, [range.start, range.end, storeId]);
 

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { fmt, fK, weekLabel, getDateRange } from '@/lib/utils';
+import { fmt, fK, weekLabel, weekRangeLabel, getDateRange } from '@/lib/utils';
 
 // ── SmartDatePicker ─────────────────────────────────────────
 // Three dropdown selects (Month / Day / Year) + a native date fallback icon.
@@ -508,7 +508,7 @@ export function TrendChart({ data, height = 170 }) {
             boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
           }}
         >
-          <div className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{hoverData.label || weekLabel(hoverData.week)}</div>
+          <div className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{hoverData.label || weekRangeLabel(hoverData.week)}</div>
           <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Sales</span><span className="font-mono" style={{ color: 'var(--color-success)' }}>{fmt(hoverData.sales || 0)}</span></div>
           <div className="flex justify-between gap-4"><span style={{ color: 'var(--text-muted)' }}>Purchases</span><span className="font-mono" style={{ color: 'var(--color-warning)' }}>{fmt(hoverData.purchases || 0)}</span></div>
           <div className="flex justify-between gap-4 pt-1 mt-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
@@ -517,7 +517,7 @@ export function TrendChart({ data, height = 170 }) {
           </div>
         </div>
       )}
-      <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 60 : 'auto' }}>
+      <div className="flex items-end gap-2.5 px-2" style={{ height, justifyContent: data.length <= 6 ? 'center' : 'flex-start', minWidth: data.length > 6 ? data.length * 78 : 'auto' }}>
         {data.map((d, i) => {
           const pH = ((d.purchases || 0) / mx) * (height - 36);
           const sH = ((d.sales || 0) / mx) * (height - 36);
@@ -538,7 +538,7 @@ export function TrendChart({ data, height = 170 }) {
                 <div style={{ width: bw, height: Math.max(pH, 2), borderRadius: '3px 3px 1px 1px', background: loss ? '#F87171bb' : '#FBBF2488' }} />
                 <div style={{ width: bw, height: Math.max(sH, 2), borderRadius: '3px 3px 1px 1px', background: '#34D39999' }} />
               </div>
-              <span className="text-[8px] text-sw-dim">{d.label || weekLabel(d.week)}</span>
+              <span className="text-[8px] text-sw-dim whitespace-nowrap">{d.label || weekRangeLabel(d.week)}</span>
             </div>
           );
         })}
