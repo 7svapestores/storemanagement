@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown, MultiSelect } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Alert, Loading, StoreBadge, ConfirmModal, SmartDatePicker, SortDropdown, MultiSelect, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge } from '@/components/ui';
 import { fmt, fK, dayLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -1306,6 +1306,12 @@ export default function SalesPage() {
       {msg === 'success' && <Alert type="success">Saved!</Alert>}
       {msg && msg !== 'success' && <Alert type="error">{msg}</Alert>}
       {loadError && <Alert type="error">{loadError}</Alert>}
+
+      <StorePills
+        stores={stores}
+        value={pageStoreIds.length === 1 ? pageStoreIds[0] : ''}
+        onChange={(id) => setPageStoreIds(id ? [id] : [])}
+      />
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 

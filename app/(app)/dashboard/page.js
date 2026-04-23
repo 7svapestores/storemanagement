@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { DateBar, useDateRange, TrendChart, Loading } from '@/components/UI';
+import { DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { Card, V2StatCard, Badge, V2Alert, SectionHeader } from '@/components/ui';
 import { fK, fmt, weekLabel, today } from '@/lib/utils';
 
@@ -194,24 +194,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Store filter pills */}
-      <div className="flex gap-1.5 overflow-x-auto mb-3 pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <button
-          onClick={() => setSelectedStore('')}
-          className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${!selectedStore ? 'text-white shadow-sm' : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]'}`}
-          style={!selectedStore ? { background: 'var(--brand-primary)' } : undefined}
-        >All Stores</button>
-        {stores.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setSelectedStore(s.id === selectedStore ? '' : s.id)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors flex items-center gap-1.5 ${selectedStore === s.id ? 'text-white shadow-sm' : 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]'}`}
-            style={selectedStore === s.id ? { background: s.color || 'var(--brand-primary)' } : undefined}
-          >
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
-            {s.name?.split(' - ').pop()?.trim() || s.name}
-          </button>
-        ))}
-      </div>
+      <StorePills stores={stores} value={selectedStore} onChange={setSelectedStore} />
 
       <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 

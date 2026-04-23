@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker, SortDropdown } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, PageHeader, Modal, Field, Button, Loading, StoreBadge, ConfirmModal, StoreRequiredModal, ImageViewer, MultiSelect, SmartDatePicker, SortDropdown, StorePills } from '@/components/UI';
 import ImageGallery from '@/components/ImageGallery';
 import { fmt, dateLabel, today, downloadCSV } from '@/lib/utils';
 import { logActivity, fmtMoney, shortDate } from '@/lib/activity';
@@ -361,16 +361,11 @@ export default function PurchasesPage() {
     >
       +
     </button>
-    <div className="bg-[var(--bg-elevated)] rounded-lg p-2.5 border border-[var(--border-subtle)] mb-3 flex gap-2 flex-wrap items-center">
-      <MultiSelect
-        label="Store"
-        placeholder="All Stores"
-        unitLabel="store"
-        value={pageStoreIds}
-        onChange={setPageStoreIds}
-        options={stores.map(s => ({ value: s.id, label: s.name }))}
-      />
-    </div>
+    <StorePills
+      stores={stores}
+      value={pageStoreIds.length === 1 ? pageStoreIds[0] : ''}
+      onChange={(id) => setPageStoreIds(id ? [id] : [])}
+    />
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
 
     {/* Vendor filter + search */}

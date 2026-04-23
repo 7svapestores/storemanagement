@@ -926,3 +926,41 @@ export function StoreBadge({ name, color }) {
     </span>
   );
 }
+
+// ── Store Pills — horizontal pill row: [All Stores] [• Bells] [• Kerens] … ──
+// Single-select. Clicking the active pill again unselects (returns to All).
+// Pass `showAll={false}` to hide the All Stores pill.
+export function StorePills({ stores = [], value = '', onChange, showAll = true, className = '' }) {
+  const pillBase = 'px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors';
+  const inactive = 'bg-[var(--bg-hover)] text-[var(--text-muted)] border border-[var(--border-subtle)]';
+  return (
+    <div className={`flex gap-1.5 overflow-x-auto mb-3 pb-1 ${className}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+      {showAll && (
+        <button
+          type="button"
+          onClick={() => onChange?.('')}
+          className={`${pillBase} ${!value ? 'text-white shadow-sm' : inactive}`}
+          style={!value ? { background: 'var(--brand-primary)' } : undefined}
+        >
+          All Stores
+        </button>
+      )}
+      {stores.map(s => {
+        const selected = value === s.id;
+        const short = s.name?.split(' - ').pop()?.trim() || s.name;
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onChange?.(selected ? '' : s.id)}
+            className={`${pillBase} flex items-center gap-1.5 ${selected ? 'text-white shadow-sm' : inactive}`}
+            style={selected ? { background: s.color || 'var(--brand-primary)' } : undefined}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+            {short}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

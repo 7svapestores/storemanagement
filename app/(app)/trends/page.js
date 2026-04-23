@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { DataTable, DateBar, useDateRange, TrendChart, Loading } from '@/components/UI';
+import { DataTable, DateBar, useDateRange, TrendChart, Loading, StorePills } from '@/components/UI';
 import { V2StatCard } from '@/components/ui';
 import { fmt, fK, weekLabel } from '@/lib/utils';
 
@@ -10,12 +10,20 @@ export default function TrendsPage() {
   const { range, preset, selectPreset, setStart, setEnd } = useDateRange('last90');
   const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stores, setStores] = useState([]);
+  const [selectedStore, setSelectedStore] = useState('');
+  const storeId = selectedStore || effectiveStoreId;
+
+  useEffect(() => { (async () => {
+    const { data: st } = await supabase.from('stores').select('id, name, color').eq('is_active', true).order('created_at');
+    setStores(st || []);
+  })(); }, [supabase]);
 
   useEffect(() => { (async () => {
     setLoading(true);
     let salesQ = supabase.from('daily_sales').select('date, total_sales, store_id').gte('date', range.start).lte('date', range.end);
     let purchQ = supabase.from('purchases').select('week_of, total_cost, store_id').gte('week_of', range.start).lte('week_of', range.end);
-    if (effectiveStoreId) { salesQ = salesQ.eq('store_id', effectiveStoreId); purchQ = purchQ.eq('store_id', effectiveStoreId); }
+    if (storeId) { salesQ = salesQ.eq('store_id', storeId); purchQ = purchQ.eq('store_id', storeId); }
     const { data: sales } = await salesQ;
     const { data: purch } = await purchQ;
     const map = {};
@@ -23,7 +31,7 @@ export default function TrendsPage() {
     purch?.forEach(p => { const w = (typeof p.week_of === 'string' ? p.week_of : new Date(p.week_of).toISOString()).split('T')[0]; map[w] = {...(map[w]||{sales:0,purchases:0}), purchases: (map[w]?.purchases||0)+(p.total_cost||0)}; });
     setTrends(Object.entries(map).map(([w,d]) => ({week:w,...d,diff:d.sales-d.purchases,label:weekLabel(w)})).sort((a,b) => a.week.localeCompare(b.week)));
     setLoading(false);
-  })(); }, [range.start, range.end, effectiveStoreId]);
+  })(); }, [range.start, range.end, storeId]);
 
   if (!isOwner) return <div className="text-[var(--text-muted)] text-center py-20">Owner access required</div>;
   if (loading) return <Loading />;
@@ -35,6 +43,7 @@ export default function TrendsPage() {
       <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider">Analytics</p>
       <h1 className="text-[var(--text-primary)] text-[22px] font-bold tracking-tight">Purchase vs Sales Trends</h1>
     </div>
+    <StorePills stores={stores} value={selectedStore} onChange={setSelectedStore} />
     <DateBar preset={preset} onPreset={selectPreset} startDate={range.start} endDate={range.end} onStartChange={setStart} onEndChange={setEnd} />
     <div className="grid grid-cols-2 gap-3 mb-4">
       <V2StatCard label="Purchase Ratio" value={avg.toFixed(0)+'%'} icon="📊" variant={avg>80?'danger':avg>65?'warning':'success'} sub={avg>80?'Too high!':'Healthy'} />
