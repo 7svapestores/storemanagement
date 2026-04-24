@@ -33,6 +33,7 @@ const I = {
   bot:       <Svg><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 2v4"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></Svg>,
   refresh:   <Svg><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></Svg>,
   settings:  <Svg><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.14.67.38.9.68"/></Svg>,
+  tag:       <Svg><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></Svg>,
   logout:    <Svg><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>,
   more:      <Svg><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></Svg>,
 };
@@ -61,6 +62,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
       { path: '/invoices',   icon: I.invoice,   label: 'Invoices' },
       { path: '/expenses',   icon: I.expense,   label: 'Expenses' },
       { path: '/inventory',  icon: I.inventory, label: 'Inventory' },
+      { path: '/warehouse-prices', icon: I.tag,  label: 'Warehouse Prices' },
     ]},
     { title: 'Reports', items: [
       { path: '/reports',  icon: I.pl,       label: 'P&L Report' },
