@@ -209,6 +209,12 @@ function SearchPanel() {
                     <div className="flex items-center gap-2 min-w-0">
                       {i === 0 && <span className="text-sw-blue font-bold text-[10px]">BEST</span>}
                       <span className="font-semibold truncate">{o.vendor_name}</span>
+                      {o.invoice_number && (o.invoice_url
+                        ? <a href={o.invoice_url} target="_blank" rel="noopener noreferrer"
+                            className="text-sw-blue text-[10px] font-mono hover:underline shrink-0"
+                            title="Open invoice PDF">#{o.invoice_number}</a>
+                        : <span className="text-sw-dim text-[10px] font-mono shrink-0">#{o.invoice_number}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="text-sw-dim text-[10px]">last {fmtDate(o.last_bought)}</span>
@@ -239,7 +245,7 @@ function RecentIngests() {
     setLoading(true);
     const { data } = await supabase
       .from('invoices')
-      .select('id, vendor_name, invoice_number, date, amount, parse_source, parsed_at')
+      .select('id, vendor_name, invoice_number, date, amount, parse_source, parsed_at, image_url')
       .not('parsed_at', 'is', null)
       .order('parsed_at', { ascending: false })
       .limit(20);
@@ -273,7 +279,14 @@ function RecentIngests() {
             {rows.map(r => (
               <tr key={r.id} className="border-b border-sw-border/60 text-sw-text">
                 <td className="py-2 pr-2">{r.vendor_name}</td>
-                <td className="py-2 pr-2 font-mono text-[11px]">{r.invoice_number || '—'}</td>
+                <td className="py-2 pr-2 font-mono text-[11px]">
+                  {r.invoice_number
+                    ? (r.image_url
+                        ? <a href={r.image_url} target="_blank" rel="noopener noreferrer"
+                             className="text-sw-blue hover:underline">{r.invoice_number}</a>
+                        : r.invoice_number)
+                    : '—'}
+                </td>
                 <td className="py-2 pr-2 text-sw-sub">{fmtDate(r.date)}</td>
                 <td className="py-2 pr-2 text-right font-semibold">{fmtMoney(r.amount)}</td>
                 <td className="py-2 pr-2">

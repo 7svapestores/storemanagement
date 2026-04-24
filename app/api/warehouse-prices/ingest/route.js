@@ -130,6 +130,30 @@ export async function POST(req) {
       resolvedStoreId = s?.[0]?.id || null;
     }
 
+    // Upload the PDF to the 'invoices' storage bucket so it's viewable
+    // from both the Invoices page and the Warehouse Prices page.
+    const slug = (s) => String(s || 'unknown').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'unknown';
+    const invDate = header.invoice_date || new Date().toISOString().slice(0, 10);
+    const rand = Math.random().toString(36).slice(2, 10);
+    const invNumSlug = header.invoice_number ? slug(header.invoice_number) : rand;
+    const storagePath = `${slug(header.vendor_name)}/${invDate}-${invNumSlug}-${rand}.pdf`;
+
+    const { error: upErr } = await admin.storage
+      .from('invoices')
+      .upload(storagePath, buffer, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: 'application/pdf',
+      });
+    if (upErr) {
+      console.error('[warehouse-prices/ingest] storage upload failed:', upErr);
+      // Non-fatal: we'll still persist the parsed data, but with empty URL.
+    }
+    const publicUrl = upErr
+      ? ''
+      : (admin.storage.from('invoices').getPublicUrl(storagePath).data?.publicUrl || '');
+
     const { data: inv, error: invErr } = await admin
       .from('invoices')
       .insert({
@@ -137,15 +161,15 @@ export async function POST(req) {
         vendor_id: vendorId,
         vendor_name: header.vendor_name,
         invoice_number: header.invoice_number,
-        date: header.invoice_date || new Date().toISOString().slice(0, 10),
+        date: invDate,
         amount: header.grand_total || 0,
         subtotal: header.subtotal || null,
         total_discount: header.total_discount || null,
         parse_source: header.parse_source,
         parsed_at: new Date().toISOString(),
         uploaded_by: user.id,
-        image_url: '',   // PDF storage upload can be wired later
-        image_path: '',
+        image_url: publicUrl,
+        image_path: upErr ? '' : storagePath,
       })
       .select('id')
       .single();

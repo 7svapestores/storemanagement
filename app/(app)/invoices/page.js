@@ -239,16 +239,32 @@ export default function InvoicesPage() {
                       />
                     </label>
                     <button
-                      onClick={() => setViewInvoice({ ...inv, _gallery: visible })}
+                      onClick={() => {
+                        // PDF invoices come from the warehouse-prices ingest flow — ImageGallery
+                        // can't render them, so open the PDF in a new tab instead.
+                        const isPdf = /\.pdf($|\?)/i.test(inv.image_url || '') || inv.parse_source;
+                        if (isPdf && inv.image_url) {
+                          window.open(inv.image_url, '_blank', 'noopener,noreferrer');
+                        } else {
+                          setViewInvoice({ ...inv, _gallery: visible.filter(i => !/\.pdf($|\?)/i.test(i.image_url || '') && !i.parse_source) });
+                        }
+                      }}
                       className="block w-full text-left"
                     >
-                      <div className="aspect-square bg-black/30 overflow-hidden">
-                        <img
-                          src={inv.image_url}
-                          alt={inv.vendor_name}
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="aspect-square bg-black/30 overflow-hidden flex items-center justify-center">
+                        {(/\.pdf($|\?)/i.test(inv.image_url || '') || inv.parse_source) ? (
+                          <div className="flex flex-col items-center justify-center gap-1 text-[var(--text-muted)]">
+                            <span className="text-4xl">📄</span>
+                            <span className="text-[10px] font-mono truncate max-w-[90%] px-1">{inv.invoice_number || 'PDF'}</span>
+                          </div>
+                        ) : (
+                          <img
+                            src={inv.image_url}
+                            alt={inv.vendor_name}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                        )}
                       </div>
                       <div className="p-2 space-y-0.5">
                         <div className="text-[var(--text-primary)] text-[11px] font-bold truncate">{inv.vendor_name || 'Unknown'}</div>

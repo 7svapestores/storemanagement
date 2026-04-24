@@ -49,17 +49,33 @@ export async function GET(req) {
 
     if (!products.length) return NextResponse.json({ products: [] });
 
-    // Fetch every vendor's latest price for the matched products.
+    // Fetch every vendor's latest price for the matched products, joined
+    // with invoices so the UI can deep-link each offer back to its PDF.
     const ids = products.map(p => p.id);
-    const { data: prices } = await admin
-      .from('product_best_prices')
-      .select('product_id, vendor_id, vendor_name, unit_price, last_bought, invoice_number, quantity')
-      .in('product_id', ids);
+    const { data: priceRows } = await admin
+      .from('product_prices')
+      .select('product_id, vendor_id, vendor_name, unit_price, invoice_date, invoice_number, invoice_id, quantity, invoices(image_url)')
+      .in('product_id', ids)
+      .order('invoice_date', { ascending: false });
 
+    // Dedupe to the most recent row per (product, vendor).
+    const seen = new Set();
     const byProduct = new Map();
-    for (const row of (prices || [])) {
+    for (const row of (priceRows || [])) {
+      const key = `${row.product_id}:${row.vendor_id || 'null'}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (!byProduct.has(row.product_id)) byProduct.set(row.product_id, []);
-      byProduct.get(row.product_id).push(row);
+      byProduct.get(row.product_id).push({
+        vendor_id: row.vendor_id,
+        vendor_name: row.vendor_name,
+        unit_price: row.unit_price,
+        last_bought: row.invoice_date,
+        invoice_number: row.invoice_number,
+        invoice_id: row.invoice_id,
+        invoice_url: row.invoices?.image_url || null,
+        quantity: row.quantity,
+      });
     }
 
     // Re-rank products: those with prices first, then by how well the name matches.
