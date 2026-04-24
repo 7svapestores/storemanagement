@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [todaySales, setTodaySales] = useState([]);
+  const [todayLastWeek, setTodayLastWeek] = useState([]);
   const [nrsStatus, setNrsStatus] = useState(null);
   const [lastSync, setLastSync] = useState(null);
   const [storePerf, setStorePerf] = useState([]);
@@ -127,10 +128,18 @@ export default function DashboardPage() {
           .sort((a, b) => a.week.localeCompare(b.week)));
 
         const todayStr = today();
+        // Same calendar day one week ago, for the live-bar vs-last-week delta.
+        const lastWeekStr = (() => {
+          const d = new Date(todayStr + 'T12:00:00'); d.setDate(d.getDate() - 7);
+          const y = d.getFullYear(); const mo = String(d.getMonth()+1).padStart(2,'0'); const da = String(d.getDate()).padStart(2,'0');
+          return `${y}-${mo}-${da}`;
+        })();
         let todayQ = supabase.from('daily_sales').select('store_id, total_sales, gross_sales').eq('date', todayStr);
-        if (storeId) todayQ = todayQ.eq('store_id', storeId);
-        const { data: todayRows } = await todayQ;
+        let lastWeekQ = supabase.from('daily_sales').select('total_sales, gross_sales').eq('date', lastWeekStr);
+        if (storeId) { todayQ = todayQ.eq('store_id', storeId); lastWeekQ = lastWeekQ.eq('store_id', storeId); }
+        const [{ data: todayRows }, { data: lastWeekRows }] = await Promise.all([todayQ, lastWeekQ]);
         setTodaySales(todayRows || []);
+        setTodayLastWeek(lastWeekRows || []);
 
         // Top employees — only fetched in multi-store mode; cleared above
         // when a specific store is selected.
@@ -225,26 +234,71 @@ export default function DashboardPage() {
   const rangeDays = Math.max(1, Math.round((new Date(avgEnd + 'T12:00:00') - new Date(range.start + 'T12:00:00')) / 86400000) + 1);
   const dailyAvg = stats ? (stats.totalNet || 0) / rangeDays : 0;
 
+  // Today totals + vs-last-week delta for the live status bar.
+  const totalToday = todaySales.reduce((s, r) => s + (r.total_sales ?? r.gross_sales ?? 0), 0);
+  const totalLastWeek = todayLastWeek.reduce((s, r) => s + (r.total_sales ?? r.gross_sales ?? 0), 0);
+  const todayDeltaPct = totalLastWeek > 0 ? ((totalToday - totalLastWeek) / totalLastWeek) * 100 : null;
+
+  // Month progress for the hero progress bar — a stand-in for a real
+  // target until we wire per-store monthly goals into settings.
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysPassed = now.getDate();
+  const daysLeft = Math.max(0, daysInMonth - daysPassed);
+  const monthProgressPct = Math.round((daysPassed / daysInMonth) * 100);
+  const projectedNet = stats && daysPassed > 0 ? (stats.netProfit / daysPassed) * daysInMonth : 0;
+
+  const relativeTime = (iso) => {
+    if (!iso) return '';
+    const then = new Date(iso);
+    const sec = Math.max(1, Math.round((Date.now() - then.getTime()) / 1000));
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.round(min / 60);
+    if (hr < 48) return `${hr}h ago`;
+    return `${Math.round(hr / 24)}d ago`;
+  };
+
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <p className="text-[var(--text-muted)] text-[12px] font-semibold">{dayStr()}</p>
-          <h1 className="text-[var(--text-primary)] text-[24px] font-bold tracking-tight">{greeting(profile?.name)}</h1>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {isOwner && nrsStatus !== null && (
-            <Badge variant={nrsStatus ? 'success' : 'danger'}>
-              {nrsStatus ? '🤖 NRS Connected' : '✕ NRS Invalid'}
-            </Badge>
+      {/* Live status bar */}
+      <div className="flex items-center gap-x-5 gap-y-2 flex-wrap px-4 py-2 mb-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[12px]">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[var(--color-success)] animate-pulse" />
+          <span className="text-[var(--color-success)] font-semibold">Live</span>
+        </span>
+        <span className="text-[var(--text-muted)]">
+          Today <span className="text-[var(--text-primary)] font-semibold tabular-nums">{fmt(totalToday)}</span>
+          {todayDeltaPct != null && (
+            <span className={`ml-1.5 font-semibold ${todayDeltaPct >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+              {todayDeltaPct >= 0 ? '+' : ''}{todayDeltaPct.toFixed(1)}%
+            </span>
           )}
-          {lastSync && (
-            <Badge variant="default">
-              Sync: {lastSync.date} · {lastSync.success}/{lastSync.success + lastSync.failed}
-            </Badge>
-          )}
-        </div>
+        </span>
+        {alerts.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[var(--color-warning)]" />
+            <span className="text-[var(--color-warning)] font-semibold">{alerts.length} alert{alerts.length === 1 ? '' : 's'}</span>
+          </span>
+        )}
+        {isOwner && nrsStatus !== null && (
+          <span className={`flex items-center gap-1.5 ${nrsStatus ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+            <span className={`w-2 h-2 rounded-full ${nrsStatus ? 'bg-[var(--color-success)]' : 'bg-[var(--color-danger)]'}`} />
+            <span className="font-semibold">{nrsStatus ? 'NRS Connected' : 'NRS Invalid'}</span>
+          </span>
+        )}
+        {lastSync && (
+          <span className="text-[var(--text-muted)] ml-auto">
+            Synced <span className="text-[var(--text-secondary)]">{relativeTime(lastSync.time)}</span>
+          </span>
+        )}
+      </div>
+
+      {/* Greeting */}
+      <div className="mb-4">
+        <p className="text-[var(--text-muted)] text-[12px] font-semibold">{dayStr()}</p>
+        <h1 className="text-[var(--text-primary)] text-[24px] font-bold tracking-tight">{greeting(profile?.name)}</h1>
       </div>
 
       {/* Store filter pills */}
@@ -254,35 +308,46 @@ export default function DashboardPage() {
 
       {loadError && <V2Alert type="danger" className="mb-3">{loadError}</V2Alert>}
 
-      {/* Hero: Net Profit */}
+      {/* Hero: Net Profit + Margin + Pace */}
       {stats && (
-        <Card padding="lg" className="mb-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(94,106,210,0.15), rgba(139,92,246,0.08))' }}>
-          <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, var(--brand-primary), transparent 70%)', filter: 'blur(40px)' }} />
-          <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">Net Profit · {range.start} to {range.end}</p>
-          <p className={`text-[40px] font-bold tracking-tight tabular-nums ${stats.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-            {stats.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(stats.netProfit))}
+        <Card
+          padding="lg"
+          className="mb-5 relative overflow-hidden"
+          style={{
+            background: stats.netProfit >= 0
+              ? 'linear-gradient(135deg, rgba(52,211,153,0.14), rgba(52,211,153,0.03))'
+              : 'linear-gradient(135deg, rgba(248,113,113,0.14), rgba(248,113,113,0.03))',
+            borderColor: stats.netProfit >= 0 ? 'rgba(52,211,153,0.25)' : 'rgba(248,113,113,0.25)',
+          }}
+        >
+          <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10" style={{ background: `radial-gradient(circle, ${stats.netProfit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}, transparent 70%)`, filter: 'blur(40px)' }} />
+          <p className="text-[var(--text-muted)] text-[11px] font-semibold uppercase tracking-wider mb-1">
+            Net Profit · {new Date(range.start + 'T12:00:00').toLocaleDateString('en-US', { month: 'long' })}
           </p>
-          <p className="text-[var(--text-muted)] text-[12px] mt-1">
-            Margin: <span className={stats.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>{stats.margin.toFixed(1)}%</span>
-            {(() => {
-              const now = new Date();
-              const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-              const daysPassed = now.getDate();
-              const daysLeft = daysInMonth - daysPassed;
-              const dailyAvg = daysPassed > 0 ? stats.netProfit / daysPassed : 0;
-              const projected = dailyAvg * daysInMonth;
-              return (
-                <span className="ml-3">
-                  · {daysLeft}d left · Pace: <span className={projected >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fmt(projected)}/mo</span>
-                </span>
-              );
-            })()}
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-subtle)]">
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Revenue</p><p className="text-[var(--text-primary)] text-[16px] font-bold tabular-nums">{fmt(stats.totalNet)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Product Buying</p><p className="text-[var(--color-warning)] text-[16px] font-bold tabular-nums">{fmt(stats.totalPurch)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Expenses</p><p className="text-[var(--color-danger)] text-[16px] font-bold tabular-nums">{fmt(stats.totalExp)}</p></div>
-            <div><p className="text-[var(--text-muted)] text-[10px] uppercase font-semibold">Tax Collected</p><p className="text-[var(--color-info)] text-[16px] font-bold tabular-nums">{fmt(stats.totalTax)}</p></div>
+          <div className="flex items-end gap-6 flex-wrap">
+            <p className={`text-[44px] font-bold tracking-tight tabular-nums leading-none ${stats.netProfit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+              {stats.netProfit >= 0 ? '' : '−'}{fmt(Math.abs(stats.netProfit))}
+            </p>
+            <div className="text-[12px] text-[var(--text-secondary)] pb-1">
+              Margin <span className={`font-bold ${stats.margin >= 20 ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}`}>{stats.margin.toFixed(1)}%</span>
+              <span className="mx-2 text-[var(--text-muted)]">·</span>
+              Pace <span className={`font-bold tabular-nums ${projectedNet >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmt(projectedNet)}/mo</span>
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="h-2 rounded-full bg-[var(--bg-card)] overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${monthProgressPct}%`,
+                  background: stats.netProfit >= 0 ? 'var(--color-success)' : 'var(--color-danger)',
+                }}
+              />
+            </div>
+            <div className="flex justify-between mt-1.5 text-[11px] text-[var(--text-muted)]">
+              <span>{monthProgressPct}% of the month</span>
+              <span>{daysLeft} day{daysLeft === 1 ? '' : 's'} left</span>
+            </div>
           </div>
         </Card>
       )}
@@ -353,14 +418,35 @@ export default function DashboardPage() {
       {/* Attention Needed */}
       {alerts.length > 0 ? (
         <Card padding="md" className="mb-5">
-          <SectionHeader title="Attention Needed" />
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-[var(--text-primary)] text-[14px] font-bold">Attention needed</h2>
+            <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-[var(--color-danger-bg)] text-[var(--color-danger)]">{alerts.length}</span>
+          </div>
           <div className="space-y-2">
-            {alerts.map((a, i) => (
-              <div key={i} className="w-full flex items-center gap-3 p-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]">
-                <span className="text-[16px]">{a.type === 'danger' ? '🔴' : a.type === 'warning' ? '🟡' : 'ℹ️'}</span>
-                <span className="text-[var(--text-primary)] text-[12px] font-medium flex-1">{a.text}</span>
-              </div>
-            ))}
+            {alerts.map((a, i) => {
+              const accent = a.type === 'danger' ? 'var(--color-danger)' : a.type === 'warning' ? 'var(--color-warning)' : 'var(--color-info)';
+              const cta = a.type === 'danger' ? 'Fix now' : 'Review';
+              const btnClasses = a.type === 'danger'
+                ? 'bg-[var(--color-danger)] text-white'
+                : 'border border-[var(--color-warning)] text-[var(--color-warning)] bg-transparent';
+              return (
+                <div
+                  key={i}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]"
+                  style={{ borderLeft: `3px solid ${accent}` }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[var(--text-primary)] text-[13px] font-semibold truncate">{a.text}</p>
+                  </div>
+                  <button
+                    onClick={() => a.link && router.push(a.link)}
+                    className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90 ${btnClasses}`}
+                  >
+                    {cta}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </Card>
       ) : stats && (
@@ -417,38 +503,61 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Store Performance */}
-      {sortedStores.length > 0 && (
-        <Card padding="md" className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[var(--text-primary)] text-[14px] font-bold">Store Performance</h2>
-            <select value={storeSort} onChange={e => setStoreSort(e.target.value)} className="!w-auto !min-w-0 !py-1 !px-2 !text-[10px]">
-              <option value="revenue">Revenue</option>
-              <option value="profit">Profit</option>
-              <option value="margin">Margin</option>
-              <option value="name">Name</option>
-            </select>
-          </div>
-          <div className="overflow-x-auto">
-            <table>
-              <thead><tr><th>#</th><th>Store</th><th style={{ textAlign: 'right' }}>Revenue</th><th style={{ textAlign: 'right' }}>Product Buying</th><th style={{ textAlign: 'right' }}>Expenses</th><th style={{ textAlign: 'right' }}>Profit</th><th style={{ textAlign: 'right' }}>Margin</th></tr></thead>
-              <tbody>
-                {sortedStores.map((s, i) => (
-                  <tr key={s.id} style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}>
-                    <td className="text-[var(--text-muted)] text-center">{i === 0 ? '🏆' : i + 1}</td>
-                    <td><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /><span className="text-[var(--text-primary)] font-semibold text-[13px]">{s.name?.split(' - ').pop()?.trim() || s.name}</span></span></td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--text-primary)] font-semibold">{fmt(s.revenue)}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-warning)]">{fmt(s.buying)}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className="text-[var(--color-danger)]">{fmt(s.expenses)}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} className={`font-bold ${s.profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmt(s.profit)}</td>
-                    <td style={{ textAlign: 'right' }} className={`font-semibold ${s.margin >= 40 ? 'text-[var(--color-success)]' : s.margin >= 20 ? 'text-[var(--color-warning)]' : 'text-[var(--color-danger)]'}`}>{s.margin.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      {/* Store Performance — cards with inline share-of-revenue bar */}
+      {sortedStores.length > 0 && (() => {
+        const maxRevenue = Math.max(1, ...sortedStores.map(s => s.revenue));
+        return (
+          <Card padding="md" className="mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[var(--text-primary)] text-[14px] font-bold">Store performance</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase text-[var(--text-muted)] tracking-wider">Sorted by</span>
+                <select value={storeSort} onChange={e => setStoreSort(e.target.value)} className="!w-auto !min-w-0 !py-1 !px-2 !text-[10px]">
+                  <option value="revenue">Revenue</option>
+                  <option value="profit">Profit</option>
+                  <option value="margin">Margin</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {sortedStores.map((s, i) => {
+                const shortName = s.name?.split(' - ').pop()?.trim() || s.name;
+                const share = (s.revenue / maxRevenue) * 100;
+                const marginColor = s.margin >= 40 ? 'var(--color-success)' : s.margin >= 20 ? 'var(--color-warning)' : 'var(--color-danger)';
+                return (
+                  <div
+                    key={s.id}
+                    className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 items-center p-2.5 rounded-lg"
+                    style={i === 0 ? { background: 'rgba(251,191,36,0.06)' } : undefined}
+                  >
+                    <span className="w-6 text-center text-[var(--text-muted)] font-semibold">
+                      {i === 0 ? '🏆' : i + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+                        <span className="text-[var(--text-primary)] font-semibold text-[13px] truncate">{shortName}</span>
+                      </div>
+                      <div className="h-1 rounded-full bg-[var(--bg-card)] overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${share}%`, background: s.color }} />
+                      </div>
+                    </div>
+                    <span className="text-[var(--text-primary)] font-mono font-semibold tabular-nums text-[13px] text-right w-20">{fmt(s.revenue)}</span>
+                    <span className={`font-mono font-bold tabular-nums text-[13px] text-right w-20 ${s.profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmt(s.profit)}</span>
+                    <span
+                      className="text-[11px] font-bold rounded-md px-2 py-0.5 tabular-nums"
+                      style={{ background: marginColor + '22', color: marginColor }}
+                    >
+                      {s.margin.toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Top Employees + Quick Actions side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
