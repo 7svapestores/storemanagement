@@ -8,6 +8,11 @@ const fmtDate  = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US'
 
 export default function WarehousePricesPage() {
   const { isOwner } = useAuth();
+  // Bumped by UploadPanel after every successful ingest — AllProductsTable
+  // watches this to auto-refresh without a page reload.
+  const [refreshToken, setRefreshToken] = useState(0);
+  const onIngested = useCallback(() => setRefreshToken(t => t + 1), []);
+
   if (!isOwner) return <Alert type="warning">Owner only.</Alert>;
 
   return (
@@ -17,10 +22,10 @@ export default function WarehousePricesPage() {
         subtitle="Upload vendor invoices and search the catalog to find the cheapest source per product."
       />
       <div className="grid gap-5 md:grid-cols-2">
-        <UploadPanel />
+        <UploadPanel onIngested={onIngested} />
         <SearchPanel />
       </div>
-      <AllProductsTable />
+      <AllProductsTable refreshToken={refreshToken} />
     </div>
   );
 }
@@ -28,7 +33,7 @@ export default function WarehousePricesPage() {
 // ═══════════════════════════════════════════════════════════════
 // Upload panel — drag-drop PDFs; each file hits /api/warehouse-prices/ingest.
 // ═══════════════════════════════════════════════════════════════
-function UploadPanel() {
+function UploadPanel({ onIngested }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState([]); // { filename, ok, message, data? }
@@ -37,6 +42,7 @@ function UploadPanel() {
     if (!files?.length) return;
     setBusy(true);
     const fresh = [];
+    let anySuccess = false;
     for (const file of files) {
       try {
         const fd = new FormData();
@@ -50,6 +56,7 @@ function UploadPanel() {
             message: `Ingested ${j.items_ingested} items · ${j.vendor} · ${j.invoice_number || 'no #'} · ${fmtMoney(j.grand_total)}`,
             data: j,
           });
+          anySuccess = true;
         } else if (r.status === 409) {
           fresh.push({ filename: file.name, ok: false, message: `Already ingested (invoice ${j.invoice_number})` });
         } else if (r.status === 422) {
@@ -63,7 +70,8 @@ function UploadPanel() {
     }
     setResults(r => [...fresh, ...r].slice(0, 20));
     setBusy(false);
-  }, []);
+    if (anySuccess) onIngested?.();
+  }, [onIngested]);
 
   const onDrop = useCallback((e) => {
     e.preventDefault();
@@ -237,7 +245,7 @@ function SearchPanel() {
 // All products — one row per invoice line item, with a single smart
 // search box that filters across product / vendor / invoice # / UPC.
 // ═══════════════════════════════════════════════════════════════
-function AllProductsTable() {
+function AllProductsTable({ refreshToken = 0 }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -260,12 +268,13 @@ function AllProductsTable() {
     }
   }, []);
 
-  // Initial load + debounced reload on search input.
+  // Initial load + debounced reload on search input + refresh-token bumps
+  // (signaled by the upload panel after each successful ingest).
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => load(q), q ? 250 : 0);
     return () => clearTimeout(debounceRef.current);
-  }, [q, load]);
+  }, [q, load, refreshToken]);
 
   return (
     <div className="mt-6 rounded-xl border border-sw-border bg-sw-card p-4">
