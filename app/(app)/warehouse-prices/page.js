@@ -20,7 +20,7 @@ export default function WarehousePricesPage() {
         <UploadPanel />
         <SearchPanel />
       </div>
-      <RecentIngests />
+      <AllProductsTable />
     </div>
   );
 }
@@ -234,69 +234,112 @@ function SearchPanel() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Recent ingests — quick audit trail for the owner.
+// All products — one row per invoice line item, with a single smart
+// search box that filters across product / vendor / invoice # / UPC.
 // ═══════════════════════════════════════════════════════════════
-function RecentIngests() {
-  const { supabase } = useAuth();
+function AllProductsTable() {
+  const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const debounceRef = useRef(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, vendor_name, invoice_number, date, amount, parse_source, parsed_at, image_url')
-      .not('parsed_at', 'is', null)
-      .order('parsed_at', { ascending: false })
-      .limit(20);
-    setRows(data || []);
-    setLoading(false);
-  }, [supabase]);
+  const load = useCallback(async (query) => {
+    setLoading(true); setErr('');
+    try {
+      const url = `/api/warehouse-prices/prices${query ? `?q=${encodeURIComponent(query)}&limit=200` : '?limit=200'}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Load failed');
+      setRows(j.prices || []);
+    } catch (e) {
+      setErr(e.message);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <div className="mt-6"><Loading /></div>;
-  if (!rows.length) return null;
+  // Initial load + debounced reload on search input.
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(q), q ? 250 : 0);
+    return () => clearTimeout(debounceRef.current);
+  }, [q, load]);
 
   return (
     <div className="mt-6 rounded-xl border border-sw-border bg-sw-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sw-text text-[15px] font-bold">Recent ingests</h3>
-        <button onClick={load} className="text-sw-sub text-[11px] hover:text-sw-text">Refresh</button>
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div className="flex-1 min-w-[260px]">
+          <h3 className="text-sw-text text-[15px] font-bold mb-2">All products</h3>
+          <input
+            type="text"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search anything — product, warehouse, invoice #, UPC, variant, price..."
+            className="w-full px-3 py-2.5 bg-sw-card2 border border-sw-border rounded-md text-sw-text text-[13px] focus:outline-none focus:border-sw-blue"
+          />
+        </div>
+        <div className="text-sw-sub text-[11px] whitespace-nowrap">
+          {loading ? 'Loading…' : `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`}
+          {q && !loading && ` for "${q}"`}
+        </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="text-sw-dim text-left border-b border-sw-border">
-              <th className="py-2 pr-2 font-semibold">Vendor</th>
-              <th className="py-2 pr-2 font-semibold">Invoice #</th>
-              <th className="py-2 pr-2 font-semibold">Date</th>
-              <th className="py-2 pr-2 font-semibold text-right">Total</th>
-              <th className="py-2 pr-2 font-semibold">Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id} className="border-b border-sw-border/60 text-sw-text">
-                <td className="py-2 pr-2">{r.vendor_name}</td>
-                <td className="py-2 pr-2 font-mono text-[11px]">
-                  {r.invoice_number
-                    ? (r.image_url
-                        ? <a href={r.image_url} target="_blank" rel="noopener noreferrer"
-                             className="text-sw-blue hover:underline">{r.invoice_number}</a>
-                        : r.invoice_number)
-                    : '—'}
-                </td>
-                <td className="py-2 pr-2 text-sw-sub">{fmtDate(r.date)}</td>
-                <td className="py-2 pr-2 text-right font-semibold">{fmtMoney(r.amount)}</td>
-                <td className="py-2 pr-2">
-                  <span className="text-[10px] uppercase tracking-wide text-sw-sub">{r.parse_source}</span>
-                </td>
+
+      {err && <Alert type="error">{err}</Alert>}
+
+      {!loading && !err && !rows.length && (
+        <EmptyState
+          icon={q ? '🔎' : '📦'}
+          title={q ? 'No matches' : 'No products yet'}
+          message={q ? 'Try a shorter query or different spelling.' : 'Upload a vendor invoice PDF to populate the catalog.'}
+        />
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-sw-dim text-left border-b border-sw-border">
+                <th className="py-2 pr-3 font-semibold">Product</th>
+                <th className="py-2 pr-3 font-semibold">UPC</th>
+                <th className="py-2 pr-3 font-semibold">Warehouse</th>
+                <th className="py-2 pr-3 font-semibold text-right">Unit $</th>
+                <th className="py-2 pr-3 font-semibold text-right">Qty</th>
+                <th className="py-2 pr-3 font-semibold">Date</th>
+                <th className="py-2 pr-3 font-semibold">Invoice</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-b border-sw-border/60 text-sw-text align-top">
+                  <td className="py-2 pr-3">
+                    <div className="font-semibold truncate max-w-[320px]">{r.product?.name || '—'}</div>
+                    {r.product?.variant && (
+                      <div className="text-sw-sub text-[11px] truncate max-w-[320px]">{r.product.variant}</div>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-[10px] text-sw-dim whitespace-nowrap">{r.product?.upc || '—'}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{r.vendor?.name || '—'}</td>
+                  <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">{fmtMoney(r.unit_price)}</td>
+                  <td className="py-2 pr-3 text-right text-sw-sub whitespace-nowrap">{Number(r.quantity || 0)}</td>
+                  <td className="py-2 pr-3 text-sw-sub whitespace-nowrap">{fmtDate(r.invoice?.date)}</td>
+                  <td className="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">
+                    {r.invoice?.number
+                      ? (r.invoice.url
+                          ? <a href={r.invoice.url} target="_blank" rel="noopener noreferrer"
+                               className="text-sw-blue hover:underline" title="Open invoice PDF">
+                              {r.invoice.number}
+                            </a>
+                          : r.invoice.number)
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
