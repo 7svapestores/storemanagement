@@ -210,26 +210,45 @@ function SearchPanel() {
 
             {p.offers?.length ? (
               <div className="mt-2 space-y-1">
-                {p.offers.map((o, i) => (
-                  <div key={o.vendor_id || i}
-                    className={`flex items-center justify-between text-[12px] px-2.5 py-1.5 rounded-md
-                      ${i === 0 ? 'bg-sw-blueD text-sw-text border border-sw-blue/30' : 'text-sw-sub'}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      {i === 0 && <span className="text-sw-blue font-bold text-[10px]">BEST</span>}
-                      <span className="font-semibold truncate">{o.vendor_name}</span>
-                      {o.invoice_number && (o.invoice_url
-                        ? <a href={o.invoice_url} target="_blank" rel="noopener noreferrer"
-                            className="text-sw-blue text-[10px] font-mono hover:underline shrink-0"
-                            title="Open invoice PDF">#{o.invoice_number}</a>
-                        : <span className="text-sw-dim text-[10px] font-mono shrink-0">#{o.invoice_number}</span>
-                      )}
+                {p.offers.map((o, i) => {
+                  const cheapest = Number(p.offers[0].unit_price) || 0;
+                  const diff = +(Number(o.unit_price) - cheapest).toFixed(2);
+                  const rankLabels = ['1st choice', '2nd choice', '3rd choice'];
+                  const rank = rankLabels[i] || `${i + 1}th choice`;
+                  return (
+                    <div key={o.vendor_id || i}
+                      className={`flex items-center justify-between text-[12px] px-2.5 py-1.5 rounded-md
+                        ${i === 0
+                          ? 'bg-sw-blueD text-sw-text border border-sw-blue/30'
+                          : i === 1
+                            ? 'text-sw-text border border-sw-border/60 bg-sw-card2/50'
+                            : 'text-sw-sub border border-transparent'}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] font-bold shrink-0 uppercase tracking-wide
+                          ${i === 0 ? 'text-sw-blue' : i === 1 ? 'text-sw-text' : 'text-sw-dim'}`}>
+                          {rank}
+                        </span>
+                        <span className="font-semibold truncate">{o.vendor_name}</span>
+                        {o.invoice_number && (o.invoice_url
+                          ? <a href={o.invoice_url} target="_blank" rel="noopener noreferrer"
+                              className="text-sw-blue text-[10px] font-mono hover:underline shrink-0"
+                              title="Open invoice PDF">#{o.invoice_number}</a>
+                          : <span className="text-sw-dim text-[10px] font-mono shrink-0">#{o.invoice_number}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {i > 0 && diff > 0 && (
+                          <span className="text-sw-red text-[10px] font-semibold"
+                                title={`$${diff.toFixed(2)} more per unit than 1st choice`}>
+                            +{fmtMoney(diff)}
+                          </span>
+                        )}
+                        <span className="text-sw-dim text-[10px]">last {fmtDate(o.last_bought)}</span>
+                        <span className={`font-bold ${i === 0 ? 'text-sw-blue' : 'text-sw-text'}`}>{fmtMoney(o.unit_price)}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sw-dim text-[10px]">last {fmtDate(o.last_bought)}</span>
-                      <span className={`font-bold ${i === 0 ? 'text-sw-blue' : 'text-sw-text'}`}>{fmtMoney(o.unit_price)}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="mt-1 text-sw-dim text-[11px]">No price history yet.</div>
