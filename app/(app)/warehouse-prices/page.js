@@ -75,7 +75,7 @@ function UploadPanel() {
       <h3 className="text-sw-text text-[15px] font-bold mb-1">Upload invoices</h3>
       <p className="text-sw-sub text-[12px] mb-3">
         Drop one or many PDFs. We auto-extract line items and save them to your price history.
-        Currently supports <span className="text-sw-text font-semibold">Rave Distribution</span> and <span className="text-sw-text font-semibold">NEPA Dallas</span>.
+        Known layouts (Rave Distribution, NEPA Dallas) parse instantly; unknown layouts are handled by Claude.
       </p>
 
       <label
