@@ -19,6 +19,7 @@ const I = {
   sales:     <Svg><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></Svg>,
   cash:      <Svg><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></Svg>,
   cart:      <Svg><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></Svg>,
+  restock:   <Svg><path d="M3 3h5l2 4h11v10H3z"/><path d="M8 11h8"/><path d="M12 7v8"/></Svg>,
   invoice:   <Svg><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></Svg>,
   expense:   <Svg><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></Svg>,
   inventory: <Svg><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></Svg>,
@@ -59,6 +60,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
       { path: '/sales',      icon: I.sales,     label: 'Daily Sales' },
       { path: '/cash',       icon: I.cash,      label: 'Cash Collection' },
       { path: '/purchases',  icon: I.cart,      label: 'Product Buying' },
+      { path: '/restock',    icon: I.restock,   label: 'Restock' },
       { path: '/invoices',   icon: I.invoice,   label: 'Invoices' },
       { path: '/expenses',   icon: I.expense,   label: 'Expenses' },
       { path: '/inventory',  icon: I.inventory, label: 'Inventory' },
@@ -85,6 +87,7 @@ export default function Sidebar({ selectedStore, onStoreChange }) {
     { title: null, items: [
       { path: '/sales',     icon: I.sales,     label: 'Enter Sales' },
       { path: '/inventory', icon: I.inventory, label: 'Inventory' },
+      { path: '/restock',   icon: I.restock,   label: 'Restock' },
     ]},
   ];
 
