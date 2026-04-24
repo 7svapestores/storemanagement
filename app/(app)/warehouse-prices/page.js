@@ -313,10 +313,10 @@ function AllProductsTable({ refreshToken = 0 }) {
                 <th className="py-2 pr-3 font-semibold">Product</th>
                 <th className="py-2 pr-3 font-semibold">UPC</th>
                 <th className="py-2 pr-3 font-semibold">Warehouse</th>
-                <th className="py-2 pr-3 font-semibold text-right">Unit $</th>
-                <th className="py-2 pr-3 font-semibold text-right">Qty</th>
-                <th className="py-2 pr-3 font-semibold">Date</th>
-                <th className="py-2 pr-3 font-semibold">Invoice</th>
+                <th className="py-2 pr-3 font-semibold text-right" title="Lowest price ever seen from this warehouse">Best $</th>
+                <th className="py-2 pr-3 font-semibold text-right" title="Total units bought across all invoices">Total Qty</th>
+                <th className="py-2 pr-3 font-semibold">Last bought</th>
+                <th className="py-2 pr-3 font-semibold">Invoice (best)</th>
               </tr>
             </thead>
             <tbody>
@@ -331,13 +331,20 @@ function AllProductsTable({ refreshToken = 0 }) {
                   <td className="py-2 pr-3 font-mono text-[10px] text-sw-dim whitespace-nowrap">{r.product?.upc || '—'}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{r.vendor?.name || '—'}</td>
                   <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">{fmtMoney(r.unit_price)}</td>
-                  <td className="py-2 pr-3 text-right text-sw-sub whitespace-nowrap">{Number(r.quantity || 0)}</td>
-                  <td className="py-2 pr-3 text-sw-sub whitespace-nowrap">{fmtDate(r.invoice?.date)}</td>
+                  <td className="py-2 pr-3 text-right text-sw-sub whitespace-nowrap">
+                    {Number(r.quantity || 0)}
+                    {r.purchase_count > 1 && (
+                      <span className="text-sw-dim text-[10px] ml-1" title={`${r.purchase_count} separate invoice lines`}>
+                        ×{r.purchase_count}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-sw-sub whitespace-nowrap">{fmtDate(r.last_bought || r.invoice?.date)}</td>
                   <td className="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">
                     {r.invoice?.number
                       ? (r.invoice.url
                           ? <a href={r.invoice.url} target="_blank" rel="noopener noreferrer"
-                               className="text-sw-blue hover:underline" title="Open invoice PDF">
+                               className="text-sw-blue hover:underline" title="Open the invoice where this best price was recorded">
                               {r.invoice.number}
                             </a>
                           : r.invoice.number)

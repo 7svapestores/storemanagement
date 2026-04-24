@@ -58,19 +58,30 @@ export async function GET(req) {
       .in('product_id', ids)
       .order('invoice_date', { ascending: false });
 
-    // Dedupe to the most recent row per (product, vendor).
-    const seen = new Set();
-    const byProduct = new Map();
+    // Aggregate to one offer per (product, vendor), keeping the row with the
+    // LOWEST unit_price — so "best price" reflects the cheapest we've ever
+    // paid, not the most recent. Newer higher prices never "update" the
+    // suggestion.
+    const groupMap = new Map(); // key -> best row
+    const latestDate = new Map(); // key -> most recent invoice_date (for "last bought" display)
     for (const row of (priceRows || [])) {
       const key = `${row.product_id}:${row.vendor_id || 'null'}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const curLatest = latestDate.get(key);
+      if (!curLatest || String(row.invoice_date || '') > curLatest) latestDate.set(key, row.invoice_date);
+      const existing = groupMap.get(key);
+      if (!existing || Number(row.unit_price) < Number(existing.unit_price)) {
+        groupMap.set(key, row);
+      }
+    }
+
+    const byProduct = new Map();
+    for (const [key, row] of groupMap.entries()) {
       if (!byProduct.has(row.product_id)) byProduct.set(row.product_id, []);
       byProduct.get(row.product_id).push({
         vendor_id: row.vendor_id,
         vendor_name: row.vendor_name,
         unit_price: row.unit_price,
-        last_bought: row.invoice_date,
+        last_bought: latestDate.get(key) || row.invoice_date,
         invoice_number: row.invoice_number,
         invoice_id: row.invoice_id,
         invoice_url: row.invoices?.image_url || null,

@@ -48,33 +48,63 @@ export async function GET(req) {
       .range(offset, offset + fetchLimit - 1);
     if (error) throw error;
 
-    // In-process smart filter. Every whitespace token must appear somewhere
-    // in the concatenated blob — lets "foger berry 40" match an item named
-    // "FOGER SWITCH PRO 5% DISPOSABLE POD 5PK (Berry Bliss)" at $40.
-    let filtered = rows || [];
-    if (q) {
-      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-      filtered = filtered.filter(r => {
-        const blob = [
-          r.products?.name,
-          r.products?.variant,
-          r.products?.upc,
-          r.vendor_name,
-          r.invoice_number,
-          String(r.unit_price || ''),
-        ].filter(Boolean).join(' ').toLowerCase();
-        return tokens.every(t => blob.includes(t));
-      }).slice(0, limit);
+    // Aggregate to one row per (product, vendor). For each group, keep the
+    // row with the LOWEST unit_price — that's the "best deal we've ever seen
+    // from this warehouse" — and sum quantities across all historical
+    // purchases so the qty column reflects total units ever bought.
+    //
+    // Rationale: the same SKU can legitimately appear multiple times on a
+    // single invoice (real line-item repeats), and across multiple invoices
+    // over time. Showing every raw row buries the signal the owner cares
+    // about: which warehouse has this cheapest.
+    const groups = new Map();
+    for (const r of (rows || [])) {
+      if (!r.products?.id) continue;
+      const key = `${r.products.id}:${r.vendor_id || 'null'}`;
+      const existing = groups.get(key);
+      const qty = Number(r.quantity) || 0;
+      if (!existing) {
+        groups.set(key, { best: r, qtySum: qty, latestDate: r.invoice_date, purchaseCount: 1 });
+      } else {
+        existing.qtySum += qty;
+        existing.purchaseCount += 1;
+        if (r.invoice_date && (!existing.latestDate || r.invoice_date > existing.latestDate)) {
+          existing.latestDate = r.invoice_date;
+        }
+        // Lower price wins — we never "update" to a higher price.
+        if (Number(r.unit_price) < Number(existing.best.unit_price)) {
+          existing.best = r;
+        }
+      }
     }
 
-    // Earlier ingests ran before PDF storage was wired, so their invoices
-    // rows have an empty image_url. If the same invoice_number was later
-    // re-ingested (and got a duplicate row with a URL), pick up that URL
-    // so every price row for that invoice can link back to the PDF.
+    // Smart search filter runs AFTER aggregation so token matching works on
+    // the displayed row (including the best price).
+    let aggregated = Array.from(groups.values());
+    if (q) {
+      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      aggregated = aggregated.filter(g => {
+        const blob = [
+          g.best.products?.name,
+          g.best.products?.variant,
+          g.best.products?.upc,
+          g.best.vendor_name,
+          g.best.invoice_number,
+          String(g.best.unit_price || ''),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return tokens.every(t => blob.includes(t));
+      });
+    }
+    // Newest-first feels most useful as a default sort.
+    aggregated.sort((a, b) => String(b.latestDate || '').localeCompare(String(a.latestDate || '')));
+    aggregated = aggregated.slice(0, limit);
+
+    // Fallback URL lookup: earlier ingests left image_url empty. If a sibling
+    // row exists for the same invoice_number with a URL, use that.
     const numbersMissingUrl = new Set();
-    for (const r of filtered) {
-      if (r.invoice_number && !(r.invoices?.image_url)) {
-        numbersMissingUrl.add(r.invoice_number);
+    for (const g of aggregated) {
+      if (g.best.invoice_number && !(g.best.invoices?.image_url)) {
+        numbersMissingUrl.add(g.best.invoice_number);
       }
     }
     const urlByNumber = new Map();
@@ -92,17 +122,18 @@ export async function GET(req) {
       }
     }
 
-    const prices = filtered.map(r => {
+    const prices = aggregated.map(g => {
+      const r = g.best;
       const directUrl = r.invoices?.image_url || null;
       const fallbackUrl = r.invoice_number ? (urlByNumber.get(r.invoice_number) || null) : null;
       return {
         id: r.id,
-        product: r.products ? {
+        product: {
           id: r.products.id,
           name: r.products.name,
           variant: r.products.variant,
           upc: r.products.upc,
-        } : null,
+        },
         vendor: { id: r.vendor_id, name: r.vendor_name },
         invoice: {
           id: r.invoice_id,
@@ -111,10 +142,12 @@ export async function GET(req) {
           url: directUrl || fallbackUrl,
           source: r.invoices?.parse_source || null,
         },
-        unit_price: r.unit_price,
+        unit_price: r.unit_price,         // lowest ever at this vendor
         sold_unit_price: r.sold_unit_price,
         line_discount: r.line_discount,
-        quantity: r.quantity,
+        quantity: g.qtySum,               // total units bought across all invoices
+        purchase_count: g.purchaseCount,  // how many invoice lines rolled up
+        last_bought: g.latestDate,
       };
     });
 
