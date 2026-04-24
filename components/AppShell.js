@@ -54,7 +54,7 @@ export default function AppShell({ children }) {
   return (
     <div className="bg-sw-bg">
       <Sidebar selectedStore={effectiveStoreId} onStoreChange={setSelectedStore} />
-      <main className="md:ml-[210px] h-screen overflow-y-auto px-3 md:px-5 app-main-pad">
+      <main className="md:ml-[230px] h-screen overflow-y-auto px-3 md:px-6 app-main-pad">
         {showProfileWarning && (
           <div className="mb-3 rounded-lg border border-sw-amber/30 bg-sw-amberD text-sw-amber px-3 py-2 text-[12px]">
             ⚠️ Profile data unavailable — some permissions may be incorrect. Try signing out and back in, or contact an owner.
