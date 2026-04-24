@@ -67,27 +67,56 @@ export async function GET(req) {
       }).slice(0, limit);
     }
 
-    const prices = filtered.map(r => ({
-      id: r.id,
-      product: r.products ? {
-        id: r.products.id,
-        name: r.products.name,
-        variant: r.products.variant,
-        upc: r.products.upc,
-      } : null,
-      vendor: { id: r.vendor_id, name: r.vendor_name },
-      invoice: {
-        id: r.invoice_id,
-        number: r.invoice_number,
-        date: r.invoice_date,
-        url: r.invoices?.image_url || null,
-        source: r.invoices?.parse_source || null,
-      },
-      unit_price: r.unit_price,
-      sold_unit_price: r.sold_unit_price,
-      line_discount: r.line_discount,
-      quantity: r.quantity,
-    }));
+    // Earlier ingests ran before PDF storage was wired, so their invoices
+    // rows have an empty image_url. If the same invoice_number was later
+    // re-ingested (and got a duplicate row with a URL), pick up that URL
+    // so every price row for that invoice can link back to the PDF.
+    const numbersMissingUrl = new Set();
+    for (const r of filtered) {
+      if (r.invoice_number && !(r.invoices?.image_url)) {
+        numbersMissingUrl.add(r.invoice_number);
+      }
+    }
+    const urlByNumber = new Map();
+    if (numbersMissingUrl.size) {
+      const { data: siblings } = await admin
+        .from('invoices')
+        .select('invoice_number, image_url')
+        .in('invoice_number', Array.from(numbersMissingUrl))
+        .not('image_url', 'is', null)
+        .neq('image_url', '');
+      for (const s of (siblings || [])) {
+        if (s.image_url && !urlByNumber.has(s.invoice_number)) {
+          urlByNumber.set(s.invoice_number, s.image_url);
+        }
+      }
+    }
+
+    const prices = filtered.map(r => {
+      const directUrl = r.invoices?.image_url || null;
+      const fallbackUrl = r.invoice_number ? (urlByNumber.get(r.invoice_number) || null) : null;
+      return {
+        id: r.id,
+        product: r.products ? {
+          id: r.products.id,
+          name: r.products.name,
+          variant: r.products.variant,
+          upc: r.products.upc,
+        } : null,
+        vendor: { id: r.vendor_id, name: r.vendor_name },
+        invoice: {
+          id: r.invoice_id,
+          number: r.invoice_number,
+          date: r.invoice_date,
+          url: directUrl || fallbackUrl,
+          source: r.invoices?.parse_source || null,
+        },
+        unit_price: r.unit_price,
+        sold_unit_price: r.sold_unit_price,
+        line_discount: r.line_discount,
+        quantity: r.quantity,
+      };
+    });
 
     return NextResponse.json({ prices });
   } catch (e) {

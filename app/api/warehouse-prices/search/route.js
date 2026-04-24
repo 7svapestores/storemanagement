@@ -78,6 +78,31 @@ export async function GET(req) {
       });
     }
 
+    // Same PDF-URL fallback as /prices: if an offer points to an invoice row
+    // with no image_url (early uploads), look for a sibling row with the same
+    // invoice_number that does have one.
+    const missingNumbers = new Set();
+    for (const offers of byProduct.values()) {
+      for (const o of offers) if (o.invoice_number && !o.invoice_url) missingNumbers.add(o.invoice_number);
+    }
+    if (missingNumbers.size) {
+      const { data: siblings } = await admin
+        .from('invoices')
+        .select('invoice_number, image_url')
+        .in('invoice_number', Array.from(missingNumbers))
+        .not('image_url', 'is', null)
+        .neq('image_url', '');
+      const urlByNumber = new Map();
+      for (const s of (siblings || [])) {
+        if (s.image_url && !urlByNumber.has(s.invoice_number)) urlByNumber.set(s.invoice_number, s.image_url);
+      }
+      for (const offers of byProduct.values()) {
+        for (const o of offers) {
+          if (!o.invoice_url && o.invoice_number) o.invoice_url = urlByNumber.get(o.invoice_number) || null;
+        }
+      }
+    }
+
     // Re-rank products: those with prices first, then by how well the name matches.
     const qLower = q.toLowerCase();
     const scored = products.map(p => {
