@@ -53,7 +53,7 @@ function UploadPanel() {
         } else if (r.status === 409) {
           fresh.push({ filename: file.name, ok: false, message: `Already ingested (invoice ${j.invoice_number})` });
         } else if (r.status === 422) {
-          fresh.push({ filename: file.name, ok: false, message: j.error });
+          fresh.push({ filename: file.name, ok: false, message: j.error, snippet: j.text_snippet });
         } else {
           fresh.push({ filename: file.name, ok: false, message: j.error || 'Upload failed' });
         }
@@ -100,18 +100,35 @@ function UploadPanel() {
 
       {results.length > 0 && (
         <div className="mt-4 space-y-1.5">
-          {results.map((r, i) => (
-            <div key={i}
-              className={`text-[12px] px-3 py-2 rounded-md border flex items-start gap-2
-                ${r.ok ? 'bg-sw-blueD border-sw-blue/30 text-sw-text' : 'bg-sw-redD border-sw-red/30 text-sw-text'}`}>
-              <span>{r.ok ? '✓' : '✕'}</span>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">{r.filename}</div>
-                <div className="text-sw-sub">{r.message}</div>
-              </div>
-            </div>
-          ))}
+          {results.map((r, i) => <ResultRow key={i} r={r} />)}
         </div>
+      )}
+    </div>
+  );
+}
+
+function ResultRow({ r }) {
+  const [showSnippet, setShowSnippet] = useState(false);
+  return (
+    <div className={`text-[12px] px-3 py-2 rounded-md border
+      ${r.ok ? 'bg-sw-blueD border-sw-blue/30' : 'bg-sw-redD border-sw-red/30'}`}>
+      <div className="flex items-start gap-2 text-sw-text">
+        <span>{r.ok ? '✓' : '✕'}</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold truncate">{r.filename}</div>
+          <div className="text-sw-sub">{r.message}</div>
+          {r.snippet && (
+            <button onClick={() => setShowSnippet(s => !s)}
+              className="mt-1 text-sw-blue text-[11px] hover:underline">
+              {showSnippet ? 'Hide' : 'Show'} raw extracted text
+            </button>
+          )}
+        </div>
+      </div>
+      {showSnippet && r.snippet && (
+        <pre className="mt-2 text-[10px] text-sw-sub bg-sw-bg border border-sw-border rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap">
+          {r.snippet}
+        </pre>
       )}
     </div>
   );

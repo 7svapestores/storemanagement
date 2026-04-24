@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { parsePdfBuffer } from '@/lib/invoice-parser';
+import { parsePdfBuffer, extractPdfText } from '@/lib/invoice-parser';
 
 export const dynamic = 'force-dynamic';
 // pdf-parse pulls heavy deps; keep it on Node, not Edge.
@@ -71,10 +71,17 @@ export async function POST(req) {
     const form = await req.formData();
     const file = form.get('file');
     const storeId = form.get('store_id') || null;
+    const debug = form.get('debug') === '1' || new URL(req.url).searchParams.get('debug') === '1';
     if (!file || typeof file === 'string') {
       return NextResponse.json({ error: 'No PDF attached' }, { status: 400 });
     }
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Debug mode: return raw text only, no parsing or DB write.
+    if (debug) {
+      const text = await extractPdfText(buffer);
+      return NextResponse.json({ debug: true, filename: file.name, text });
+    }
 
     // Parse.
     let parsed;
@@ -85,9 +92,13 @@ export async function POST(req) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: code });
     }
 
-    const { header, items } = parsed;
+    const { header, items, raw_text } = parsed;
     if (!items?.length) {
-      return NextResponse.json({ error: 'Parser found 0 line items', header }, { status: 422 });
+      return NextResponse.json({
+        error: 'Parser found 0 line items',
+        header,
+        text_snippet: (raw_text || '').slice(0, 2000),
+      }, { status: 422 });
     }
 
     // Persist.
