@@ -21,22 +21,42 @@ export default function InventoryPage() {
   const [loadError, setLoadError] = useState('');
   const [stores, setStores] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [flavors, setFlavors] = useState([]);
+
+  const loadDepartments = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('inventory_departments')
+      .select('*')
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    setDepartments(data || []);
+    return data || [];
+  }, [supabase]);
+
+  const loadCatalog = useCallback(async () => {
+    const [{ data: brandRows }, { data: flavorRows }] = await Promise.all([
+      supabase.from('product_brands').select('id, department_id, name').order('name'),
+      supabase.from('product_flavors').select('id, brand_id, name').order('name'),
+    ]);
+    setBrands(brandRows || []);
+    setFlavors(flavorRows || []);
+  }, [supabase]);
 
   const loadBase = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
-      const [{ data: storeRows }, { data: deptRows, error: deptErr }] = await Promise.all([
+      const [{ data: storeRows }] = await Promise.all([
         supabase.from('stores').select('*').eq('is_active', true).order('name'),
-        supabase.from('inventory_departments').select('*').order('sort_order', { ascending: true }),
+        loadDepartments(),
+        loadCatalog(),
       ]);
-      if (deptErr) throw deptErr;
       setStores(storeRows || []);
-      setDepartments(deptRows || []);
     } catch (e) {
       console.error('[inventory] load failed:', e);
       setLoadError(e?.message || 'Failed to load inventory');
     } finally { setLoading(false); }
-  }, [supabase]);
+  }, [supabase, loadDepartments, loadCatalog]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
 
@@ -53,6 +73,10 @@ export default function InventoryPage() {
       storeId={effectiveStoreId}
       stores={stores}
       departments={departments}
+      brands={brands}
+      flavors={flavors}
+      onCategoryAdded={loadDepartments}
+      onCatalogChanged={loadCatalog}
     />;
   }
   return <OwnerView supabase={supabase} stores={stores} departments={departments} />;
@@ -61,7 +85,7 @@ export default function InventoryPage() {
 // ═══════════════════════════════════════════════════════════════
 // COUNT VIEW (used by both owner and employee when a store is active)
 // ═══════════════════════════════════════════════════════════════
-function CountView({ supabase, profile, isOwner, storeId, stores, departments }) {
+function CountView({ supabase, profile, isOwner, storeId, stores, departments, brands, flavors, onCategoryAdded, onCatalogChanged }) {
   const store = stores.find(s => s.id === storeId);
   const [count, setCount] = useState(null);
   const [items, setItems] = useState([]);
@@ -74,6 +98,13 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
   const [pastCounts, setPastCounts] = useState([]);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [viewingPast, setViewingPast] = useState(null);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  // If the active dept gets removed (or none was set), default to the first.
+  useEffect(() => {
+    if (!activeDeptId && departments.length > 0) setActiveDeptId(departments[0].id);
+  }, [departments, activeDeptId]);
 
   const todayStr = today();
 
@@ -152,18 +183,84 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
     setBusy(false);
   };
 
+  // Make sure a brand exists in the catalog for this department; create on the fly.
+  // Returns the brand row {id, name} or null if name is empty.
+  const ensureBrand = async (departmentId, rawName) => {
+    const name = (rawName || '').trim();
+    if (!name) return null;
+    const existing = brands.find(b =>
+      b.department_id === departmentId && b.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) return existing;
+    const { data, error } = await supabase
+      .from('product_brands')
+      .insert({ department_id: departmentId, name, created_by: profile?.id || null })
+      .select('id, department_id, name')
+      .single();
+    if (error) throw error;
+    if (onCatalogChanged) await onCatalogChanged();
+    return data;
+  };
+
+  // Same idea for flavors, scoped to a brand.
+  const ensureFlavor = async (brandId, rawName) => {
+    const name = (rawName || '').trim();
+    if (!name || !brandId) return null;
+    const existing = flavors.find(f =>
+      f.brand_id === brandId && f.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) return existing;
+    const { data, error } = await supabase
+      .from('product_flavors')
+      .insert({ brand_id: brandId, name, created_by: profile?.id || null })
+      .select('id, brand_id, name')
+      .single();
+    if (error) throw error;
+    if (onCatalogChanged) await onCatalogChanged();
+    return data;
+  };
+
+  const addCategory = async (rawName) => {
+    const name = (rawName || '').trim();
+    if (!name) return;
+    setBusy(true); setErr('');
+    try {
+      const dup = departments.find(d => d.name.toLowerCase() === name.toLowerCase());
+      if (dup) {
+        setActiveDeptId(dup.id);
+        setAddingCategory(false);
+        setNewCategoryName('');
+        return;
+      }
+      const maxSort = departments.reduce((m, d) => Math.max(m, d.sort_order || 0), 0);
+      const { data, error } = await supabase
+        .from('inventory_departments')
+        .insert({ name, sort_order: maxSort + 10 })
+        .select()
+        .single();
+      if (error) throw error;
+      if (onCategoryAdded) await onCategoryAdded();
+      setActiveDeptId(data.id);
+      setAddingCategory(false);
+      setNewCategoryName('');
+    } catch (e) { setErr(e?.message || 'Failed to add category'); }
+    setBusy(false);
+  };
+
   const addItem = async (dept, form) => {
     setBusy(true); setErr('');
     try {
       const c = await ensureCount();
+      const brandRow = await ensureBrand(dept.id, form.brand);
+      const flavorRow = brandRow ? await ensureFlavor(brandRow.id, form.flavor) : null;
       const { data, error } = await supabase
         .from('inventory_count_items')
         .insert({
           count_id: c.id,
           department: dept.name,
           department_id: dept.id,
-          brand: form.brand.trim(),
-          flavor: form.flavor.trim(),
+          brand: brandRow?.name || form.brand.trim(),
+          flavor: flavorRow?.name || (form.flavor || '').trim(),
           in_stock: num(form.in_stock),
           need_to_order: num(form.need_to_order),
           notes: form.notes?.trim() || null,
@@ -184,9 +281,20 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
   const updateItem = async (id, patch) => {
     setBusy(true); setErr('');
     try {
+      const item = items.find(it => it.id === id);
+      const deptId = item?.department_id;
+      let nextPatch = { ...patch };
+      if (deptId && (patch.brand !== undefined || patch.flavor !== undefined)) {
+        const brandRow = await ensureBrand(deptId, patch.brand ?? item?.brand);
+        const flavorRow = brandRow
+          ? await ensureFlavor(brandRow.id, patch.flavor ?? item?.flavor)
+          : null;
+        if (patch.brand !== undefined) nextPatch.brand = brandRow?.name || (patch.brand || '').trim();
+        if (patch.flavor !== undefined) nextPatch.flavor = flavorRow?.name || (patch.flavor || '').trim();
+      }
       const { data, error } = await supabase
         .from('inventory_count_items')
-        .update(patch)
+        .update(nextPatch)
         .eq('id', id)
         .select()
         .single();
@@ -273,7 +381,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
             <Alert type="success">This count has been submitted and is now read-only.</Alert>
           )}
 
-          {/* Department tabs */}
+          {/* Category tabs (+ Add Category) */}
           <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
             {departments.map(d => {
               const n = itemsByDept(d.id).length;
@@ -290,12 +398,44 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
                 </button>
               );
             })}
+            {!submitted && (
+              <button
+                onClick={() => setAddingCategory(true)}
+                className="flex-shrink-0 px-4 py-3 rounded-lg text-sm font-semibold whitespace-nowrap border border-dashed border-sw-blue text-[var(--color-info)] bg-[var(--bg-elevated)] min-h-[48px]"
+              >
+                + Add Category
+              </button>
+            )}
           </div>
+
+          {addingCategory && (
+            <div className="bg-[var(--bg-card)] border border-sw-blue rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-[180px]">
+                <Field label="New Category">
+                  <input
+                    className={inputClass}
+                    autoFocus
+                    autoCapitalize="words"
+                    value={newCategoryName}
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addCategory(newCategoryName); }}
+                    placeholder="e.g. Drinks"
+                  />
+                </Field>
+              </div>
+              <Button onClick={() => addCategory(newCategoryName)} disabled={busy || !newCategoryName.trim()}>
+                {busy ? 'Saving…' : 'Save'}
+              </Button>
+              <Button variant="secondary" onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} disabled={busy}>Cancel</Button>
+            </div>
+          )}
 
           {activeDept && (
             <DeptPanel
               dept={activeDept}
               items={itemsByDept(activeDept.id)}
+              brands={brands.filter(b => b.department_id === activeDept.id)}
+              flavors={flavors}
               onAdd={(form) => addItem(activeDept, form)}
               onUpdate={updateItem}
               onDelete={deleteItem}
@@ -352,7 +492,7 @@ function CountView({ supabase, profile, isOwner, storeId, stores, departments })
 // ═══════════════════════════════════════════════════════════════
 // DEPARTMENT PANEL (add + list items)
 // ═══════════════════════════════════════════════════════════════
-function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, profileMap = {} }) {
+function DeptPanel({ dept, items, brands = [], flavors = [], onAdd, onUpdate, onDelete, busy, readonly, profileMap = {} }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -382,6 +522,8 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
             <ItemForm
               key={it.id}
               initial={it}
+              brands={brands}
+              flavors={flavors}
               onSave={async (form) => { await onUpdate(it.id, form); setEditingId(null); }}
               onCancel={() => setEditingId(null)}
               busy={busy}
@@ -427,6 +569,8 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
 
         {showForm && (
           <ItemForm
+            brands={brands}
+            flavors={flavors}
             onSave={handleAdd}
             onCancel={() => setShowForm(false)}
             busy={busy}
@@ -443,7 +587,7 @@ function DeptPanel({ dept, items, onAdd, onUpdate, onDelete, busy, readonly, pro
   );
 }
 
-function ItemForm({ initial, onSave, onCancel, busy }) {
+function ItemForm({ initial, brands = [], flavors = [], onSave, onCancel, busy }) {
   const [form, setForm] = useState({
     brand: initial?.brand || '',
     flavor: initial?.flavor || '',
@@ -453,29 +597,52 @@ function ItemForm({ initial, onSave, onCancel, busy }) {
   });
   const canSave = form.brand.trim().length > 0;
 
+  // Match the typed brand text to a known brand row so we can scope flavor suggestions.
+  const matchedBrand = useMemo(() => {
+    const t = form.brand.trim().toLowerCase();
+    return t ? brands.find(b => b.name.toLowerCase() === t) : null;
+  }, [brands, form.brand]);
+  const flavorOptions = useMemo(() => {
+    if (!matchedBrand) return [];
+    return flavors.filter(f => f.brand_id === matchedBrand.id);
+  }, [flavors, matchedBrand]);
+
+  // Datalist IDs need to be unique per form instance (multiple forms can be open at once).
+  const uid = useMemo(() => Math.random().toString(36).slice(2, 9), []);
+  const brandListId = `brand-list-${uid}`;
+  const flavorListId = `flavor-list-${uid}`;
+
   return (
     <div className="bg-[var(--bg-card)] border border-sw-blue rounded-lg p-3">
       <Field label="Brand">
         <input
           className={inputClass}
+          list={brandListId}
           autoCapitalize="words"
           autoFocus
           value={form.brand}
           onChange={e => setForm({ ...form, brand: e.target.value })}
-          placeholder="e.g. Geekbar 15K"
+          placeholder="Pick a brand or type to add"
         />
+        <datalist id={brandListId}>
+          {brands.map(b => <option key={b.id} value={b.name} />)}
+        </datalist>
       </Field>
-      <Field label="Flavor / Name">
+      <Field label="Flavor / Name (optional)">
         <input
           className={inputClass}
+          list={flavorListId}
           autoCapitalize="words"
           value={form.flavor}
           onChange={e => setForm({ ...form, flavor: e.target.value })}
-          placeholder="e.g. Coffee"
+          placeholder={matchedBrand ? 'Pick a flavor or type to add' : 'Pick a brand first, then choose a flavor'}
         />
+        <datalist id={flavorListId}>
+          {flavorOptions.map(f => <option key={f.id} value={f.name} />)}
+        </datalist>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Qty in Stock">
+        <Field label="Quantity">
           <input
             className={inputClass}
             inputMode="numeric"
