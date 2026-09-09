@@ -4,6 +4,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { PageHeader, Button, Alert, Loading, EmptyState, ConfirmModal, Field, Modal } from '@/components/UI';
 import BarcodeScanModal from '@/components/BarcodeScanner';
 import MultiStorePanel from '@/components/pricebook/MultiStorePanel';
+import CatalogPanel from '@/components/pricebook/CatalogPanel';
 
 const fmtCents = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
 // "29.99" / "$29.99" / "2999¢"? → integer cents. Returns null if unparseable.
@@ -18,7 +19,7 @@ export default function PricebookPage() {
   const [stores, setStores] = useState([]);
   const [storeId, setStoreId] = useState('');
   const [loadingStores, setLoadingStores] = useState(true);
-  const [tab, setTab] = useState('update'); // 'update' | 'multi' | 'add'
+  const [tab, setTab] = useState('update'); // 'update' | 'multi' | 'catalog' | 'add'
 
   // pending edits: upc -> { item, newCents }
   const [pending, setPending] = useState({});
@@ -105,7 +106,7 @@ export default function PricebookPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-sw-border">
-        {[['update', 'One store'], ['multi', 'All stores'], ['add', 'Add new item']].map(([key, label]) => (
+        {[['update', 'One store'], ['multi', 'All stores'], ['catalog', 'By UPC'], ['add', 'Add new item']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -143,6 +144,8 @@ export default function PricebookPage() {
       )}
 
       {tab === 'multi' && <MultiStorePanel />}
+
+      {tab === 'catalog' && <CatalogPanel />}
 
       {tab === 'add' && <AddItemPanel stores={stores} />}
 
