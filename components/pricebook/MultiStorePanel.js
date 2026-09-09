@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useMemo } from 'react';
 import { Button, Alert, Modal } from '@/components/UI';
+import { storeShortName } from '@/lib/utils';
 import { planWrites, normPrice, countProtected, SKIP_REASON } from '@/lib/pricebook-grouping';
 import PriceGrid from '@/components/pricebook/PriceGrid';
 
@@ -148,7 +149,7 @@ export default function MultiStorePanel() {
           onChange={e => setQ(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && search(variantDigits)}
           placeholder="Search every store — brand, flavor or UPC (e.g. geekbar)"
-          className="flex-1 min-w-[240px] rounded-lg border border-sw-border bg-sw-card px-3 py-2 text-[13px] text-sw-text"
+          className="!w-full min-w-0 flex-1 rounded-lg border border-sw-border bg-sw-card px-3 py-2 text-[13px] text-sw-text"
         />
         <Button onClick={() => search(variantDigits)} disabled={loading} className="w-full sm:w-auto">
           {loading ? 'Searching…' : 'Search all stores'}
@@ -194,7 +195,7 @@ export default function MultiStorePanel() {
               <select
                 value={variantDigits ?? ''}
                 onChange={e => { const d = Number(e.target.value); setVariantDigits(d); search(d); }}
-                className="rounded border border-sw-border bg-sw-card px-1.5 py-0.5 text-[12px] text-sw-text"
+                className="!w-auto !min-w-[64px] rounded border border-sw-border bg-sw-card px-2 py-1 text-[12px] text-sw-text"
               >
                 {[1, 2, 3, 4, 5].map(d => <option key={d} value={d}>{d}</option>)}
               </select>
@@ -284,7 +285,7 @@ function StoreSelector({ stores, selected, onToggle }) {
               on ? 'border-amber-500 bg-amber-500/15 text-sw-text' : 'border-sw-border text-[var(--text-muted)]'
             }`}
           >
-            {on ? '✓ ' : ''}{s.name}
+            {on ? '✓ ' : ''}{storeShortName(s.name)}
           </button>
         );
       })}
@@ -326,7 +327,7 @@ function FamilyCard({
             onChange={e => applyFamily(e.target.value)}
             placeholder="24.99"
             inputMode="decimal"
-            className="w-24 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[13px] text-sw-text"
+            className="!w-24 rounded border border-sw-border bg-sw-bg px-2 py-1.5 text-right text-[14px] text-sw-text"
           />
         </label>
       </div>

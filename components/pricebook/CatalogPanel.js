@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Alert, Loading } from '@/components/UI';
-import { downloadCSV } from '@/lib/utils';
+import { downloadCSV, storeShortName } from '@/lib/utils';
 import { normPrice, planWrites, priceBuckets, SKIP_REASON } from '@/lib/pricebook-grouping';
 import PriceGrid from '@/components/pricebook/PriceGrid';
 
@@ -147,22 +147,22 @@ export default function CatalogPanel() {
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+        <label className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-[var(--text-muted)]">
           Group by first
           <select
             value={prefixLen}
             onChange={e => setPrefixLen(Number(e.target.value))}
-            className="rounded border border-sw-border bg-sw-card px-1.5 py-0.5 text-[12px] text-sw-text"
+            className="!w-auto !min-w-[64px] rounded border border-sw-border bg-sw-card px-2 py-1 text-[12px] text-sw-text"
           >
             {[4, 5, 6, 7, 8, 9, 10, 11].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-          digits of the UPC
+          digits
         </label>
         <input
           value={filter}
           onChange={e => setFilter(e.target.value)}
           placeholder="Filter by UPC prefix or name"
-          className="min-w-[200px] flex-1 rounded-lg border border-sw-border bg-sw-card px-3 py-1.5 text-[13px] text-sw-text"
+          className="!w-full min-w-0 flex-1 rounded-lg border border-sw-border bg-sw-card px-3 py-2 text-[13px] text-sw-text"
         />
         <Button variant="secondary" onClick={exportCsv} disabled={!groups.length} className="!text-[11px]">
           Export CSV
@@ -311,7 +311,7 @@ function PrefixGroup({ group, stores, onChanged }) {
                         on ? 'border-amber-500 bg-amber-500/15 text-sw-text' : 'border-sw-border text-[var(--text-muted)]'
                       }`}
                     >
-                      {on ? '✓ ' : ''}{s.name}
+                      {on ? '✓ ' : ''}{storeShortName(s.name)}
                     </button>
                   );
                 })}
@@ -345,7 +345,7 @@ function PrefixGroup({ group, stores, onChanged }) {
                             </span>
                           )}
                         </button>
-                        <label className="ml-auto flex flex-shrink-0 items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                        <label className="ml-auto flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-[var(--text-muted)]">
                           {b.cents == null ? 'Set all to' : 'Change to'}
                           <input
                             value={bucketTarget[b.key] ?? ''}
@@ -358,7 +358,7 @@ function PrefixGroup({ group, stores, onChanged }) {
                             placeholder={b.cents != null ? (b.cents / 100).toFixed(2) : '24.99'}
                             inputMode="decimal"
                             aria-label={`New price for the ${b.cents == null ? 'mixed' : fmtCents(b.cents)} group`}
-                            className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
+                            className="!w-24 rounded border border-sw-border bg-sw-bg px-2 py-1.5 text-right text-[14px] text-sw-text"
                           />
                         </label>
                       </div>

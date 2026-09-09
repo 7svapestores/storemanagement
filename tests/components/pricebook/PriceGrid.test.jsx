@@ -99,9 +99,10 @@ describe('<PriceGrid /> — mobile', () => {
     expect(screen.getByTitle(/Denison has its own price/)).toBeInTheDocument();
   });
 
+  // On its own meta line, not wrapped into the middle of the product name.
   it('surfaces a name that differs between stores', () => {
     render(<PriceGrid {...base} rows={[{ ...ROWS[0], nameConflict: true }]} />);
-    expect(screen.getByText('names differ')).toBeInTheDocument();
+    expect(screen.getByText(/name differs by store/i)).toBeInTheDocument();
   });
 });
 
@@ -124,5 +125,66 @@ describe('<PriceGrid /> — reacting to rotation', () => {
     matches = true;
     act(() => listeners.forEach(fn => fn()));
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+});
+
+// globals.css:149 sets `width: 100%` on every untyped input and select. Any
+// width here must be marked important or the box fills its row and squeezes
+// the item name to one word per line — which is exactly what shipped.
+describe('<PriceGrid /> — price boxes resist the global input width', () => {
+  for (const mobile of [false, true]) {
+    it(`marks the item price box width important (${mobile ? 'mobile' : 'desktop'})`, () => {
+      setViewport({ mobile });
+      render(<PriceGrid {...base} />);
+      const input = screen.getByLabelText('New price for 810203870108');
+      expect(input.className).toMatch(/!w-/);
+    });
+
+    it(`marks the per-store price box width important (${mobile ? 'mobile' : 'desktop'})`, () => {
+      setViewport({ mobile });
+      render(<PriceGrid {...base} cellValue={() => ''} onCellChange={vi.fn()} />);
+      const input = screen.getByLabelText('Reno price for 810203870108');
+      expect(input.className).toMatch(/!w-/);
+    });
+  }
+});
+
+// "7s Vape Love - Reno" truncates to "7s Vape Love …" in a narrow column,
+// which makes every store look identical.
+describe('<PriceGrid /> — store labels', () => {
+  const LONG = [
+    { id: 'reno', name: '7s Vape Love - Reno' },
+    { id: 'bells', name: '7s Smoke and Vape World - Bells' },
+  ];
+  const longBase = {
+    ...base,
+    stores: LONG,
+    targetStores: LONG.map(s => s.id),
+    rows: [{ ...ROWS[0], prices: { reno: 2499, bells: 2499 } }],
+  };
+
+  for (const mobile of [false, true]) {
+    it(`shows the distinguishing part of the store name (${mobile ? 'mobile' : 'desktop'})`, () => {
+      setViewport({ mobile });
+      render(<PriceGrid {...longBase} />);
+      expect(screen.getByText('Reno')).toBeInTheDocument();
+      expect(screen.getByText('Bells')).toBeInTheDocument();
+      expect(screen.queryByText('7s Vape Love - Reno')).not.toBeInTheDocument();
+    });
+  }
+
+  it('keeps the full name available on hover', () => {
+    setViewport({ mobile: true });
+    render(<PriceGrid {...longBase} />);
+    expect(screen.getByTitle('7s Vape Love - Reno')).toBeInTheDocument();
+  });
+});
+
+describe('<PriceGrid /> — long product names', () => {
+  it('renders the whole name rather than letting the price box crowd it', () => {
+    setViewport({ mobile: true });
+    const long = { ...ROWS[0], variant: null, name: 'Geek Bar Pulse Mexico Mango 15k' };
+    render(<PriceGrid {...base} rows={[long]} />);
+    expect(screen.getByText('Geek Bar Pulse Mexico Mango 15k')).toBeInTheDocument();
   });
 });

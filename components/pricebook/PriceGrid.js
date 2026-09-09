@@ -1,28 +1,31 @@
 'use client';
 import useIsMobile from '@/lib/use-is-mobile';
+import { storeShortName } from '@/lib/utils';
 import { customStores } from '@/lib/pricebook-grouping';
 
 const fmtCents = (c) => (Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—');
+
+// globals.css sets `width: 100%` on every untyped input and select, so any
+// width here has to be marked important or the box swells to fill its row
+// and crushes whatever sits beside it.
+const PRICE_INPUT = 'rounded border border-sw-border bg-sw-bg px-2 py-1.5 text-right text-sw-text';
 
 // One item's price in every store, with somewhere to type a new one.
 //
 // Five stores plus a name and a UPC will not fit across a phone, so the same
 // data is laid out two ways: a table on desktop, and one card per item on
-// mobile with the store prices wrapped into a small grid. The layout is
-// chosen in JS rather than by rendering both and hiding one, so there is
-// never a duplicate input for the same item on the page.
+// mobile. The layout is chosen in JS rather than by rendering both and hiding
+// one, so an item never has two price inputs on the page at once.
 export default function PriceGrid({
   rows,
   stores,
   targetStores,
-  // Per-row price box
   rowValue,             // (row) => string
   onRowChange,          // (upc, value) => void
   rowPlaceholder,       // (row) => string
   rowLabel = 'New price',
-  // Optional per-store editing (the All-stores tab); read-only when absent
   cellValue,            // (storeId, row) => string | undefined
-  onCellChange,         // (storeId, upc, value) => void
+  onCellChange,         // (storeId, upc, value) => void — read-only when absent
   unreachableStores = new Set(),
   showUpc = true,
 }) {
@@ -61,7 +64,7 @@ function StoreValue({ row, store, isCustom, unreachable, cellValue, onCellChange
           inputMode="decimal"
           title={title}
           aria-label={`${store.name} price for ${row.upc}`}
-          className={`${compact ? 'w-full' : 'w-20'} rounded border border-transparent bg-sw-bg px-2 py-1 text-right text-[12px] text-sw-text`}
+          className={`${compact ? '!w-[72px]' : '!w-20'} ${PRICE_INPUT} text-[12px]`}
         />
         {isCustom && <span className="text-[10px] text-[var(--color-warning)]" title={title}>⚑</span>}
       </span>
@@ -69,27 +72,16 @@ function StoreValue({ row, store, isCustom, unreachable, cellValue, onCellChange
   }
 
   return (
-    <span className={isCustom ? 'text-[var(--color-warning)]' : 'text-sw-text'} title={title}>
+    <span className={`tabular-nums ${isCustom ? 'text-[var(--color-warning)]' : 'text-sw-text'}`} title={title}>
       {fmtCents(cents)}{isCustom ? ' ⚑' : ''}
     </span>
   );
 }
 
-function RowNameCell({ row, showUpc }) {
-  return (
-    <>
-      <span className="text-[var(--text-secondary)]">{row.variant || row.name}</span>
-      {row.nameConflict && (
-        <span className="ml-1.5 text-[10px] text-[var(--color-warning)]" title="Stores spell this item differently">
-          names differ
-        </span>
-      )}
-      {showUpc && <div className="font-mono text-[10px] text-[var(--text-muted)]">{row.upc}</div>}
-    </>
-  );
-}
-
 // ── Phone: one card per item ────────────────────────────────────────────
+//
+// The name gets a full-width line of its own. Sharing a line with the price
+// box means the box wins and the name wraps one word per line.
 function MobileCards({
   rows, stores, targetStores, rowValue, onRowChange, rowPlaceholder, rowLabel,
   cellValue, onCellChange, unreachableStores, showUpc,
@@ -100,30 +92,41 @@ function MobileCards({
         const custom = new Set(customStores(row));
         return (
           <div key={row.upc} className="rounded-lg border border-sw-border bg-sw-bg/40 p-2.5">
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1"><RowNameCell row={row} showUpc={showUpc} /></div>
-              <label className="flex flex-shrink-0 flex-col items-end gap-0.5">
-                <span className="text-[10px] uppercase text-[var(--text-muted)]">{rowLabel}</span>
-                <input
-                  value={rowValue(row)}
-                  onChange={e => onRowChange(row.upc, e.target.value)}
-                  placeholder={rowPlaceholder?.(row) ?? ''}
-                  inputMode="decimal"
-                  aria-label={`New price for ${row.upc}`}
-                  className="w-24 rounded border border-sw-border bg-sw-bg px-2 py-1.5 text-right text-[14px] text-sw-text"
-                />
-              </label>
+            <div className="text-[13px] font-semibold leading-snug text-sw-text">
+              {row.variant || row.name}
             </div>
+            {(showUpc || row.nameConflict) && (
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-[var(--text-muted)]">
+                {showUpc && <span className="font-mono">{row.upc}</span>}
+                {row.nameConflict && (
+                  <span className="text-[var(--color-warning)]">⚠ name differs by store</span>
+                )}
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-sw-border/60 pt-2">
+            <label className="mt-2 flex items-center justify-between gap-2 border-t border-sw-border/60 pt-2">
+              <span className="text-[11px] text-[var(--text-muted)]">{rowLabel}</span>
+              <input
+                value={rowValue(row)}
+                onChange={e => onRowChange(row.upc, e.target.value)}
+                placeholder={rowPlaceholder?.(row) ?? ''}
+                inputMode="decimal"
+                aria-label={`New price for ${row.upc}`}
+                className={`!w-24 ${PRICE_INPUT} text-[14px]`}
+              />
+            </label>
+
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-sw-border/60 pt-2">
               {stores.map(store => (
                 <div
                   key={store.id}
-                  className={`flex items-center justify-between gap-2 text-[12px] ${
+                  className={`flex items-center justify-between gap-1.5 text-[12px] ${
                     targetStores.includes(store.id) ? '' : 'opacity-40'
                   }`}
                 >
-                  <span className="truncate text-[var(--text-muted)]">{store.name}</span>
+                  <span className="truncate text-[var(--text-muted)]" title={store.name}>
+                    {storeShortName(store.name)}
+                  </span>
                   <StoreValue
                     row={row} store={store} isCustom={custom.has(store.id)}
                     unreachable={unreachableStores.has(store.name)}
@@ -152,8 +155,12 @@ function DesktopTable({
             <th className="px-2 py-1.5 text-left font-semibold">Item</th>
             <th className="px-2 py-1.5 text-left font-semibold">{rowLabel}</th>
             {stores.map(s => (
-              <th key={s.id} className={`px-2 py-1.5 text-right font-semibold ${targetStores.includes(s.id) ? '' : 'opacity-40'}`}>
-                {s.name}
+              <th
+                key={s.id}
+                title={s.name}
+                className={`px-2 py-1.5 text-right font-semibold ${targetStores.includes(s.id) ? '' : 'opacity-40'}`}
+              >
+                {storeShortName(s.name)}
               </th>
             ))}
           </tr>
@@ -163,7 +170,15 @@ function DesktopTable({
             const custom = new Set(customStores(row));
             return (
               <tr key={row.upc} className="border-t border-sw-border/60">
-                <td className="px-2 py-1.5"><RowNameCell row={row} showUpc={showUpc} /></td>
+                <td className="px-2 py-1.5">
+                  <span className="text-[var(--text-secondary)]">{row.variant || row.name}</span>
+                  {row.nameConflict && (
+                    <span className="ml-1.5 text-[10px] text-[var(--color-warning)]" title="Stores spell this item differently">
+                      ⚠ name differs
+                    </span>
+                  )}
+                  {showUpc && <div className="font-mono text-[10px] text-[var(--text-muted)]">{row.upc}</div>}
+                </td>
                 <td className="px-2 py-1.5">
                   <input
                     value={rowValue(row)}
@@ -171,7 +186,7 @@ function DesktopTable({
                     placeholder={rowPlaceholder?.(row) ?? ''}
                     inputMode="decimal"
                     aria-label={`New price for ${row.upc}`}
-                    className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
+                    className={`!w-20 ${PRICE_INPUT} text-[12px]`}
                   />
                 </td>
                 {stores.map(store => (
