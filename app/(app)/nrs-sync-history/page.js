@@ -91,7 +91,8 @@ export default function NRSSyncHistoryPage() {
       {runError && <Alert type="error">{runError}</Alert>}
       {runResult && (
         <Alert type={runResult.success ? 'success' : 'warning'}>
-          Sync for {runResult.date_synced}: {runResult.summary.created} created, {runResult.summary.skipped} skipped, {runResult.summary.failed} failed ({runResult.duration_ms}ms)
+          Sync for {runResult.date_synced}: {runResult.summary.created} created, {runResult.summary.updated} updated, {runResult.summary.skipped} skipped, {runResult.summary.failed} failed ({runResult.duration_ms}ms)
+          {runResult.recovery?.attempted > 0 && ` — also retried ${runResult.recovery.attempted} earlier failure(s), ${runResult.recovery.recovered} recovered`}
         </Alert>
       )}
 
@@ -152,11 +153,37 @@ export default function NRSSyncHistoryPage() {
                   </div>
                   {l.error_message && <div className="text-[var(--color-danger)] text-[11px] mt-1">{l.error_message}</div>}
                   {expanded === l.id && (
-                    <div className="mt-2">
+                    <div className="mt-2 space-y-2">
+                      {l.error_detail?.hint && (
+                        <div className="p-2 rounded bg-sw-amberD text-[var(--color-warning)] text-[11px]">
+                          {l.error_detail.hint}
+                        </div>
+                      )}
+                      {l.error_detail && (
+                        <div className="text-[10px] text-[var(--text-secondary)] flex flex-wrap gap-x-4 gap-y-1">
+                          {l.error_detail.label && <span>Endpoint: <b className="text-[var(--text-primary)]">{l.error_detail.method || 'GET'} {l.error_detail.label}</b></span>}
+                          {l.error_detail.status != null && <span>Status: <b className="text-[var(--text-primary)]">{l.error_detail.status}</b></span>}
+                          {l.error_detail.attempts != null && <span>Attempts: <b className="text-[var(--text-primary)]">{l.error_detail.attempts}</b></span>}
+                        </div>
+                      )}
+                      {l.error_detail?.tries?.length > 0 && (
+                        <div className="text-[10px] text-[var(--text-muted)]">
+                          {l.error_detail.tries.map(t => (
+                            <div key={t.attempt}>
+                              Attempt {t.attempt}: {t.error || `HTTP ${t.status}${t.body ? ` — ${t.body}` : ' — empty response body'}`}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {l.nrs_response && (
                         <pre className="p-2 bg-black/30 rounded text-[10px] text-[var(--text-muted)] overflow-auto max-h-[300px]">
                           {JSON.stringify(l.nrs_response, null, 2)}
                         </pre>
+                      )}
+                      {!l.nrs_response && !l.error_detail && (
+                        <div className="text-[var(--text-muted)] text-[11px] italic">
+                          No further detail was recorded for this entry.
+                        </div>
                       )}
                     </div>
                   )}

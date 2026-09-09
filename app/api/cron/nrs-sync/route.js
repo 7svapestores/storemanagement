@@ -1,6 +1,6 @@
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
-import { fetchNRSDailyStats, parseNRSStatsToDailySales, pickNrsOwnedFields } from '@/lib/nrs-client';
+import { fetchNRSDailyStats, parseNRSStatsToDailySales, pickNrsOwnedFields, validateNRSAuth } from '@/lib/nrs-client';
 import { extractShiftsFromNRS } from '@/lib/extract-shifts';
 import { sendTelegram, buildSyncSummaryMessage } from '@/lib/telegram';
 
@@ -14,6 +14,78 @@ function yesterdayCentral() {
   const m = String(central.getMonth() + 1).padStart(2, '0');
   const d = String(central.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+// All stores share one NRS merchant token. Firing every store's request at
+// once is what produced the log pattern where all five failed in the same
+// second; a small pool keeps the sync well inside the cron's time budget
+// while giving NRS room to breathe.
+const NRS_CONCURRENCY = 2;
+
+// How many recent days a run will re-attempt for stores whose last log entry
+// is a failure. The cron fires once a day, so without this a transient NRS
+// outage leaves a permanent hole in the sales data.
+const RETRY_LOOKBACK_DAYS = 7;
+
+// Promise.allSettled semantics (never rejects, results stay in input order)
+// but with at most `limit` tasks in flight.
+async function mapWithConcurrency(items, limit, fn) {
+  const settled = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        settled[i] = { status: 'fulfilled', value: await fn(items[i], i) };
+      } catch (reason) {
+        settled[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return settled;
+}
+
+function isoDaysAgo(dateStr, days) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Store/date pairs whose most recent log entry is a failure — i.e. still
+// unresolved. A later success for the same pair clears it.
+async function findUnresolvedFailures(supabase, targetDate) {
+  const since = isoDaysAgo(targetDate, RETRY_LOOKBACK_DAYS);
+  const { data, error } = await supabase
+    .from('nrs_sync_log')
+    .select('store_id, sync_date, status, created_at')
+    .gte('sync_date', since)
+    .lt('sync_date', targetDate)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.warn('[nrs-cron] could not read sync history for retry:', error.message);
+    return [];
+  }
+
+  const latest = new Map();
+  for (const row of data || []) latest.set(`${row.store_id}|${row.sync_date}`, row.status);
+  return [...latest.entries()]
+    .filter(([, status]) => status === 'failed')
+    .map(([key]) => {
+      const [store_id, sync_date] = key.split('|');
+      return { store_id, sync_date };
+    });
+}
+
+// The failure row matters more than the detail attached to it: if
+// `error_detail` isn't there yet (migration not applied on this database),
+// fall back to the plain row rather than losing the log entry entirely.
+async function insertSyncFailure(supabase, row) {
+  const { error } = await supabase.from('nrs_sync_log').insert(row);
+  if (!error) return;
+  const { error_detail, ...withoutDetail } = row;
+  const retry = await supabase.from('nrs_sync_log').insert(withoutDetail);
+  if (retry.error) console.warn('[nrs-cron] sync_log (fail) insert failed:', retry.error.message);
 }
 
 async function syncOneStore(supabase, store, targetDate) {
@@ -114,12 +186,15 @@ async function runSync(supabase, targetDate) {
     return { success: true, date_synced: targetDate, summary: { total_stores: 0, created: 0, updated: 0, skipped: 0, failed: 0 }, results: [], duration_ms: Date.now() - startMs };
   }
 
-  // Run all stores in parallel
-  const settled = await Promise.allSettled(
-    stores.map(store => syncOneStore(supabase, store, targetDate))
+  // Two at a time, not all five at once. Every store shares a single merchant
+  // token, and hammering NRS with a simultaneous burst is a plausible cause of
+  // the empty-bodied 500s that failed every store in the same second.
+  const settled = await mapWithConcurrency(
+    stores, NRS_CONCURRENCY, store => syncOneStore(supabase, store, targetDate)
   );
 
   const results = [];
+  const failures = [];
   let created = 0, updated = 0, skipped = 0, failed = 0;
 
   for (let i = 0; i < settled.length; i++) {
@@ -133,18 +208,32 @@ async function runSync(supabase, targetDate) {
     } else {
       const store = stores[i];
       const msg = outcome.reason?.message || String(outcome.reason);
-      results.push({ store_name: store.name, status: 'failed', daily_sales_id: null, error: msg });
+      const detail = outcome.reason?.detail || null;
+      results.push({ store_name: store.name, status: 'failed', daily_sales_id: null, error: msg, detail });
       failed++;
+      failures.push({ store, msg, detail });
       console.error(`[nrs-cron] ${store.name} ${targetDate} — FAILED:`, msg);
-
-      const { error: logErr } = await supabase.from('nrs_sync_log').insert({
-        store_id: store.id,
-        sync_date: targetDate,
-        status: 'failed',
-        error_message: msg,
-      });
-      if (logErr) console.warn(`[nrs-cron] sync_log (fail) insert failed:`, logErr.message);
     }
+  }
+
+  // When every store fails there is one shared cause — the token or NRS
+  // itself — so diagnose it once and put the answer in each log row, rather
+  // than repeating a bare status code five times.
+  let sharedNote = '';
+  if (failures.length && failures.length === stores.length) {
+    const { valid } = await validateNRSAuth().catch(() => ({ valid: null }));
+    if (valid === false) sharedNote = ' [All stores failed and the NRS token is NOT valid — set a fresh NRS_USER_TOKEN, then re-run the sync.]';
+    else if (valid === true) sharedNote = ' [All stores failed but the NRS token is valid — NRS-side outage. The next run will automatically retry this date.]';
+  }
+
+  for (const { store, msg, detail } of failures) {
+    await insertSyncFailure(supabase, {
+      store_id: store.id,
+      sync_date: targetDate,
+      status: 'failed',
+      error_message: `${msg}${sharedNote}`,
+      error_detail: detail,
+    });
   }
 
   const durationMs = Date.now() - startMs;
@@ -154,6 +243,13 @@ async function runSync(supabase, targetDate) {
     console.error(`[nrs-cron] WARNING: ${failed} store(s) failed to sync for ${targetDate}`);
     await sendFailureEmail(failed, results.filter(r => r.status === 'failed'), targetDate);
   }
+
+  // Heal earlier days that are still failed. Without this a single NRS blip
+  // leaves a permanent hole, because the cron only ever looks at yesterday.
+  // Skipped when the token itself is bad — retrying would just fail again.
+  const recovery = sharedNote.includes('NOT valid')
+    ? { attempted: 0, recovered: 0 }
+    : await retryUnresolved(supabase, stores, targetDate);
 
   // Check short/over and send ONE comprehensive Telegram message to owner
   const shortOverAlerts = await checkShortOver(supabase, stores, targetDate);
@@ -171,7 +267,47 @@ async function runSync(supabase, targetDate) {
     results,
     duration_ms: durationMs,
     short_over_alerts: shortOverAlerts.length,
+    recovery,
   };
+}
+
+// Re-run the stores/dates whose most recent log entry is still a failure.
+// Capped so one bad week can't blow the cron's execution limit.
+const MAX_RETRIES_PER_RUN = 12;
+
+async function retryUnresolved(supabase, stores, targetDate) {
+  const storeById = new Map(stores.map(st => [st.id, st]));
+  const pending = (await findUnresolvedFailures(supabase, targetDate))
+    .filter(f => storeById.has(f.store_id))
+    .slice(0, MAX_RETRIES_PER_RUN);
+
+  if (!pending.length) return { attempted: 0, recovered: 0 };
+  console.log(`[nrs-cron] retrying ${pending.length} unresolved failure(s) from the last ${RETRY_LOOKBACK_DAYS} days`);
+
+  const settled = await mapWithConcurrency(pending, NRS_CONCURRENCY,
+    f => syncOneStore(supabase, storeById.get(f.store_id), f.sync_date));
+
+  let recovered = 0;
+  for (let i = 0; i < settled.length; i++) {
+    const { store_id, sync_date } = pending[i];
+    const store = storeById.get(store_id);
+    if (settled[i].status === 'fulfilled') {
+      recovered++;
+      console.log(`[nrs-cron] recovered ${store.name} ${sync_date}`);
+      continue;
+    }
+    const reason = settled[i].reason;
+    const msg = reason?.message || String(reason);
+    console.warn(`[nrs-cron] retry still failing: ${store.name} ${sync_date} — ${msg}`);
+    await insertSyncFailure(supabase, {
+      store_id,
+      sync_date,
+      status: 'failed',
+      error_message: `Retry failed: ${msg}`,
+      error_detail: reason?.detail || null,
+    });
+  }
+  return { attempted: pending.length, recovered };
 }
 
 async function checkShortOver(supabase, stores, targetDate) {
