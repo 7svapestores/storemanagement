@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Alert, Loading } from '@/components/UI';
 import { downloadCSV } from '@/lib/utils';
-import { customStores, normPrice, planWrites, priceBuckets, SKIP_REASON } from '@/lib/pricebook-grouping';
+import { normPrice, planWrites, priceBuckets, SKIP_REASON } from '@/lib/pricebook-grouping';
+import PriceGrid from '@/components/pricebook/PriceGrid';
 
 const fmtCents = (c) => (Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—');
 const toCents = (s) => {
@@ -264,17 +265,19 @@ function PrefixGroup({ group, stores, onChanged }) {
 
   return (
     <div className="rounded-xl border border-sw-border bg-sw-card overflow-hidden">
-      <button onClick={expand} className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left">
-        <span className="text-[11px] text-[var(--text-muted)]">{open ? '▾' : '▸'}</span>
-        <span className="font-mono text-[14px] font-bold text-sw-text">{group.prefix}•••</span>
-        <span className="text-[11px] text-[var(--text-muted)]">
-          {group.upc_count} UPC{group.upc_count === 1 ? '' : 's'} · {group.store_count} store
-          {group.store_count === 1 ? '' : 's'}
+      <button onClick={expand} className="flex w-full items-start gap-2 px-3 py-2.5 text-left">
+        <span className="mt-0.5 text-[11px] text-[var(--text-muted)]">{open ? '▾' : '▸'}</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="font-mono text-[14px] font-bold text-sw-text">{group.prefix}•••</span>
+            <span className="text-[11px] text-[var(--text-muted)]">
+              {group.upc_count} UPC{group.upc_count === 1 ? '' : 's'} · {group.store_count} store
+              {group.store_count === 1 ? '' : 's'}
+            </span>
+          </span>
+          <span className="block truncate text-[12px] text-[var(--text-secondary)]">{group.sample_name}</span>
         </span>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-secondary)]">
-          {group.sample_name}
-        </span>
-        <span className="text-[12px] text-[var(--text-muted)]">
+        <span className="flex-shrink-0 whitespace-nowrap text-[12px] text-[var(--text-muted)]">
           {group.min_cents === group.max_cents
             ? fmtCents(group.min_cents)
             : `${fmtCents(group.min_cents)} – ${fmtCents(group.max_cents)}`}
@@ -324,10 +327,10 @@ function PrefixGroup({ group, stores, onChanged }) {
                   const isOpen = openBucket === b.key;
                   return (
                     <div key={b.key} className="rounded-lg border border-sw-border">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-2.5 py-2">
                         <button
                           onClick={() => setOpenBucket(isOpen ? null : b.key)}
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          className="flex min-w-[60%] flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-left"
                         >
                           <span className="text-[11px] text-[var(--text-muted)]">{isOpen ? '▾' : '▸'}</span>
                           <span className={`text-[14px] font-bold ${b.cents == null ? 'text-[var(--color-warning)]' : 'text-sw-text'}`}>
@@ -342,7 +345,7 @@ function PrefixGroup({ group, stores, onChanged }) {
                             </span>
                           )}
                         </button>
-                        <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                        <label className="ml-auto flex flex-shrink-0 items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
                           {b.cents == null ? 'Set all to' : 'Change to'}
                           <input
                             value={bucketTarget[b.key] ?? ''}
@@ -361,69 +364,20 @@ function PrefixGroup({ group, stores, onChanged }) {
                       </div>
 
                       {isOpen && (
-                        <div className="overflow-x-auto border-t border-sw-border">
-                          <table className="w-full min-w-[560px] text-[12px]">
-                            <thead>
-                              <tr className="text-[var(--text-muted)]">
-                                <th className="px-2 py-1.5 text-left font-semibold">UPC</th>
-                                <th className="px-2 py-1.5 text-left font-semibold">Name</th>
-                                <th className="px-2 py-1.5 text-left font-semibold">This one only</th>
-                                {stores.map(st => (
-                                  <th key={st.id} className={`px-2 py-1.5 text-right font-semibold ${targetStores.includes(st.id) ? '' : 'opacity-40'}`}>
-                                    {st.name}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {b.rows.map(row => {
-                                const custom = new Set(customStores(row));
-                                return (
-                                  <tr key={row.upc} className="border-t border-sw-border/60">
-                                    <td className="px-2 py-1.5 font-mono text-[11px] text-sw-text">{row.upc}</td>
-                                    <td className="px-2 py-1.5">
-                                      <span className="text-[var(--text-secondary)]">{row.name}</span>
-                                      {row.nameConflict && (
-                                        <span className="ml-1.5 text-[10px] text-[var(--color-warning)]" title="Stores spell this item differently">
-                                          names differ
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-2 py-1.5">
-                                      <input
-                                        value={rowTarget[row.upc] ?? ''}
-                                        onChange={e => setRowTarget(p => {
-                                          const next = { ...p };
-                                          if (e.target.value === '') delete next[row.upc];
-                                          else next[row.upc] = e.target.value;
-                                          return next;
-                                        })}
-                                        placeholder={bucketTarget[b.key] || ''}
-                                        inputMode="decimal"
-                                        aria-label={`New price for ${row.upc}`}
-                                        className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
-                                      />
-                                    </td>
-                                    {stores.map(st => {
-                                      const cents = row.prices[st.id];
-                                      const isCustom = custom.has(st.id);
-                                      return (
-                                        <td
-                                          key={st.id}
-                                          className={`px-2 py-1.5 text-right ${targetStores.includes(st.id) ? '' : 'opacity-40'} ${
-                                            isCustom ? 'text-[var(--color-warning)]' : 'text-sw-text'
-                                          }`}
-                                          title={isCustom ? `${st.name} has its own price — protected from a group change` : undefined}
-                                        >
-                                          {fmtCents(cents)}{isCustom ? ' ⚑' : ''}
-                                        </td>
-                                      );
-                                    })}
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                        <div className="border-t border-sw-border p-2">
+                          <PriceGrid
+                            rows={b.rows}
+                            stores={stores}
+                            targetStores={targetStores}
+                            rowLabel="This one only"
+                            rowValue={row => rowTarget[row.upc] ?? ''}
+                            rowPlaceholder={() => bucketTarget[b.key] || ''}
+                            onRowChange={(upc, v) => setRowTarget(p => {
+                              const next = { ...p };
+                              if (v === '') delete next[upc]; else next[upc] = v;
+                              return next;
+                            })}
+                          />
                         </div>
                       )}
                     </div>
@@ -440,7 +394,7 @@ function PrefixGroup({ group, stores, onChanged }) {
               )}
 
               {plan.writes.length > 0 && (
-                <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[12px] text-sw-text">
                     <b>{plan.writes.length}</b> price change{plan.writes.length === 1 ? '' : 's'} ready
                   </span>

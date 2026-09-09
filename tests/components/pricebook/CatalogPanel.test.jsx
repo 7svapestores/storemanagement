@@ -228,4 +228,39 @@ describe('<CatalogPanel />', () => {
       expect(writes.filter(w => w.upc === '810203870150').every(w => w.cents === 2599)).toBe(true);
     });
   });
+
+  // The five-store grid is the part that breaks on a phone.
+  describe('on a phone', () => {
+    beforeEach(() => {
+      window.matchMedia = (q) => ({
+        matches: true, media: q,
+        addEventListener: () => {}, removeEventListener: () => {},
+      });
+    });
+    afterEach(() => {
+      window.matchMedia = (q) => ({
+        matches: false, media: q,
+        addEventListener: () => {}, removeEventListener: () => {},
+      });
+    });
+
+    it('replaces the wide table with per-item cards', async () => {
+      const user = setup();
+      render(<CatalogPanel />);
+      await user.click(await screen.findByText('81020387•••'));
+      await user.click(await screen.findByText('$24.99'));
+
+      expect(await screen.findByLabelText(/New price for 810203870100/i)).toBeInTheDocument();
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    });
+
+    it('can still reprice a whole price group', async () => {
+      const user = setup();
+      render(<CatalogPanel />);
+      await user.click(await screen.findByText('81020387•••'));
+      await user.type(screen.getByLabelText(/New price for the \$24\.99 group/i), '25.99');
+
+      expect(await screen.findByRole('button', { name: /Apply 10 changes/i })).toBeInTheDocument();
+    });
+  });
 });

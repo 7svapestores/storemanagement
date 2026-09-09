@@ -105,12 +105,12 @@ export default function PricebookPage() {
       />
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-sw-border">
+      <div className="flex gap-1 mb-4 border-b border-sw-border overflow-x-auto -mx-1 px-1">
         {[['update', 'One store'], ['multi', 'All stores'], ['catalog', 'By UPC'], ['add', 'Add new item']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2 text-[13px] font-semibold border-b-2 -mb-px ${tab === key ? 'border-amber-500 text-sw-text' : 'border-transparent text-[var(--text-muted)] hover:text-sw-text'}`}
+            className={`flex-shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 text-[13px] font-semibold border-b-2 -mb-px ${tab === key ? 'border-amber-500 text-sw-text' : 'border-transparent text-[var(--text-muted)] hover:text-sw-text'}`}
           >
             {label}
           </button>

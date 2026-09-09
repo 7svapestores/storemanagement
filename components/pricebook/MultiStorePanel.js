@@ -1,9 +1,8 @@
 'use client';
 import { useState, useCallback, useMemo } from 'react';
 import { Button, Alert, Modal } from '@/components/UI';
-import {
-  planWrites, customStores, normPrice, countProtected, SKIP_REASON,
-} from '@/lib/pricebook-grouping';
+import { planWrites, normPrice, countProtected, SKIP_REASON } from '@/lib/pricebook-grouping';
+import PriceGrid from '@/components/pricebook/PriceGrid';
 
 const fmtCents = (c) => (Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—');
 const toCents = (s) => {
@@ -151,7 +150,7 @@ export default function MultiStorePanel() {
           placeholder="Search every store — brand, flavor or UPC (e.g. geekbar)"
           className="flex-1 min-w-[240px] rounded-lg border border-sw-border bg-sw-card px-3 py-2 text-[13px] text-sw-text"
         />
-        <Button onClick={() => search(variantDigits)} disabled={loading}>
+        <Button onClick={() => search(variantDigits)} disabled={loading} className="w-full sm:w-auto">
           {loading ? 'Searching…' : 'Search all stores'}
         </Button>
       </div>
@@ -238,7 +237,7 @@ export default function MultiStorePanel() {
       )}
 
       {plan.writes.length > 0 && (
-        <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sw-border bg-sw-card px-4 py-3">
+        <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sw-border bg-sw-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="text-[13px] text-sw-text">
             <b>{plan.writes.length}</b> price change{plan.writes.length === 1 ? '' : 's'} ready
             {protectedCount > 0 && !includeCustom && (
@@ -311,8 +310,8 @@ function FamilyCard({
 
   return (
     <div className="rounded-xl border border-sw-border bg-sw-card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sw-border px-3 py-2">
-        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-left">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-sw-border px-3 py-2">
+        <button onClick={() => setOpen(o => !o)} className="flex min-w-[55%] flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-left">
           <span className="text-[var(--text-muted)] text-[11px]">{open ? '▾' : '▸'}</span>
           <span className="text-[14px] font-bold text-sw-text">{family.label}</span>
           <span className="text-[11px] text-[var(--text-muted)]">
@@ -320,7 +319,7 @@ function FamilyCard({
             {family.upcPrefix ? ` · UPC ${family.upcPrefix}•••` : ''}
           </span>
         </button>
-        <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
+        <label className="ml-auto flex flex-shrink-0 items-center gap-2 text-[12px] text-[var(--text-muted)]">
           Set all flavors
           <input
             value={familyValue}
@@ -333,105 +332,25 @@ function FamilyCard({
       </div>
 
       {open && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-[12px]">
-            <thead>
-              <tr className="text-[var(--text-muted)]">
-                <th className="px-3 py-2 text-left font-semibold">Flavor</th>
-                <th className="px-2 py-2 text-left font-semibold">Set flavor</th>
-                {stores.map(s => (
-                  <th
-                    key={s.id}
-                    className={`px-2 py-2 text-right font-semibold ${targetStores.includes(s.id) ? '' : 'opacity-40'}`}
-                  >
-                    {s.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {family.items.map(row => {
-                const custom = new Set(customStores(row));
-                const norm = normPrice(row.prices);
-                return (
-                  <tr key={row.upc} className="border-t border-sw-border/60">
-                    <td className="px-3 py-1.5">
-                      <div className="text-sw-text">{row.variant || row.name}</div>
-                      <div className="font-mono text-[10px] text-[var(--text-muted)]">
-                        {row.upc}
-                        {row.nameConflict && (
-                          <span className="ml-1.5 text-[var(--color-warning)]" title="Stores spell this item differently">
-                            name differs by store
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        value={rowTarget[row.upc] ?? ''}
-                        onChange={e => onRowPrice(row.upc, e.target.value)}
-                        placeholder={norm != null ? (norm / 100).toFixed(2) : ''}
-                        inputMode="decimal"
-                        className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
-                      />
-                    </td>
-                    {stores.map(s => (
-                      <PriceCell
-                        key={s.id}
-                        row={row}
-                        store={s}
-                        active={targetStores.includes(s.id)}
-                        unreachable={downStores.has(s.name)}
-                        isCustom={custom.has(s.id)}
-                        value={cellEdit[cellKey(s.id, row.upc)]}
-                        target={rowTarget[row.upc]}
-                        onChange={v => onCellPrice(s.id, row.upc, v)}
-                      />
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="p-2">
+          <PriceGrid
+            rows={family.items}
+            stores={stores}
+            targetStores={targetStores}
+            unreachableStores={downStores}
+            rowLabel="Set flavor"
+            rowValue={row => rowTarget[row.upc] ?? ''}
+            rowPlaceholder={row => {
+              const norm = normPrice(row.prices);
+              return norm != null ? (norm / 100).toFixed(2) : '';
+            }}
+            onRowChange={onRowPrice}
+            cellValue={(storeId, row) => cellEdit[cellKey(storeId, row.upc)]}
+            onCellChange={onCellPrice}
+          />
         </div>
       )}
     </div>
-  );
-}
-
-// One store's price for one item. Shows the current price, the pending value
-// if one applies, and flags a deliberate custom price.
-function PriceCell({ row, store, active, unreachable, isCustom, value, target, onChange }) {
-  const current = row.prices[store.id];
-  const carried = Number.isFinite(current);
-
-  if (unreachable) {
-    return <td className="px-2 py-1.5 text-right text-[var(--text-muted)]" title={`${store.name} could not be reached`}>?</td>;
-  }
-  if (!carried) {
-    return <td className="px-2 py-1.5 text-right text-[var(--text-muted)]" title={`${store.name} does not carry this item`}>—</td>;
-  }
-
-  const pending = value !== undefined ? toCents(value) : (active && !isCustom ? toCents(target ?? '') : null);
-  const changing = pending != null && pending !== current;
-
-  return (
-    <td className={`px-2 py-1.5 text-right ${active ? '' : 'opacity-40'}`}>
-      <input
-        value={value ?? ''}
-        onChange={e => onChange(e.target.value)}
-        placeholder={(current / 100).toFixed(2)}
-        inputMode="decimal"
-        title={isCustom ? `${store.name} has its own price — protected from “set all”` : undefined}
-        className={`w-20 rounded border bg-sw-bg px-2 py-1 text-right text-[12px] ${
-          changing ? 'border-amber-500 text-amber-400' : 'border-transparent text-sw-text'
-        }`}
-      />
-      {isCustom && <span className="ml-1 text-[10px] text-[var(--color-warning)]" title="Deliberate custom price">⚑</span>}
-      {changing && (
-        <div className="text-[10px] text-[var(--text-muted)]">{fmtCents(current)} → {fmtCents(pending)}</div>
-      )}
-    </td>
   );
 }
 
