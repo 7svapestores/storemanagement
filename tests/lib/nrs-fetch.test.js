@@ -84,7 +84,7 @@ describe('nrsFetchJson', () => {
     expect(err.message).toContain('daily stats (store 53039, date 2026-09-07)');
     expect(err.message).toContain('500 after 3 attempts');
     expect(err.message).toContain('(empty response body)');
-    expect(err.message).toContain('token has expired');
+    expect(err.message).toContain('NRS_USER_TOKEN has expired');
   });
 
   it('records structured detail for every attempt', async () => {

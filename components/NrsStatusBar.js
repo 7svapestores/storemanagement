@@ -4,8 +4,8 @@ import { useAuth } from '@/components/AuthProvider';
 
 // Compact NRS / sync status strip rendered in AppShell so every page shows
 // the same "is the agent talking to NRS, and when did it last run" signal.
-// Owner-only; the validate API is owner-gated already, but the strip itself
-// is also hidden for employees to keep the employee UI clean.
+// Owner-only, matching the owner gate on /api/nrs/validate; the strip is
+// hidden for employees to keep the employee UI clean.
 function relativeTime(iso) {
   if (!iso) return '—';
   const sec = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
