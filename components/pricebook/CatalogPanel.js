@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Alert, Loading } from '@/components/UI';
 import { downloadCSV } from '@/lib/utils';
-import { customStores, normPrice, planWrites, SKIP_REASON } from '@/lib/pricebook-grouping';
+import { customStores, normPrice, planWrites, priceBuckets, SKIP_REASON } from '@/lib/pricebook-grouping';
 
 const fmtCents = (c) => (Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—');
 const toCents = (s) => {
@@ -153,7 +153,7 @@ export default function CatalogPanel() {
             onChange={e => setPrefixLen(Number(e.target.value))}
             className="rounded border border-sw-border bg-sw-card px-1.5 py-0.5 text-[12px] text-sw-text"
           >
-            {[4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+            {[4, 5, 6, 7, 8, 9, 10, 11].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
           digits of the UPC
         </label>
@@ -195,8 +195,9 @@ function PrefixGroup({ group, stores, onChanged }) {
   const [error, setError] = useState('');
 
   const [targetStores, setTargetStores] = useState(stores.map(s => s.id));
-  const [rowTarget, setRowTarget] = useState({});
-  const [groupPrice, setGroupPrice] = useState('');
+  const [rowTarget, setRowTarget] = useState({});          // one UPC
+  const [bucketTarget, setBucketTarget] = useState({});    // every UPC at one current price
+  const [openBucket, setOpenBucket] = useState(null);
   const [includeCustom, setIncludeCustom] = useState(false);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
@@ -219,22 +220,24 @@ function PrefixGroup({ group, stores, onChanged }) {
   };
 
   const rows = detail?.rows || [];
+  const buckets = useMemo(
+    () => priceBuckets(rows, { prefixLen: group.prefix.length }),
+    [rows, group.prefix],
+  );
 
+  // A price typed against one UPC beats the price typed against its bucket.
   const plan = useMemo(() => planWrites(rows, {
     storeIds: targetStores,
-    priceFor: (row) => toCents(rowTarget[row.upc] ?? ''),
+    priceFor: (row) => {
+      const own = toCents(rowTarget[row.upc] ?? '');
+      if (own != null) return own;
+      const cents = normPrice(row.prices);
+      return toCents(bucketTarget[cents == null ? 'mixed' : String(cents)] ?? '');
+    },
     includeCustom,
-  }), [rows, targetStores, rowTarget, includeCustom]);
+  }), [rows, targetStores, rowTarget, bucketTarget, includeCustom]);
 
   const protectedSkips = plan.skipped.filter(s => s.reason === SKIP_REASON.CUSTOM_PRICE);
-
-  const setAll = (v) => {
-    setGroupPrice(v);
-    setRowTarget(() => {
-      if (v === '') return {};
-      return Object.fromEntries(rows.map(r => [r.upc, v]));
-    });
-  };
 
   const apply = async () => {
     setApplying(true); setResult(null);
@@ -247,7 +250,7 @@ function PrefixGroup({ group, stores, onChanged }) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Update failed');
       setResult(json);
-      setRowTarget({}); setGroupPrice('');
+      setRowTarget({}); setBucketTarget({});
       // Re-read this group so the table shows what NRS actually holds now.
       const fresh = await fetch(`/api/pricebook/catalog/items?prefix=${encodeURIComponent(group.prefix)}`);
       if (fresh.ok) setDetail(await fresh.json());
@@ -309,81 +312,123 @@ function PrefixGroup({ group, stores, onChanged }) {
                     </button>
                   );
                 })}
-                <label className="ml-auto flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
-                  Set all {rows.length}
-                  <input
-                    value={groupPrice}
-                    onChange={e => setAll(e.target.value)}
-                    placeholder="24.99"
-                    inputMode="decimal"
-                    className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
-                  />
-                </label>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-[12px]">
-                  <thead>
-                    <tr className="text-[var(--text-muted)]">
-                      <th className="px-2 py-1.5 text-left font-semibold">UPC</th>
-                      <th className="px-2 py-1.5 text-left font-semibold">Name</th>
-                      <th className="px-2 py-1.5 text-left font-semibold">New price</th>
-                      {stores.map(s => (
-                        <th key={s.id} className={`px-2 py-1.5 text-right font-semibold ${targetStores.includes(s.id) ? '' : 'opacity-40'}`}>
-                          {s.name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(row => {
-                      const custom = new Set(customStores(row));
-                      const norm = normPrice(row.prices);
-                      return (
-                        <tr key={row.upc} className="border-t border-sw-border/60">
-                          <td className="px-2 py-1.5 font-mono text-[11px] text-sw-text">{row.upc}</td>
-                          <td className="px-2 py-1.5">
-                            <span className="text-[var(--text-secondary)]">{row.name}</span>
-                            {row.nameConflict && (
-                              <span className="ml-1.5 text-[10px] text-[var(--color-warning)]" title="Stores spell this item differently">
-                                names differ
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              value={rowTarget[row.upc] ?? ''}
-                              onChange={e => setRowTarget(p => {
-                                const next = { ...p };
-                                if (e.target.value === '') delete next[row.upc];
-                                else next[row.upc] = e.target.value;
-                                return next;
+              <div className="mb-2 text-[11px] text-[var(--text-muted)]">
+                Grouped by what each item costs today — that is what separates one product from
+                another here, since a brand’s UPC numbers are not laid out by product.
+              </div>
+
+              <div className="space-y-1.5">
+                {buckets.map(b => {
+                  const isOpen = openBucket === b.key;
+                  return (
+                    <div key={b.key} className="rounded-lg border border-sw-border">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2">
+                        <button
+                          onClick={() => setOpenBucket(isOpen ? null : b.key)}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        >
+                          <span className="text-[11px] text-[var(--text-muted)]">{isOpen ? '▾' : '▸'}</span>
+                          <span className={`text-[14px] font-bold ${b.cents == null ? 'text-[var(--color-warning)]' : 'text-sw-text'}`}>
+                            {b.cents == null ? 'Price differs by store' : fmtCents(b.cents)}
+                          </span>
+                          <span className="text-[11px] text-[var(--text-muted)]">
+                            {b.count} UPC{b.count === 1 ? '' : 's'}
+                          </span>
+                          {b.ranges.length > 0 && (
+                            <span className="truncate font-mono text-[10px] text-[var(--text-muted)]">
+                              {b.ranges.join(', ')}
+                            </span>
+                          )}
+                        </button>
+                        <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                          {b.cents == null ? 'Set all to' : 'Change to'}
+                          <input
+                            value={bucketTarget[b.key] ?? ''}
+                            onChange={e => setBucketTarget(p => {
+                              const next = { ...p };
+                              if (e.target.value === '') delete next[b.key];
+                              else next[b.key] = e.target.value;
+                              return next;
+                            })}
+                            placeholder={b.cents != null ? (b.cents / 100).toFixed(2) : '24.99'}
+                            inputMode="decimal"
+                            aria-label={`New price for the ${b.cents == null ? 'mixed' : fmtCents(b.cents)} group`}
+                            className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
+                          />
+                        </label>
+                      </div>
+
+                      {isOpen && (
+                        <div className="overflow-x-auto border-t border-sw-border">
+                          <table className="w-full min-w-[560px] text-[12px]">
+                            <thead>
+                              <tr className="text-[var(--text-muted)]">
+                                <th className="px-2 py-1.5 text-left font-semibold">UPC</th>
+                                <th className="px-2 py-1.5 text-left font-semibold">Name</th>
+                                <th className="px-2 py-1.5 text-left font-semibold">This one only</th>
+                                {stores.map(st => (
+                                  <th key={st.id} className={`px-2 py-1.5 text-right font-semibold ${targetStores.includes(st.id) ? '' : 'opacity-40'}`}>
+                                    {st.name}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {b.rows.map(row => {
+                                const custom = new Set(customStores(row));
+                                return (
+                                  <tr key={row.upc} className="border-t border-sw-border/60">
+                                    <td className="px-2 py-1.5 font-mono text-[11px] text-sw-text">{row.upc}</td>
+                                    <td className="px-2 py-1.5">
+                                      <span className="text-[var(--text-secondary)]">{row.name}</span>
+                                      {row.nameConflict && (
+                                        <span className="ml-1.5 text-[10px] text-[var(--color-warning)]" title="Stores spell this item differently">
+                                          names differ
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      <input
+                                        value={rowTarget[row.upc] ?? ''}
+                                        onChange={e => setRowTarget(p => {
+                                          const next = { ...p };
+                                          if (e.target.value === '') delete next[row.upc];
+                                          else next[row.upc] = e.target.value;
+                                          return next;
+                                        })}
+                                        placeholder={bucketTarget[b.key] || ''}
+                                        inputMode="decimal"
+                                        aria-label={`New price for ${row.upc}`}
+                                        className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
+                                      />
+                                    </td>
+                                    {stores.map(st => {
+                                      const cents = row.prices[st.id];
+                                      const isCustom = custom.has(st.id);
+                                      return (
+                                        <td
+                                          key={st.id}
+                                          className={`px-2 py-1.5 text-right ${targetStores.includes(st.id) ? '' : 'opacity-40'} ${
+                                            isCustom ? 'text-[var(--color-warning)]' : 'text-sw-text'
+                                          }`}
+                                          title={isCustom ? `${st.name} has its own price — protected from a group change` : undefined}
+                                        >
+                                          {fmtCents(cents)}{isCustom ? ' ⚑' : ''}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
                               })}
-                              placeholder={norm != null ? (norm / 100).toFixed(2) : ''}
-                              inputMode="decimal"
-                              className="w-20 rounded border border-sw-border bg-sw-bg px-2 py-1 text-[12px] text-sw-text"
-                            />
-                          </td>
-                          {stores.map(s => {
-                            const cents = row.prices[s.id];
-                            const isCustom = custom.has(s.id);
-                            return (
-                              <td
-                                key={s.id}
-                                className={`px-2 py-1.5 text-right ${targetStores.includes(s.id) ? '' : 'opacity-40'} ${
-                                  isCustom ? 'text-[var(--color-warning)]' : 'text-sw-text'
-                                }`}
-                                title={isCustom ? `${s.name} has its own price — protected from “set all”` : undefined}
-                              >
-                                {fmtCents(cents)}{isCustom ? ' ⚑' : ''}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {protectedSkips.length > 0 && (
